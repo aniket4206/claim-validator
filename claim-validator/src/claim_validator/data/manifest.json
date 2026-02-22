@@ -1,0 +1,26 @@
+{
+  "hcpcs": {
+    "code_count": 111,
+    "effective_date": "2026-01-01",
+    "source": "CMS HCPCS (representative subset)",
+    "version": "2026-Q1-seed"
+  },
+  "icd10_cm": {
+    "code_count": 126,
+    "effective_date": "2025-10-01",
+    "source": "CMS/CDC ICD-10-CM (representative subset)",
+    "version": "FY2026-seed"
+  },
+  "pos_codes": {
+    "code_count": 51,
+    "effective_date": "2026-01-01",
+    "source": "CMS Place of Service",
+    "version": "2026"
+  },
+  "taxonomy": {
+    "code_count": 58,
+    "effective_date": "2026-01-01",
+    "source": "NUCC (representative subset)",
+    "version": "26.0-seed"
+  }
+}

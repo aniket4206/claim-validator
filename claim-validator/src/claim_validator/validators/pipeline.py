@@ -1,0 +1,270 @@
+"""ValidationPipeline — two-phase execution orchestrator."""
+
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
+from claim_validator.conf import ClaimValidatorSettings
+from claim_validator.constants import Severity
+from claim_validator.deidentifier.deidentifier import ClaimDeidentifier
+from claim_validator.exceptions import LLMError
+from claim_validator.models.claim import ClaimData
+from claim_validator.models.deidentified import DeidentifiedClaim
+from claim_validator.models.results import (
+    Finding,
+    PhaseResult,
+    PipelineResult,
+    ValidatorOutput,
+)
+from claim_validator.validators.registry import ValidatorRegistry
+
+if TYPE_CHECKING:
+    from claim_validator.validators.ai.base import BaseAIValidator
+    from claim_validator.validators.base import BaseValidator
+
+
+class _PipelineBuilder:
+    """Fluent builder for constructing custom pipelines."""
+
+    def __init__(self) -> None:
+        self._validators: list[BaseValidator] = []
+
+    def add(
+        self, validator: BaseValidator | type[BaseValidator],
+    ) -> _PipelineBuilder:
+        """Add a validator instance or class to the pipeline."""
+        if isinstance(validator, type):
+            validator = validator()
+        self._validators.append(validator)
+        return self
+
+    def build(self) -> ValidationPipeline:
+        """Build a ValidationPipeline from added validators."""
+        return ValidationPipeline(
+            rule_validators=list(self._validators),
+            ai_validators=[],
+            skip_ai_on_rule_failure=True,
+        )
+
+
+class ValidationPipeline:
+    """Two-phase validation pipeline orchestrator.
+
+    Phase 1: Rule-based validators (offline, synchronous)
+    Phase 2: AI validators (network, conditional on phase 1)
+    """
+
+    def __init__(
+        self,
+        *,
+        rule_validators: list[BaseValidator],
+        ai_validators: list[BaseAIValidator],
+        skip_ai_on_rule_failure: bool = True,
+    ) -> None:
+        self._rule_validators = rule_validators
+        self._ai_validators = ai_validators
+        self._skip_ai_on_rule_failure = skip_ai_on_rule_failure
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: ClaimValidatorSettings | None = None,
+    ) -> ValidationPipeline:
+        """Create a pipeline from settings."""
+        if settings is None:
+            settings = ClaimValidatorSettings()
+        registry = ValidatorRegistry()
+        rule_vals = registry.create_validators(
+            settings.rule_validators,
+        )
+
+        ai_vals: list[BaseAIValidator] = []
+        if settings.ai_config and settings.ai_validators:
+            from claim_validator.llm.factory import (
+                get_llm_client,
+            )
+
+            ai_config = settings.ai_config
+            extra_kwargs = {
+                k: v
+                for k, v in ai_config.items()
+                if k not in ("provider", "api_key", "model")
+            }
+            llm_client = get_llm_client(
+                ai_config["provider"],
+                api_key=ai_config["api_key"],
+                model=ai_config["model"],
+                **extra_kwargs,
+            )
+            ai_vals = registry.create_ai_validators(
+                settings.ai_validators,
+                llm_client=llm_client,
+            )
+
+        return cls(
+            rule_validators=rule_vals,
+            ai_validators=ai_vals,
+            skip_ai_on_rule_failure=settings.skip_ai_on_rule_failure,
+        )
+
+    @classmethod
+    def builder(cls) -> _PipelineBuilder:
+        """Return a fluent builder for custom pipelines."""
+        return _PipelineBuilder()
+
+    def run(self, claim: ClaimData) -> PipelineResult:
+        """Execute the full validation pipeline."""
+        start = time.perf_counter()
+        phase_results: list[PhaseResult] = []
+
+        # Phase 1: Rule-based
+        rule_phase = self._run_phase(
+            "rule_based", self._rule_validators, claim,
+        )
+        phase_results.append(rule_phase)
+
+        # Phase 2: AI (conditional)
+        if self._ai_validators:
+            rule_has_errors = any(
+                f.severity == Severity.ERROR
+                for f in rule_phase.findings
+            )
+            if (
+                not rule_has_errors
+                or not self._skip_ai_on_rule_failure
+            ):
+                deidentified = ClaimDeidentifier.deidentify(
+                    claim,
+                )
+                ai_phase = self._run_ai_phase(deidentified)
+                phase_results.append(ai_phase)
+
+        elapsed = time.perf_counter() - start
+        return PipelineResult(
+            phase_results=phase_results,
+            execution_time=elapsed,
+        )
+
+    def _run_phase(
+        self,
+        phase_name: str,
+        validators: list[BaseValidator],
+        claim: ClaimData,
+    ) -> PhaseResult:
+        """Run all rule-based validators in a phase."""
+        start = time.perf_counter()
+        outputs: list[ValidatorOutput] = []
+
+        for validator in validators:
+            try:
+                output = validator.validate(claim)
+                outputs.append(output)
+            except Exception as exc:
+                outputs.append(
+                    ValidatorOutput(
+                        validator_name=getattr(
+                            validator, "name",
+                            type(validator).__name__,
+                        ),
+                        findings=[
+                            Finding(
+                                code="VALIDATOR_ERROR",
+                                message=(
+                                    "Validator raised an"
+                                    " unexpected exception"
+                                ),
+                                severity=Severity.ERROR,
+                                field_name="",
+                                suggestion=(
+                                    "Check validator"
+                                    " implementation"
+                                ),
+                                context={
+                                    "error": str(exc),
+                                },
+                            ),
+                        ],
+                    )
+                )
+
+        elapsed = time.perf_counter() - start
+        return PhaseResult(
+            phase=phase_name,
+            validator_outputs=outputs,
+            execution_time=elapsed,
+        )
+
+    def _run_ai_phase(
+        self,
+        claim: DeidentifiedClaim,
+    ) -> PhaseResult:
+        """Run AI validators with de-identified claim data."""
+        start = time.perf_counter()
+        outputs: list[ValidatorOutput] = []
+
+        for validator in self._ai_validators:
+            try:
+                output = validator.validate_deidentified(
+                    claim,
+                )
+                outputs.append(output)
+            except LLMError as exc:
+                outputs.append(
+                    ValidatorOutput(
+                        validator_name=validator.name,
+                        findings=[
+                            Finding(
+                                code="AI_PROVIDER_ERROR",
+                                message=(
+                                    "AI validation unavailable"
+                                ),
+                                severity=Severity.WARNING,
+                                field_name="",
+                                suggestion=(
+                                    "Rule-based results are"
+                                    " still valid. Retry when"
+                                    " the AI provider is"
+                                    " available."
+                                ),
+                                context={
+                                    "error": str(exc),
+                                },
+                            ),
+                        ],
+                    )
+                )
+            except Exception as exc:
+                outputs.append(
+                    ValidatorOutput(
+                        validator_name=getattr(
+                            validator, "name",
+                            type(validator).__name__,
+                        ),
+                        findings=[
+                            Finding(
+                                code="VALIDATOR_ERROR",
+                                message=(
+                                    "Validator raised an"
+                                    " unexpected exception"
+                                ),
+                                severity=Severity.ERROR,
+                                field_name="",
+                                suggestion=(
+                                    "Check validator"
+                                    " implementation"
+                                ),
+                                context={
+                                    "error": str(exc),
+                                },
+                            ),
+                        ],
+                    )
+                )
+
+        elapsed = time.perf_counter() - start
+        return PhaseResult(
+            phase="ai",
+            validator_outputs=outputs,
+            execution_time=elapsed,
+        )
