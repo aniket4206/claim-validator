@@ -22,17 +22,24 @@ classifiers = [
 ]
 dependencies = ["pydantic>=2.0,<3.0", "pydantic-settings>=2.0,<3.0"]
 
+[project.scripts]
+claim-validator = "claim_validator.cli:main"
+
 [project.optional-dependencies]
 ai = ["httpx>=0.27", "anthropic>=0.40", "openai>=1.50"]
 anthropic = ["httpx>=0.27", "anthropic>=0.40"]
 openai = ["httpx>=0.27", "openai>=1.50"]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.30"]
 django = ["django>=4.2"]
 fastapi = ["fastapi>=0.110"]
 dev = ["pytest>=8.0", "pytest-cov", "ruff>=0.5", "mypy>=1.10", "factory-boy>=3.3"]
-all = ["claim-validator[ai,django,fastapi]"]
+all = ["claim-validator[ai,server,django,fastapi]"]
 
 [project.urls]
+Homepage = "https://github.com/aniket/claim-validator"
 Repository = "https://github.com/aniket/claim-validator"
+Documentation = "https://github.com/aniket/claim-validator#readme"
+Issues = "https://github.com/aniket/claim-validator/issues"
 
 [tool.hatch.version]
 source = "vcs"

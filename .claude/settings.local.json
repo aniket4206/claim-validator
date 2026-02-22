@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /home/lnv-20/Documents/claim-validator -type d -name \"*api*\" -o -type d -name \"*service*\" -o -type d -name \"*server*\" -o -type d -name \"*django*\" -o -type d -name \"*fastapi*\" 2>/dev/null | grep -v \".venv\\\\|.git\\\\|__pycache__\")"
+    ]
+  }
+}
