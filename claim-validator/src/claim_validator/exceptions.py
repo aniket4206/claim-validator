@@ -21,3 +21,7 @@ class LLMError(ClaimValidatorError):
 
 class CodeTableError(ClaimValidatorError):
     """Code table loading or lookup failure."""
+
+
+class ClearinghouseError(ClaimValidatorError):
+    """Clearinghouse communication failure (HTTP errors, timeouts)."""

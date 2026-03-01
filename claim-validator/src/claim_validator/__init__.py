@@ -11,8 +11,18 @@ from claim_validator._api import validate
 from claim_validator.conf import ClaimValidatorSettings
 from claim_validator.constants import ClaimType, Severity
 from claim_validator.deidentifier import ClaimDeidentifier
+from claim_validator.eligibility import (
+    AAAError,
+    BenefitInfo,
+    CoverageInfo,
+    CoverageStatus,
+    EligibilityRequest,
+    EligibilityResponse,
+    EligibilityResult,
+)
 from claim_validator.exceptions import (
     ClaimValidatorError,
+    ClearinghouseError,
     CodeTableError,
     ConfigurationError,
     LLMError,
@@ -45,6 +55,7 @@ from claim_validator.prior_auth import (
     ServiceLineDecision,
     SubscriberInfo,
     determine_pa_required,
+    parse_278_response,
     submit_prior_auth,
 )
 from claim_validator.validators import (
@@ -56,9 +67,11 @@ from claim_validator.validators import (
 
 __all__ = [
     "__version__",
+    "AAAError",
     "BaseAIValidator",
     "BaseLLMClient",
     "BaseValidator",
+    "BenefitInfo",
     "CertificationActionCode",
     "CertificationTypeCode",
     "ClaimData",
@@ -67,18 +80,25 @@ __all__ = [
     "ClaimType",
     "ClaimValidatorError",
     "ClaimValidatorSettings",
+    "ClearinghouseError",
     "CodeTableError",
     "ConfigurationError",
+    "CoverageInfo",
+    "CoverageStatus",
     "DeidentifiedClaim",
     "DeidentifiedLineData",
     "DeidentifiedPriorAuthResponse",
     "determine_pa_required",
     "DiagnosisCode",
+    "EligibilityRequest",
+    "EligibilityResponse",
+    "EligibilityResult",
     "Finding",
     "get_llm_client",
     "LLMError",
     "Message",
     "PADeterminationResult",
+    "parse_278_response",
     "PatientInfo",
     "PipelineResult",
     "PriorAuthError",

@@ -52,3 +52,11 @@ class ClaimValidatorSettings(BaseSettings):
     pa_ai_validators: list[str] = []
     skip_clearinghouse_on_pa_failure: bool = True
     pa_skip_ai: bool = False
+
+    # Eligibility settings
+    stedi_api_key: str | None = None
+    stedi_environment: str = "sandbox"
+    eligibility_rule_validators: list[str] = []
+    eligibility_ai_validators: list[str] = []
+    skip_clearinghouse_on_eligibility_failure: bool = True
+    eligibility_skip_ai: bool = False

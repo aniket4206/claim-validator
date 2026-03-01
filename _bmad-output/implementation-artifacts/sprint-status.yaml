@@ -84,8 +84,8 @@ development_status:
   # ============================================================
 
   # Epic 1: Eligibility Request Validation (Offline)
-  elig-epic-1: backlog
-  elig-1-1-eligibility-data-models-package-configuration: backlog
+  elig-epic-1: in-progress
+  elig-1-1-eligibility-data-models-package-configuration: done
   elig-1-2-payer-directory-service-type-code-tables: backlog
   elig-1-3-npi-utility-extraction-first-validators: backlog
   elig-1-4-service-type-date-member-id-validators: backlog
@@ -119,9 +119,9 @@ development_status:
   pa-epic-1-retrospective: optional
 
   # Epic 2: 278 Response Parsing & AAA Error Handling
-  pa-epic-2: backlog
-  pa-2-1-278-response-parser-hcr-action-code-mapping: backlog
-  pa-2-2-aaa-error-parsing-human-readable-messages: backlog
+  pa-epic-2: done
+  pa-2-1-278-response-parser-hcr-action-code-mapping: done
+  pa-2-2-aaa-error-parsing-human-readable-messages: done
   pa-epic-2-retrospective: optional
 
   # Epic 3: Clearinghouse Integration & Full Pipeline
