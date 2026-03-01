@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(pandoc:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(python3:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(.venv/bin/pip show:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(ls:*)",
+      "Bash(/home/lnv-20/Documents/claim-validator/claim-validator/.venv/bin/python:*)",
+      "Bash(SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0 /home/lnv-20/Documents/claim-validator/claim-validator/.venv/bin/python:*)",
+      "Bash(gunzip:*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(claim-validator/.venv/bin/pytest:*)",
+      "Bash(PYTHONPATH=src .venv/bin/pytest:*)",
+      "Bash(.venv/bin/ruff check:*)",
+      "Bash(PYTHONPATH=src .venv/bin/python:*)"
     ]
   }
 }

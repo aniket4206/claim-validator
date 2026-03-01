@@ -1,844 +1,1574 @@
 ---
-stepsCompleted: ['step-01-validate-prerequisites', 'step-02-design-epics', 'step-03-create-stories', 'step-04-final-validation']
+stepsCompleted: [1, 2, 3, 4]
+completedAt: '2026-02-27'
+status: 'extending'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
   - '_bmad-output/planning-artifacts/architecture.md'
+paExtensionStartedAt: '2026-03-01'
+paExtensionScope: 'prior-authorization-module'
+paExtensionStepsCompleted: [1, 2, 3, 4]
+paExtensionStatus: 'complete'
+paExtensionCompletedAt: '2026-03-01'
+paInputDocuments:
+  - '_bmad-output/planning-artifacts/prd.md'
+  - '_bmad-output/planning-artifacts/architecture.md'
+  - '_bmad-output/project-context.md'
 ---
 
-# healthcare-claim-analyzer - Epic Breakdown
+# Eligibility Verification Module - Epic Breakdown
 
 ## Overview
 
-This document provides the complete epic and story breakdown for healthcare-claim-analyzer, decomposing the requirements from the PRD and Architecture into implementable stories.
+This document provides the complete epic and story breakdown for the Eligibility Verification Module, decomposing the requirements from the PRD and Architecture into implementable stories.
 
 ## Requirements Inventory
 
 ### Functional Requirements
 
-**Claim Validation (FR1-FR6)**
+**Eligibility Request Data Management (FR1-FR7)**
 
-FR1: Developer can validate a healthcare claim by passing a Python dict or Pydantic model and receiving a structured result indicating pass/fail with detailed findings
-FR2: Developer can run rule-based validation with zero configuration, zero API keys, and zero network calls
-FR3: Developer can run AI-powered validation by providing an LLM provider configuration (provider name, API key, model)
-FR4: Developer can configure the validation pipeline to skip AI validation when rule-based validation fails
-FR5: Developer can receive findings that include error code, human-readable message, severity level, field name, line number, and actionable fix suggestion for every issue detected
-FR6: Developer can distinguish between ERROR severity (claim will be denied) and WARNING severity (claim may be denied or has quality issues)
+- FR1: Developer can create an eligibility request from a Python dict or EligibilityRequest model
+- FR2: Developer can specify subscriber demographics (name, DOB, member ID, relationship to patient)
+- FR3: Developer can specify provider identifiers (NPI, taxonomy code)
+- FR4: Developer can specify payer identifier for the target insurance plan
+- FR5: Developer can specify service type code(s) for the eligibility inquiry
+- FR6: Developer can specify date of service or date range for the eligibility check
+- FR7: Developer can specify patient information when patient differs from subscriber (dependent)
 
-**Rule-Based Validators (FR7-FR17)**
+**Rule-Based Request Validation (FR8-FR15)**
 
-FR7: System can validate all required CMS-1500 fields are present and non-empty
-FR8: System can validate NPI numbers using the Luhn check-digit algorithm
-FR9: System can validate subscriber/insurance ID presence and format
-FR10: System can validate patient demographics consistency (DOB, gender, relationship)
-FR11: System can validate ICD-10-CM diagnosis code format and existence against bundled code tables
-FR12: System can validate CPT/HCPCS procedure code format and modifier validity
-FR13: System can validate diagnosis pointer consistency between lines and diagnosis codes
-FR14: System can validate charge amounts are positive and line totals consistent
-FR15: System can validate date consistency (service dates, DOB, filing date)
-FR16: System can detect duplicate claim lines within a single claim
-FR17: System can check service dates against configurable payer-specific timely filing deadlines
+- FR8: System can validate provider NPI using Luhn check-digit algorithm
+- FR9: System can validate payer ID against a known payer directory
+- FR10: System can validate subscriber demographics completeness (required fields present)
+- FR11: System can validate service type codes against X12 standard code set
+- FR12: System can validate date of service is present and logically valid (not future beyond reasonable range, not expired)
+- FR13: System can validate member ID format against common payer patterns
+- FR14: System can produce structured Finding objects for each validation failure with code, message, severity, field_name, and suggestion
+- FR15: Developer can run rule-based validation without any external API keys or network access
 
-**AI Validation (FR18-FR22)**
+**Clearinghouse Integration (FR16-FR22)**
 
-FR18: System can assess clinical plausibility of diagnosis-procedure combinations using an LLM
-FR19: System can assess likely coverage and medical necessity concerns using an LLM
-FR20: System can identify services likely requiring prior authorization using an LLM
-FR21: System can automatically de-identify claims before sending to any LLM, stripping all 18 HIPAA identifiers
-FR22: System can send only clinically relevant, non-PHI data to LLMs (codes, charges, payer ID, NPI, age, gender, state, service year)
+- FR16: System can submit a validated eligibility request to Stedi JSON API
+- FR17: System can receive and parse a 271 eligibility response from Stedi
+- FR18: Developer can configure Stedi API credentials via environment variables
+- FR19: Developer can switch between Stedi sandbox and production environments
+- FR20: System can handle clearinghouse errors (network failures, timeouts, invalid responses) and return structured error information
+- FR21: System can parse AAA rejection segments from 271 responses into structured error models
+- FR22: Developer can implement a custom clearinghouse client by subclassing BaseClearinghouseClient
 
-**LLM Provider Support (FR23-FR27)**
+**Eligibility Response Parsing (FR23-FR29)**
 
-FR23: Developer can use Anthropic Claude models for AI validation
-FR24: Developer can use OpenAI GPT models for AI validation
-FR25: Developer can use any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM) for AI validation
-FR26: Developer can switch LLM providers by changing configuration without modifying code
-FR27: Developer can create custom LLM provider adapters by subclassing a base client interface
+- FR23: System can parse 271 response into structured EligibilityResponse model
+- FR24: System can extract coverage status (active, inactive, unknown) from 271 response
+- FR25: System can extract benefit information (copay, coinsurance, deductible) per service type
+- FR26: System can extract coverage dates (effective date, termination date) from 271 response
+- FR27: System can extract plan/group information from 271 response
+- FR28: System can extract prior authorization requirements from 271 response
+- FR29: System can provide raw Stedi JSON response alongside structured model for advanced users
 
-**Pipeline & Extensibility (FR28-FR33)**
+**AI-Powered Response Interpretation (FR30-FR35)**
 
-FR28: Developer can create custom validators by subclassing a base class and implementing a validate method
-FR29: Developer can register custom validators into the pipeline via configuration (dotted path strings)
-FR30: Developer can construct custom pipelines with a specific subset of validators
-FR31: Developer can configure pipeline behavior via a settings object
-FR32: System can execute validators in two phases: rule-based first, AI second
-FR33: System can aggregate results from all validators into a single pipeline result
+- FR30: System can de-identify eligibility response data before sending to LLM (strip all 18 HIPAA identifiers)
+- FR31: System can generate a human-readable coverage summary from 271 response using configured LLM
+- FR32: System can produce AI-generated findings with actionable insights about coverage, limitations, and requirements
+- FR33: Developer can use any configured LLM provider (Anthropic, OpenAI, OpenAI-compatible) for interpretation
+- FR34: Developer can skip AI interpretation and use only structured response parsing
+- FR35: System can interpret AAA errors into human-readable explanations with suggested next steps
 
-**Data Models & Input (FR34-FR37)**
+**Pipeline Orchestration (FR36-FR40)**
 
-FR34: Developer can provide claim data as a plain Python dictionary
-FR35: Developer can provide claim data as a typed Pydantic model with validation
-FR36: System can represent claims with multiple lines (procedure codes, modifiers, diagnosis pointers, charges)
-FR37: System can represent diagnosis codes with code value, pointer position, and type
+- FR36: Developer can call check_eligibility() as a single entry point for the full pipeline
+- FR37: System can execute the three-phase pipeline: rule-based validation first, clearinghouse second, AI third
+- FR38: System can skip the clearinghouse/AI phase if rule-based validation fails (configurable)
+- FR39: Developer can configure which eligibility validators to include via settings
+- FR40: System can return an EligibilityResult containing: eligible status, structured response, findings, AI summary, and raw response
 
-**Code Tables & Reference Data (FR38-FR42)**
+**Configuration & Settings (FR41-FR44)**
 
-FR38: System can validate ICD-10-CM codes against bundled CMS tables without network calls
-FR39: System can validate HCPCS Level II codes against bundled tables without network calls
-FR40: System can validate Place of Service codes against bundled reference data
-FR41: System can validate provider taxonomy codes against bundled NUCC data
-FR42: System can provide timely filing deadline defaults for common payers
+- FR41: Developer can configure eligibility settings via CLAIM_VALIDATOR_ prefixed environment variables
+- FR42: Developer can configure Stedi credentials (API key, environment) via settings
+- FR43: Developer can configure LLM provider for eligibility interpretation (reuse existing AI config)
+- FR44: Developer can enable/disable AI interpretation independently of clearinghouse submission
 
-**Configuration & Distribution (FR43-FR49)**
+**Extensibility (FR45-FR47)**
 
-FR43: Developer can configure the library using a Pydantic settings object with env var support
-FR44: Developer can override default validator lists, AI settings, and pipeline behavior via configuration
-FR45: Developer can use the library with zero configuration for basic rule-based validation
-FR46: Developer can install the core library via `pip install claim-validator` with no optional dependencies
-FR47: Developer can install AI support via `pip install claim-validator[ai]`
-FR48: Developer can install provider-specific extras (`[anthropic]`, `[openai]`)
-FR49: Library exposes type stubs (`py.typed`) for static type checking
+- FR45: Developer can create custom eligibility validators by subclassing BaseValidator
+- FR46: Developer can create custom clearinghouse clients by subclassing BaseClearinghouseClient
+- FR47: Developer can register custom validators via dotted-path configuration (same pattern as claim validators)
 
 ### NonFunctional Requirements
 
-**Performance (NFR1-NFR7)**
+**Performance (NFR1-NFR5)**
 
-NFR1: Rule-based latency — `validate()` with all 8 validators, no AI — < 50ms per claim
-NFR2: AI latency — Full pipeline with one LLM round-trip — < 5 seconds per claim
-NFR3: Pipeline startup — First pipeline construction — < 100ms; near-zero subsequent
-NFR4: Code table lookup — Single code validation — < 1ms (in-memory after first load)
-NFR5: Memory footprint — Library with code tables loaded — < 100MB
-NFR6: Batch throughput — Rule-based, single thread — 500+ claims/second
-NFR7: Import time — `import claim_validator` — < 500ms (lazy-load tables)
+- NFR1: Rule-based validation phase completes in < 100ms for a single eligibility request
+- NFR2: Library adds < 2 seconds overhead on top of Stedi clearinghouse round-trip latency
+- NFR3: 271 response parsing (without AI) completes in < 50ms
+- NFR4: Memory usage for a single eligibility check does not exceed 50MB
+- NFR5: Library imports (from claim_validator import check_eligibility) complete in < 500ms
 
-**Security (NFR8-NFR13)**
+**Security & Privacy (NFR6-NFR10)**
 
-NFR8: Zero PHI transmission (rule-based) — No network calls ever
-NFR9: PHI de-identification (AI) — All 18 HIPAA identifiers stripped before LLM
-NFR10: No PHI in outputs — No PHI in logs, exceptions, or findings
-NFR11: No telemetry — No phone-home or undisclosed network calls
-NFR12: Secrets handling — API keys never in logs or outputs
-NFR13: Dependency security — No known CVEs at release
+- NFR6: All 18 HIPAA identifiers stripped from eligibility data before any LLM call — verified by automated tests
+- NFR7: PHI never appears in log output, exception messages, or error tracebacks
+- NFR8: Stedi API communication uses HTTPS/TLS 1.2+ exclusively
+- NFR9: API keys and credentials are never hardcoded — environment variable or settings-based configuration only
+- NFR10: No PHI stored in memory longer than the duration of a single check_eligibility() call
 
-**Scalability (NFR14-NFR16)**
+**Integration Reliability (NFR11-NFR14)**
 
-NFR14: Thread safety — Safe concurrent use — Zero shared mutable state. Concurrent test (100 threads)
-NFR15: Stateless validation — No state between calls — Each `validate()` independent
-NFR16: Linear scaling — O(n) with claim lines — No exponential patterns
+- NFR11: Stedi integration handles HTTP 4xx/5xx errors with structured error responses (not raw exceptions)
+- NFR12: Network timeout configurable with sensible default (30 seconds, matching CAQH CORE 20s + buffer)
+- NFR13: LLM provider failure does not block returning structured 271 response (graceful degradation)
+- NFR14: Invalid or unexpected 271 response fields handled gracefully — unparseable fields logged as warnings, not exceptions
 
-**Reliability (NFR17-NFR20)**
+**Code Quality (NFR15-NFR20)**
 
-NFR17: Deterministic results — Identical output per input (rule-based)
-NFR18: Graceful AI failure — Returns rule-based results + warning if LLM down
-NFR19: Invalid input handling — Clear errors, no unhandled exceptions
-NFR20: Code table integrity — Match CMS official releases
+- NFR15: mypy strict mode passes with zero errors across all eligibility module code
+- NFR16: ruff lint passes with zero warnings (line-length=100, py311 target)
+- NFR17: Test coverage > 90% for all eligibility module code
+- NFR18: All public APIs have type annotations (Pydantic models, function signatures, return types)
+- NFR19: Zero breaking changes to existing validate() API or public models
+- NFR20: All new dependencies are optional (rule-based eligibility works with zero additional deps)
 
-**Compatibility (NFR21-NFR25)**
+**Documentation (NFR21-NFR23)**
 
-NFR21: Python versions — 3.11, 3.12, 3.13
-NFR22: OS support — Linux, macOS, Windows
-NFR23: Dependency minimalism — Core = Pydantic only
-NFR24: Framework independence — Zero Django/Flask/FastAPI in core
-NFR25: Type checker compatibility — `py.typed` for mypy + pyright
-
-**Code Quality (NFR26-NFR29)**
-
-NFR26: Test coverage — All public API paths — 90%+ lines, 100% validators + de-identifier
-NFR27: Linting — ruff (E, F, I, N, W, UP) — Zero warnings
-NFR28: Documentation — All public API docstrings — interrogate > 95%
-NFR29: Package size — Published wheel — < 15MB with compressed tables
+- NFR21: All public classes and functions have docstrings
+- NFR22: Quickstart example included that demonstrates end-to-end eligibility check
+- NFR23: API reference documents all public models, their fields, and expected values
 
 ### Additional Requirements
 
-**From Architecture — Starter Template (impacts Epic 1, Story 1):**
-- Architecture specifies starter template: `uv init --lib --build-backend hatchling claim-validator`
-- Hybrid approach: uv init --lib + manual configuration for brownfield extraction
-- hatchling as build backend with hatch-vcs for git-tag-based versioning
-- src layout: `src/claim_validator/`
+**From Architecture — Eligibility Extension Context:**
 
-**From Architecture — Core Design Decisions:**
-- D1: Code table storage — Compressed JSON (.json.gz), standard library gzip + json only
-- D2: Code table loading — Lazy singleton with `threading.Lock`, double-check locking pattern
-- D3: Pydantic models — `frozen=True`, `strict=False` for immutability + lax coercion from dicts
-- D4: Configuration — Pydantic `BaseSettings` with `env_prefix="CLAIM_VALIDATOR_"`
-- D5: De-identification — Pipeline-integrated, automatic before any AI validator
-- D6: PHI boundary — Type-driven `DeidentifiedClaim` + runtime assertion (belt-and-suspenders)
-- D7: LLM client — Chat-based `send_messages(messages: list[Message]) -> str`
-- D8: Prompt management — Per-validator prompts as class constants
-- D9: Response parsing — Hybrid (structured JSON preferred, regex fallback)
-- D10: Validator registry — Dotted path strings with `importlib.import_module()`
-- D11: Pipeline composition — Both `Pipeline.from_settings()` and `Pipeline.builder().add().build()`
-- D12: Versioning — hatch-vcs (git tag driven)
-- D13: Import/export — Subpackages + top-level re-export via `__init__.py`
+- No starter template needed — brownfield extension of existing package
+- Add `[stedi]` optional dependency extra to `pyproject.toml` with `httpx>=0.27`
+- Extract NPI validation logic into shared `_npi_utils.py` utility for reuse across claim and eligibility modules
+- `BaseValidator.validate()` uses `data: Any` type signature for dual-type support (ClaimData and EligibilityRequest)
+- Include Stedi 271 response fixtures in `tests/test_eligibility/fixtures/` for testing
 
-**From Architecture — Gap Resolutions:**
-- Add `BaseAIValidator(BaseValidator)` in `validators/ai/base.py` with LLM client injection
-- Add `data/manifest.json` for code table version metadata (version, effective date, code count)
-- Use standard Python `logging.getLogger(__name__)` in all modules, never add handlers
+**From Architecture — Existing File Modifications:**
 
-**From Architecture — CI/CD Requirements:**
-- ci.yml: Matrix Python {3.11, 3.12, 3.13} x OS {Linux, macOS, Windows}, ruff + mypy + pytest
-- release.yml: Triggered by git tag `v*`, builds wheel, publishes to PyPI
-- hipaa.yml: PHI leak scan, no-network rule-based test, de-identification verification on every PR
+- `pyproject.toml` — Add `stedi` extra, update `all` extra
+- `src/claim_validator/__init__.py` — Add eligibility re-exports
+- `src/claim_validator/conf.py` — Add Stedi config and eligibility validator list settings
+- `src/claim_validator/exceptions.py` — Add `ClearinghouseError` subclass
+- `src/claim_validator/constants.py` — Add `CoverageStatus` enum
 
-**From Architecture — Optional Dependency Extras:**
-- `[ai]` = httpx + anthropic + openai
-- `[anthropic]` = httpx + anthropic
-- `[openai]` = httpx + openai
-- `[django]` = django (Phase 2)
-- `[fastapi]` = fastapi (Phase 2)
-- `[dev]` = pytest + pytest-cov + ruff + mypy + factory-boy
-- `[all]` = ai + django + fastapi
+**From Architecture — Core Decisions (D14-D23):**
+
+- D14: BaseClearinghouseClient ABC + factory — mirrors BaseLLMClient pattern
+- D15: Flat EligibilityRequest, nested EligibilityResponse — frozen=True, strict=False
+- D16: Separate EligibilityPipeline — three-phase (rule-based → clearinghouse → AI)
+- D17: PHI dual-path — pipeline-level + type-driven enforcement (belt-and-suspenders)
+- D18: StediClient — sync httpx.Client with context manager, 30s timeout
+- D19: Payer directory — uncompressed JSON (~200KB), lazy singleton with threading.Lock
+- D20: AAA error model — dual access (AAAError model + Finding objects)
+- D21: EligibilityDeidentifier — separate class, same pattern as ClaimDeidentifier
+- D22: EligibilityInterpreterAI — single AI validator for holistic 271 interpretation
+- D23: Settings extension — flat fields added to ClaimValidatorSettings
+
+**From Architecture — Implementation Patterns:**
+
+- Finding code prefixes: ELIG_ (rule-based), CLEARINGHOUSE_ (infrastructure), AAA_REJECTION (rejections), AI_ELIG_ (AI findings)
+- PHI dual-path: clearinghouse receives raw PHI (covered entity), AI path strips PHI via EligibilityDeidentifier
+- Clearinghouse client contract: BaseClearinghouseClient ABC mirrors existing BaseLLMClient pattern
+- Three-phase pipeline: rule-based → clearinghouse → AI (different from existing two-phase claim pipeline)
+- 14-step implementation sequence defined in architecture
 
 **From Architecture — Implementation Sequence:**
-1. Package scaffolding (D12, D13)
-2. Core models (D3)
-3. Configuration (D4)
-4. Code tables (D1, D2)
-5. Validator base + registry (D10)
-6. Rule-based validators
-7. Pipeline (D11)
-8. De-identification (D5, D6)
-9. LLM abstraction (D7, D8, D9)
-10. AI validators
-11. Top-level API
+
+1. Eligibility models (D15)
+2. Settings extension (D23)
+3. Payer directory + service types (D19)
+4. NPI utility extraction
+5. Rule-based eligibility validators (5 new)
+6. Clearinghouse abstraction (D14)
+7. Stedi client (D18)
+8. Response parser
+9. Eligibility de-identifier (D21)
+10. AI interpreter (D22)
+11. Pipeline (D16, D17)
+12. Top-level API — check_eligibility()
+13. __init__.py re-exports
+14. Test suite
 
 ### FR Coverage Map
 
 | FR | Epic | Description |
 |---|---|---|
-| FR1 | Epic 2 | Validate claim via dict or Pydantic model → structured result |
-| FR2 | Epic 2 | Rule-based validation with zero config/keys/network |
-| FR3 | Epic 3 | AI-powered validation with LLM provider config |
-| FR4 | Epic 3 | Configure skip AI when rule-based fails |
-| FR5 | Epic 2 | Findings with code, message, severity, field, line, suggestion |
-| FR6 | Epic 2 | ERROR vs WARNING severity distinction |
-| FR7 | Epic 2 | Validate required CMS-1500 fields present |
-| FR8 | Epic 2 | Validate NPI via Luhn check-digit |
-| FR9 | Epic 2 | Validate subscriber/insurance ID |
-| FR10 | Epic 2 | Validate patient demographics consistency |
-| FR11 | Epic 2 | Validate ICD-10-CM code format + existence |
-| FR12 | Epic 2 | Validate CPT/HCPCS format + modifiers |
-| FR13 | Epic 2 | Validate diagnosis pointer consistency |
-| FR14 | Epic 2 | Validate charge amounts + line totals |
-| FR15 | Epic 2 | Validate date consistency |
-| FR16 | Epic 2 | Detect duplicate claim lines |
-| FR17 | Epic 2 | Check timely filing deadlines |
-| FR18 | Epic 3 | AI clinical plausibility assessment |
-| FR19 | Epic 3 | AI coverage/medical necessity assessment |
-| FR20 | Epic 3 | AI prior authorization identification |
-| FR21 | Epic 3 | Auto de-identify claims before LLM (18 HIPAA identifiers) |
-| FR22 | Epic 3 | Send only non-PHI clinically relevant data to LLMs |
-| FR23 | Epic 3 | Anthropic Claude provider support |
-| FR24 | Epic 3 | OpenAI GPT provider support |
-| FR25 | Epic 3 | OpenAI-compatible endpoint support |
-| FR26 | Epic 3 | Switch providers via config, no code changes |
-| FR27 | Epic 3 | Custom LLM provider adapters via subclassing |
-| FR28 | Epic 2 | Custom validators via BaseValidator subclassing |
-| FR29 | Epic 2 | Register custom validators via dotted path config |
-| FR30 | Epic 2 | Construct custom pipelines with validator subsets |
-| FR31 | Epic 2 | Configure pipeline behavior via settings object |
-| FR32 | Epic 2 | Two-phase execution: rules first, AI second |
-| FR33 | Epic 2 | Aggregate all validator results into single PipelineResult |
-| FR34 | Epic 1 | Claim data as plain Python dict |
-| FR35 | Epic 1 | Claim data as typed Pydantic model |
-| FR36 | Epic 1 | Multi-line claims (procedures, modifiers, pointers, charges) |
-| FR37 | Epic 1 | Diagnosis codes with code, pointer, type |
-| FR38 | Epic 1 | Bundled ICD-10-CM code tables (offline) |
-| FR39 | Epic 1 | Bundled HCPCS Level II tables (offline) |
-| FR40 | Epic 1 | Bundled Place of Service codes (offline) |
-| FR41 | Epic 1 | Bundled provider taxonomy codes (offline) |
-| FR42 | Epic 1 | Timely filing deadline defaults for common payers |
-| FR43 | Epic 1 | Pydantic settings object with env var support |
-| FR44 | Epic 1 | Override validator lists, AI settings, pipeline behavior |
-| FR45 | Epic 1 | Zero-config for basic rule-based validation |
-| FR46 | Epic 1 | Install via `pip install claim-validator` |
-| FR47 | Epic 3 | Install AI support via `[ai]` extra |
-| FR48 | Epic 3 | Provider-specific extras (`[anthropic]`, `[openai]`) |
-| FR49 | Epic 1 | `py.typed` for static type checking |
+| FR1 | Epic 1 | Create eligibility request from dict or model |
+| FR2 | Epic 1 | Specify subscriber demographics |
+| FR3 | Epic 1 | Specify provider identifiers (NPI, taxonomy) |
+| FR4 | Epic 1 | Specify payer identifier |
+| FR5 | Epic 1 | Specify service type code(s) |
+| FR6 | Epic 1 | Specify date of service or range |
+| FR7 | Epic 1 | Specify patient info for dependents |
+| FR8 | Epic 1 | Validate NPI via Luhn algorithm |
+| FR9 | Epic 1 | Validate payer ID against directory |
+| FR10 | Epic 1 | Validate subscriber demographics completeness |
+| FR11 | Epic 1 | Validate service type codes (X12) |
+| FR12 | Epic 1 | Validate date of service validity |
+| FR13 | Epic 1 | Validate member ID format |
+| FR14 | Epic 1 | Produce structured Finding objects |
+| FR15 | Epic 1 | Rule-based works offline, no API keys |
+| FR16 | Epic 2 | Submit request to Stedi JSON API |
+| FR17 | Epic 2 | Receive and parse 271 response from Stedi |
+| FR18 | Epic 2 | Configure Stedi credentials via env vars |
+| FR19 | Epic 2 | Switch Stedi sandbox/production |
+| FR20 | Epic 2 | Handle clearinghouse errors structurally |
+| FR21 | Epic 2 | Parse AAA rejection segments |
+| FR22 | Epic 2 | Custom clearinghouse via BaseClearinghouseClient |
+| FR23 | Epic 2 | Parse 271 into EligibilityResponse |
+| FR24 | Epic 2 | Extract coverage status |
+| FR25 | Epic 2 | Extract benefit info (copay, coinsurance, deductible) |
+| FR26 | Epic 2 | Extract coverage dates |
+| FR27 | Epic 2 | Extract plan/group information |
+| FR28 | Epic 2 | Extract prior authorization requirements |
+| FR29 | Epic 2 | Provide raw JSON alongside structured model |
+| FR30 | Epic 3 | De-identify response before LLM (18 HIPAA IDs) |
+| FR31 | Epic 3 | Generate human-readable coverage summary via LLM |
+| FR32 | Epic 3 | AI-generated findings with actionable insights |
+| FR33 | Epic 3 | Use any LLM provider (Anthropic, OpenAI, compatible) |
+| FR34 | Epic 3 | Skip AI, use structured parsing only |
+| FR35 | Epic 3 | Interpret AAA errors into human-readable explanations |
+| FR36 | Epic 1 | check_eligibility() single entry point |
+| FR37 | Epic 1→2→3 | Three-phase pipeline (built progressively) |
+| FR38 | Epic 1 | Skip clearinghouse on rule failure (configurable) |
+| FR39 | Epic 1 | Configure which validators to include |
+| FR40 | Epic 1→2 | EligibilityResult (grows with pipeline phases) |
+| FR41 | Epic 1 | CLAIM_VALIDATOR_ env var configuration |
+| FR42 | Epic 2 | Configure Stedi credentials via settings |
+| FR43 | Epic 3 | Configure LLM provider for interpretation |
+| FR44 | Epic 3 | Enable/disable AI independently |
+| FR45 | Epic 1 | Custom validators via BaseValidator |
+| FR46 | Epic 2 | Custom clearinghouse via BaseClearinghouseClient |
+| FR47 | Epic 1 | Register custom validators via dotted-path config |
 
-**Coverage: 49/49 FRs mapped (100%)**
+**Coverage: 47/47 FRs mapped (100%)**
 
 ## Epic List
 
-### Epic 1: Package Foundation & Core Data Layer
-Developer can `pip install claim-validator`, import typed Pydantic models to represent claims, look up codes against bundled tables, and configure the library — the installable, typed foundation is ready.
-**FRs covered:** FR34, FR35, FR36, FR37, FR38, FR39, FR40, FR41, FR42, FR43, FR44, FR45, FR46, FR49
+### Epic 1: Eligibility Request Validation (Offline)
+Developer can create `EligibilityRequest` models, validate them with 6 rule-based validators, and call `check_eligibility()` for offline validation. Bad NPIs, invalid payer IDs, incomplete demographics, unknown service types, invalid dates, and malformed member IDs are caught before any clearinghouse call. Zero API keys, zero network access needed.
+**FRs covered:** FR1-FR15, FR36, FR38, FR39, FR40 (partial), FR41, FR45, FR47
 
-### Epic 2: Rule-Based Claim Validation Pipeline
-Developer can call `validate(claim_dict)` and get structured pass/fail results with detailed findings from all 8 rule-based validators. Zero config, zero API keys, zero network calls. Custom validators and configurable pipelines work.
-**FRs covered:** FR1, FR2, FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR12, FR13, FR14, FR15, FR16, FR17, FR28, FR29, FR30, FR31, FR32, FR33
+### Epic 2: Stedi Clearinghouse Integration & 271 Response Parsing
+Developer can submit validated requests to Stedi clearinghouse via `check_eligibility()` and receive structured `EligibilityResponse` with coverage status, benefits (copay, coinsurance, deductible), coverage dates, plan/group info, prior auth requirements, and AAA rejection errors. Raw JSON also available for advanced users.
+**FRs covered:** FR16-FR29, FR37 (phase 2), FR40 (full result), FR42, FR46
 
-### Epic 3: AI-Powered Clinical Validation
-Developer can add LLM-powered clinical validation using Anthropic, OpenAI, or any compatible endpoint. Claims are automatically de-identified (all 18 HIPAA identifiers stripped). AI catches clinical edge cases that rules miss.
-**FRs covered:** FR3, FR4, FR18, FR19, FR20, FR21, FR22, FR23, FR24, FR25, FR26, FR27, FR47, FR48
+### Epic 3: AI-Powered Eligibility Interpretation
+Developer can enable AI interpretation to get human-readable coverage summaries, actionable insights, and plain-English AAA error explanations via `check_eligibility()`. PHI is automatically stripped before any LLM call. Full three-phase pipeline orchestrated with graceful degradation if LLM is unavailable.
+**FRs covered:** FR30-FR35, FR37 (phase 3), FR43, FR44
 
 ---
 
-## Epic 1: Package Foundation & Core Data Layer
+## Epic 1: Eligibility Request Validation (Offline)
 
-Developer can `pip install claim-validator`, import typed Pydantic models to represent claims, look up codes against bundled tables, and configure the library — the installable, typed foundation is ready.
+Developer can create `EligibilityRequest` models, validate them with 6 rule-based validators, and call `check_eligibility()` for offline validation. Bad NPIs, invalid payer IDs, incomplete demographics, unknown service types, invalid dates, and malformed member IDs are caught before any clearinghouse call. Zero API keys, zero network access needed.
 
-### Story 1.1: Project Initialization & Package Scaffolding
+### Story 1.1: Eligibility Data Models & Package Configuration
 
 As a **developer**,
-I want to install `claim-validator` via pip into my Python project,
-So that I can start using healthcare claim validation with zero friction.
+I want typed Pydantic models to represent eligibility requests and responses,
+So that I have a validated, immutable data layer for eligibility verification that integrates with the existing claim-validator package.
 
 **Acceptance Criteria:**
 
-**Given** a Python 3.11+ environment with pip or uv
-**When** I run `pip install claim-validator`
-**Then** the package installs successfully with only Pydantic as a runtime dependency
-**And** `import claim_validator` completes in under 500ms
+**Given** a valid eligibility request as a Python dictionary
+**When** I construct `EligibilityRequest(**request_dict)` or `EligibilityRequest.model_validate(request_dict)`
+**Then** a frozen, immutable instance is created with all fields validated
+**And** string coercion works (e.g., `"1985-03-15"` → date)
 
-**Given** the installed package
-**When** I check for type support
-**Then** a `py.typed` marker file exists and mypy/pyright recognize the package as typed
+**Given** an `EligibilityRequest` instance
+**When** I access its fields
+**Then** `provider_npi`, `provider_taxonomy`, `payer_id`, `subscriber_id`, `subscriber_first_name`, `subscriber_last_name`, `subscriber_dob`, `service_type_code`, and `date_of_service` are available
+**And** optional dependent fields (`patient_first_name`, `patient_last_name`, `patient_dob`, `relationship_code`) are `None` when not provided
 
-**Given** a developer cloning the repository
-**When** they run `uv sync --all-extras`
-**Then** all dev dependencies (pytest, ruff, mypy, factory-boy) are installed
-**And** `uv run ruff check .` passes with zero warnings
-**And** `uv run mypy src/` passes with zero errors
+**Given** the response models
+**When** I construct `EligibilityResponse`, `CoverageInfo`, `BenefitInfo`, `AAAError`
+**Then** all are frozen Pydantic models with `strict=False`
+**And** `EligibilityResponse` nests `CoverageInfo`, `list[BenefitInfo]`, `list[AAAError]`, and `raw_response: dict`
 
-**Given** the pyproject.toml
-**When** I inspect optional extras
-**Then** extras `[ai]`, `[anthropic]`, `[openai]`, `[dev]`, `[all]` are defined with correct dependencies
-**And** the core package depends only on `pydantic>=2.0,<3.0`
-
-**Given** the project structure
-**When** I inspect the repository
-**Then** it uses src layout (`src/claim_validator/`), has MIT LICENSE, .gitignore, .env.example, and hatchling build backend with hatch-vcs versioning
-
-### Story 1.2: Claim Data Models
-
-As a **developer**,
-I want typed Pydantic models to represent healthcare claims,
-So that I have a validated, framework-agnostic data layer for CMS-1500 claims.
-
-**Acceptance Criteria:**
-
-**Given** a valid claim as a Python dictionary
-**When** I construct `ClaimData(**claim_dict)` or `ClaimData.model_validate(claim_dict)`
-**Then** a frozen, immutable `ClaimData` instance is created with all fields validated
-**And** string-to-number coercion works (e.g., `"150.00"` → `float`)
-
-**Given** a `ClaimData` instance
-**When** I access `claim.lines`
-**Then** I receive a sequence of `ClaimLineData` objects, each with procedure_code, modifiers, diagnosis_pointers, and charge_amount fields
-
-**Given** a `ClaimData` instance
-**When** I access `claim.diagnosis_codes`
-**Then** I receive a sequence of `DiagnosisCode` objects, each with code, pointer position, and type
-
-**Given** a `ClaimData` instance
-**When** I attempt to modify any field (e.g., `claim.billing_provider_npi = "new"`)
-**Then** a `ValidationError` is raised because the model is frozen
-
-**Given** the constants module
-**When** I import `Severity`, `ClaimType`
-**Then** they are `StrEnum` types with values `Severity.ERROR`, `Severity.WARNING` and `ClaimType.PROFESSIONAL`, `ClaimType.INSTITUTIONAL`
-
-**Given** the exceptions module
-**When** I import exception classes
-**Then** `ClaimValidatorError` is the base, with `ValidationError`, `ConfigurationError`, `LLMError`, and `CodeTableError` as subclasses
-
-### Story 1.3: Validation Result Models
-
-As a **developer**,
-I want structured result objects for validation outcomes,
-So that I can programmatically inspect findings with error codes, messages, severity, and fix suggestions.
-
-**Acceptance Criteria:**
-
-**Given** a `Finding` object
+**Given** the `EligibilityResult` model
 **When** I inspect its fields
-**Then** it has `code` (str, UPPER_SNAKE_CASE), `message` (str, human-readable), `severity` (Severity enum), `field_name` (str), `line_number` (int | None), `suggestion` (str), and `context` (dict | None)
+**Then** it contains `eligible: bool | None`, `response: EligibilityResponse | None`, `findings: list[Finding]`, `ai_summary: str | None`, `passed: bool`, `raw_response: dict | None`, and `execution_time: float`
+**And** `passed` returns `True` only when zero ERROR-severity findings exist
 
-**Given** a list of `Finding` objects
-**When** I construct a `ValidatorOutput`
-**Then** a `ValidatorOutput` is created containing the validator name and findings list
+**Given** the `CoverageStatus` enum in `constants.py`
+**When** I import it
+**Then** it is a `StrEnum` with values `ACTIVE`, `INACTIVE`, `UNKNOWN`
 
-**Given** a `PipelineResult`
-**When** I check `result.passed`
-**Then** it returns `True` only if there are zero ERROR-severity findings
-**And** WARNING-severity findings do not cause `passed` to be `False`
+**Given** the `exceptions.py` module
+**When** I import `ClearinghouseError`
+**Then** it is a subclass of `ClaimValidatorError`
 
-**Given** a `PipelineResult`
-**When** I access `result.findings`
-**Then** I receive a flat list of all `Finding` objects from all validators
-**And** findings are ordered by phase (rule-based first), then severity (ERROR first), then validator order
+**Given** the `ClaimValidatorSettings` in `conf.py`
+**When** I inspect new fields
+**Then** `stedi_api_key`, `stedi_environment`, `eligibility_rule_validators`, `skip_clearinghouse_on_rule_failure`, and `skip_ai` are available with sensible defaults
+**And** all use `CLAIM_VALIDATOR_` env prefix
 
-**Given** a `PipelineResult`
-**When** I access `result.phase_results` and `result.execution_time`
-**Then** per-phase breakdown is available for debugging and total execution time is recorded
+**Given** the `pyproject.toml`
+**When** I inspect optional extras
+**Then** a `stedi` extra exists with `httpx>=0.27`
+**And** the `all` extra includes `stedi`
 
-**Given** any `Finding` object created by any validator
-**When** I inspect `message` and `suggestion`
-**Then** they reference field names only, never raw PHI values (patient names, SSNs, DOBs, etc.)
-
-### Story 1.4: Configuration System
+### Story 1.2: Payer Directory & Service Type Code Tables
 
 As a **developer**,
-I want to configure the library via a settings object or environment variables,
-So that I can customize validation behavior without modifying code.
-
-**Acceptance Criteria:**
-
-**Given** no explicit configuration
-**When** I call `ClaimValidatorSettings()`
-**Then** sensible defaults are used: all 8 rule-based validators enabled, AI disabled, `skip_ai_on_rule_failure=True`
-
-**Given** environment variables with `CLAIM_VALIDATOR_` prefix
-**When** I construct `ClaimValidatorSettings()`
-**Then** environment variables override default values (e.g., `CLAIM_VALIDATOR_SKIP_AI_ON_RULE_FAILURE=false`)
-
-**Given** explicit parameters
-**When** I construct `ClaimValidatorSettings(rule_validators=[...], ai_validators=[...], ai_config={...})`
-**Then** the settings object validates types and stores the configuration
-**And** validator paths are stored as dotted path strings
-
-**Given** a `ClaimValidatorSettings` instance
-**When** I inspect configurable fields
-**Then** it includes `rule_validators` (list of dotted paths), `ai_validators` (list of dotted paths), `skip_ai_on_rule_failure` (bool), and `ai_config` (optional dict with provider, api_key, model)
-
-**Given** invalid configuration values
-**When** I construct `ClaimValidatorSettings(rule_validators="not-a-list")`
-**Then** a `ConfigurationError` or Pydantic `ValidationError` is raised with a clear message
-
-### Story 1.5: Bundled Code Tables & Lookup System
-
-As a **developer**,
-I want to look up ICD-10, HCPCS, taxonomy, and Place of Service codes against bundled tables,
-So that I can validate codes offline with zero network calls and zero API keys.
+I want to look up payer IDs and service type codes against bundled reference data,
+So that eligibility validators can verify these values offline with zero network calls.
 
 **Acceptance Criteria:**
 
 **Given** the installed package
-**When** I call the ICD-10-CM lookup with a valid code (e.g., `"J06.9"`)
-**Then** it returns confirmation the code exists and the code description
-**And** the first lookup loads the compressed table; subsequent lookups use the cached in-memory dict
+**When** I call `get_payer_directory()` with a valid payer ID (e.g., `"60054"`)
+**Then** it confirms the payer ID exists and returns payer information
+**And** the first lookup loads the JSON file; subsequent lookups return the cached in-memory dict
+
+**Given** the payer directory data
+**When** I inspect `eligibility/data/payer_directory.json`
+**Then** it contains ~3,400 payer entries keyed by payer ID for O(1) lookup
 
 **Given** the installed package
-**When** I call the HCPCS lookup with a valid code (e.g., `"99213"`)
-**Then** it confirms the code exists in the bundled HCPCS table
+**When** I call `get_service_types()` with a valid X12 service type code (e.g., `"30"` for health benefit plan coverage)
+**Then** it confirms the code exists and returns the service type description
 
-**Given** the installed package
-**When** I call the taxonomy lookup with a valid taxonomy code
-**Then** it confirms the code exists in the bundled NUCC taxonomy table
+**Given** the service types data
+**When** I inspect `eligibility/data/service_types.json`
+**Then** it contains the standard X12 service type code set
 
-**Given** the installed package
-**When** I call the Place of Service lookup with a valid POS code (e.g., `"11"`)
-**Then** it confirms the code exists in the bundled POS table
-
-**Given** the timely filing reference data
-**When** I query filing deadlines for a common payer
-**Then** default timely filing limits are returned (e.g., Medicare = 365 days)
-
-**Given** two threads calling code table lookups concurrently
+**Given** two threads calling `get_payer_directory()` concurrently
 **When** both trigger the first load simultaneously
-**Then** the table is loaded exactly once (double-check locking with `threading.Lock`)
+**Then** the data is loaded exactly once (double-check locking with `threading.Lock`)
 **And** both threads receive correct results
 
-**Given** a `data/manifest.json` file
-**When** I inspect code table metadata
-**Then** each table has version, effective_date, and code_count fields
-**And** the loader emits a WARNING-level log if tables are older than 12 months
+**Given** any code table lookup with a non-existent code
+**When** I query it
+**Then** `None` or `False` is returned (no exception raised)
 
-**Given** the full set of bundled data files
-**When** I measure the compressed size
-**Then** the total package data is under 15MB
-
----
-
-## Epic 2: Rule-Based Claim Validation Pipeline
-
-Developer can call `validate(claim_dict)` and get structured pass/fail results with detailed findings from all 8 rule-based validators. Zero config, zero API keys, zero network calls. Custom validators and configurable pipelines work.
-
-### Story 2.1: BaseValidator & Validator Registry
+### Story 1.3: NPI Utility Extraction & First Validators (Payer ID, Demographics)
 
 As a **developer**,
-I want a base validator class and a registry system,
-So that I can create custom validators and register them into the pipeline via configuration.
+I want eligibility requests validated for NPI correctness, payer ID existence, and subscriber demographics completeness,
+So that requests with invalid providers, unknown payers, or missing subscriber info are caught before reaching the clearinghouse.
 
 **Acceptance Criteria:**
 
-**Given** the `BaseValidator` abstract base class
-**When** I subclass it and implement `validate(self, claim: ClaimData) -> ValidatorOutput`
-**Then** my custom validator integrates with the pipeline
-**And** `_make_output(findings)` produces a correctly structured `ValidatorOutput`
+**Given** the existing `NPIValidator` in the claim validation module
+**When** NPI validation logic is extracted
+**Then** a shared `_validate_npi(npi: str) -> list[Finding]` utility exists in `validators/rule_based/_npi_utils.py`
+**And** both the existing claim `NPIValidator` and the new eligibility pipeline call the same utility
+**And** no duplication of Luhn check-digit logic
 
-**Given** a custom validator class at a dotted path (e.g., `"my_app.validators.CustomValidator"`)
-**When** I add this path to `ClaimValidatorSettings.rule_validators`
-**Then** `ValidatorRegistry` lazily imports and instantiates the validator on first pipeline construction
+**Given** an `EligibilityRequest` with a valid NPI (passes Luhn check)
+**When** rule-based validation runs
+**Then** zero NPI-related findings are produced
 
-**Given** an invalid dotted path in the validator list
-**When** the registry attempts to load it
-**Then** a `ConfigurationError` is raised with a clear message identifying the bad path
+**Given** an `EligibilityRequest` with an invalid NPI (fails Luhn check or wrong length)
+**When** rule-based validation runs
+**Then** a `Finding` with code `ELIG_INVALID_NPI`, severity `ERROR`, field_name `provider_npi` is produced
+**And** the finding message contains no PHI — only field names and guidance
 
-**Given** the `BaseValidator` contract
-**When** a validator's `validate()` method is called
-**Then** it is stateless (no instance state between calls), does not modify the claim (frozen model), and returns `ValidatorOutput` (never raises for validation failures)
+**Given** an `EligibilityRequest` with a payer ID that exists in the payer directory
+**When** `PayerIDValidator.validate(request)` is called
+**Then** zero payer-related findings are produced
 
-**Given** a validator that raises an unexpected exception during `validate()`
-**When** the pipeline catches it
-**Then** it converts the exception to a `Finding(code="VALIDATOR_ERROR", severity=ERROR)` and continues
+**Given** an `EligibilityRequest` with a payer ID NOT in the payer directory
+**When** `PayerIDValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_INVALID_PAYER`, severity `ERROR`, field_name `payer_id`, and suggestion to verify at Stedi payer list is produced
 
-### Story 2.2: Completeness Validator
+**Given** an `EligibilityRequest` with all required subscriber fields present (first name, last name, DOB, subscriber ID)
+**When** `EligibilityDemographicsValidator.validate(request)` is called
+**Then** zero demographics findings are produced
+
+**Given** an `EligibilityRequest` missing required subscriber fields
+**When** `EligibilityDemographicsValidator.validate(request)` is called
+**Then** a `Finding` per missing field with code `ELIG_MISSING_FIELD`, severity `ERROR`, and the specific `field_name` is produced
+
+**Given** an `EligibilityRequest` with `relationship_code` not `"self"` but no patient fields provided
+**When** `EligibilityDemographicsValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_MISSING_DEPENDENT_INFO`, severity `ERROR` is produced
+
+### Story 1.4: Service Type, Date & Member ID Validators
 
 As a **developer**,
-I want claims validated for required CMS-1500 field presence,
-So that claims with missing mandatory fields are caught before submission.
+I want eligibility requests validated for service type codes, date validity, and member ID format,
+So that requests with unknown service types, illogical dates, or malformed member IDs are caught offline.
 
 **Acceptance Criteria:**
 
-**Given** a claim with all required CMS-1500 fields populated
-**When** `CompletenessValidator.validate(claim)` is called
-**Then** the output contains zero findings
+**Given** an `EligibilityRequest` with a valid X12 service type code (e.g., `"30"`)
+**When** `ServiceTypeValidator.validate(request)` is called
+**Then** zero service type findings are produced
 
-**Given** a claim missing required fields (e.g., no `billing_provider_npi`, no `diagnosis_codes`, no `lines`)
-**When** `CompletenessValidator.validate(claim)` is called
-**Then** the output contains one `Finding` per missing field with code `MISSING_FIELD`, severity `ERROR`, the specific `field_name`, and a suggestion to provide the field
+**Given** an `EligibilityRequest` with an unknown service type code
+**When** `ServiceTypeValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_INVALID_SERVICE_TYPE`, severity `ERROR`, field_name `service_type_code` is produced
 
-**Given** a claim with empty string values for required fields
-**When** `CompletenessValidator.validate(claim)` is called
-**Then** empty strings are treated as missing and flagged
+**Given** an `EligibilityRequest` with a valid date of service (present, not unreasonably far in the future)
+**When** `EligibilityDateValidator.validate(request)` is called
+**Then** zero date findings are produced
 
-**Given** a claim with lines that have missing required line-level fields (e.g., no `procedure_code`)
-**When** `CompletenessValidator.validate(claim)` is called
-**Then** the finding includes the `line_number` identifying which line is incomplete
+**Given** an `EligibilityRequest` with a date of service more than 1 year in the future
+**When** `EligibilityDateValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_FUTURE_DATE`, severity `WARNING`, field_name `date_of_service` is produced
 
-**Given** any finding produced by this validator
+**Given** an `EligibilityRequest` with a date of service in the past beyond a reasonable range
+**When** `EligibilityDateValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_PAST_DATE`, severity `WARNING` is produced
+
+**Given** an `EligibilityRequest` with a missing date of service
+**When** `EligibilityDateValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_MISSING_DATE`, severity `ERROR` is produced
+
+**Given** an `EligibilityRequest` with a well-formatted member/subscriber ID
+**When** `MemberIDValidator.validate(request)` is called
+**Then** zero member ID findings are produced
+
+**Given** an `EligibilityRequest` with an empty or suspiciously short subscriber ID
+**When** `MemberIDValidator.validate(request)` is called
+**Then** a `Finding` with code `ELIG_INVALID_MEMBER_ID`, severity `ERROR`, field_name `subscriber_id` is produced
+
+**Given** any finding produced by these validators
 **When** I inspect the `message` field
-**Then** it contains no PHI values — only field names and guidance
+**Then** it references field names only, never actual PHI values
 
-### Story 2.3: NPI Validator
+### Story 1.5: Eligibility Pipeline & check_eligibility() API
 
 As a **developer**,
-I want NPI numbers validated using the Luhn check-digit algorithm,
-So that claims with invalid provider identifiers are caught before submission.
+I want to call `check_eligibility()` as a single entry point that runs all rule-based validators and returns a structured result,
+So that I can validate eligibility requests with one function call, zero configuration, and zero network access.
 
 **Acceptance Criteria:**
 
-**Given** a claim with a valid NPI (e.g., `"1234567893"` — passes Luhn check)
-**When** `NPIValidator.validate(claim)` is called
-**Then** the output contains zero NPI-related findings
-
-**Given** a claim with an invalid NPI (e.g., `"1234567890"` — fails Luhn check)
-**When** `NPIValidator.validate(claim)` is called
-**Then** the output contains a `Finding` with code `INVALID_NPI`, severity `ERROR`, field_name `billing_provider_npi`, and a suggestion to verify at `https://npiregistry.cms.hhs.gov`
-
-**Given** a claim with an NPI that is not exactly 10 digits
-**When** `NPIValidator.validate(claim)` is called
-**Then** the output contains a finding about invalid NPI format
-
-**Given** a claim with both billing and rendering provider NPIs
-**When** `NPIValidator.validate(claim)` is called
-**Then** both NPIs are validated independently with appropriate field_name on each finding
-
-**Given** the NPI value `"1234567890"` in the finding
-**When** I inspect the `message` field
-**Then** it does NOT contain the actual NPI value (no PHI in messages)
-
-### Story 2.4: Subscriber ID & Demographics Validators
-
-As a **developer**,
-I want subscriber IDs and patient demographics validated for consistency,
-So that claims with missing insurance info or contradictory demographics are caught.
-
-**Acceptance Criteria:**
-
-**Given** a claim with a valid subscriber/insurance ID
-**When** `SubscriberIDValidator.validate(claim)` is called
-**Then** the output contains zero subscriber-related findings
-
-**Given** a claim with a missing or empty subscriber ID
-**When** `SubscriberIDValidator.validate(claim)` is called
-**Then** the output contains a `Finding` with code `MISSING_SUBSCRIBER_ID`, severity `ERROR`
-
-**Given** a claim with consistent demographics (valid DOB, gender, patient relationship)
-**When** `DemographicsValidator.validate(claim)` is called
-**Then** the output contains zero demographics-related findings
-
-**Given** a claim with a date of birth in the future
-**When** `DemographicsValidator.validate(claim)` is called
-**Then** the output contains a finding with code `INVALID_DOB` and severity `ERROR`
-
-**Given** a claim where patient relationship is "self" but subscriber and patient details differ
-**When** `DemographicsValidator.validate(claim)` is called
-**Then** the output contains a finding flagging the inconsistency with severity `WARNING`
-
-**Given** any demographics finding
-**When** I inspect the `message`
-**Then** it references field names (e.g., "patient_dob") but never actual DOB values
-
-### Story 2.5: Coding Validator
-
-As a **developer**,
-I want diagnosis and procedure codes validated against bundled code tables,
-So that claims with invalid ICD-10, CPT/HCPCS codes, or inconsistent pointers are caught.
-
-**Acceptance Criteria:**
-
-**Given** a claim with valid ICD-10-CM diagnosis codes that exist in the bundled table
-**When** `CodingValidator.validate(claim)` is called
-**Then** zero diagnosis code findings are produced
-
-**Given** a claim with an ICD-10 code not in the bundled table (e.g., `"Z99.99"`)
-**When** `CodingValidator.validate(claim)` is called
-**Then** a `Finding` with code `INVALID_DIAGNOSIS_CODE`, severity `ERROR`, and the specific `field_name` is produced
-
-**Given** a claim with an ICD-10 code in wrong format (e.g., missing decimal, too short)
-**When** `CodingValidator.validate(claim)` is called
-**Then** a `Finding` about invalid code format is produced
-
-**Given** a claim line with a CPT/HCPCS procedure code
-**When** `CodingValidator.validate(claim)` is called
-**Then** the code format is validated (5 characters for CPT, alphanumeric for HCPCS)
-**And** modifier format is validated if modifiers are present
-
-**Given** a claim line with diagnosis pointers referencing non-existent diagnosis positions
-**When** `CodingValidator.validate(claim)` is called
-**Then** a `Finding` with code `INVALID_DIAGNOSIS_POINTER`, severity `ERROR`, and the `line_number` is produced
-
-**Given** a claim where a diagnosis code exists but no line references it
-**When** `CodingValidator.validate(claim)` is called
-**Then** a `Finding` with code `UNREFERENCED_DIAGNOSIS`, severity `WARNING` is produced
-
-### Story 2.6: Monetary & Duplicate Validators
-
-As a **developer**,
-I want charge amounts validated and duplicate lines detected,
-So that claims with financial errors or redundant lines are caught.
-
-**Acceptance Criteria:**
-
-**Given** a claim where all line charge amounts are positive
-**When** `MonetaryValidator.validate(claim)` is called
-**Then** the output contains zero monetary findings
-
-**Given** a claim with a line that has zero or negative charge amount
-**When** `MonetaryValidator.validate(claim)` is called
-**Then** a `Finding` with code `INVALID_CHARGE_AMOUNT`, severity `ERROR`, and `line_number` is produced
-
-**Given** a claim where line charges do not sum to the total charge (if total is provided)
-**When** `MonetaryValidator.validate(claim)` is called
-**Then** a `Finding` with code `CHARGE_TOTAL_MISMATCH`, severity `ERROR` is produced
-
-**Given** a claim with no duplicate lines
-**When** `DuplicateValidator.validate(claim)` is called
-**Then** the output contains zero duplicate findings
-
-**Given** a claim with two lines having the same procedure code, modifiers, and service date
-**When** `DuplicateValidator.validate(claim)` is called
-**Then** a `Finding` with code `DUPLICATE_LINE`, severity `WARNING`, and `line_number` identifying both lines is produced
-
-### Story 2.7: Timely Filing Validator
-
-As a **developer**,
-I want service dates validated for consistency and timely filing deadlines checked,
-So that claims with date errors or past-deadline submissions are caught.
-
-**Acceptance Criteria:**
-
-**Given** a claim with consistent dates (service date before filing date, service date after DOB)
-**When** `TimelyFilingValidator.validate(claim)` is called
-**Then** the output contains zero date-related findings
-
-**Given** a claim with a service date in the future
-**When** `TimelyFilingValidator.validate(claim)` is called
-**Then** a `Finding` with code `FUTURE_SERVICE_DATE`, severity `ERROR` is produced
-
-**Given** a claim with a service date before the patient's DOB
-**When** `TimelyFilingValidator.validate(claim)` is called
-**Then** a `Finding` with code `SERVICE_BEFORE_DOB`, severity `ERROR` is produced
-
-**Given** a claim filed beyond the payer's timely filing deadline (e.g., Medicare 365 days)
-**When** `TimelyFilingValidator.validate(claim)` is called
-**Then** a `Finding` with code `TIMELY_FILING_EXCEEDED`, severity `ERROR`, and a suggestion with the payer's deadline is produced
-
-**Given** a claim with a payer that has a custom timely filing limit configured
-**When** the validator checks the deadline
-**Then** it uses the configured limit instead of the default
-**And** falls back to the bundled `timely_filing.json` defaults if no custom limit is set
-
-**Given** a claim with `service_date_from` after `service_date_to` on a line
-**When** `TimelyFilingValidator.validate(claim)` is called
-**Then** a `Finding` with code `INVALID_DATE_RANGE`, severity `ERROR`, and `line_number` is produced
-
-### Story 2.8: Validation Pipeline & Top-Level API
-
-As a **developer**,
-I want to call `validate(claim_dict)` and get a complete pipeline result,
-So that I can validate claims with a single function call using zero configuration.
-
-**Acceptance Criteria:**
-
-**Given** a valid claim dictionary
-**When** I call `validate(claim_dict)`
-**Then** a `PipelineResult` is returned with `passed=True` and an empty findings list
+**Given** a valid eligibility request dictionary
+**When** I call `check_eligibility(request_dict)`
+**Then** an `EligibilityResult` is returned with `passed=True`, empty findings list, and `eligible=None` (no clearinghouse call)
 **And** the call requires zero configuration, zero API keys, and zero network calls
 
-**Given** a claim dictionary with multiple validation issues
-**When** I call `validate(claim_dict)`
-**Then** all 8 rule-based validators run and findings are aggregated into a single `PipelineResult`
-**And** findings are ordered by severity (ERROR first) then validator order
+**Given** an eligibility request with multiple validation issues
+**When** I call `check_eligibility(request_dict)`
+**Then** all 6 rule-based validators run (NPI, payer ID, demographics, service type, date, member ID)
+**And** findings are aggregated into a single `EligibilityResult` ordered by severity
 
-**Given** a `ClaimData` Pydantic model instance
-**When** I call `validate(claim_data)`
+**Given** an `EligibilityRequest` Pydantic model instance
+**When** I call `check_eligibility(request_model)`
 **Then** it accepts both dict and Pydantic model input seamlessly
 
-**Given** a `ClaimValidatorSettings` with a custom validator list
-**When** I call `ValidationPipeline.from_settings(settings)` then `pipeline.run(claim)`
+**Given** `skip_clearinghouse_on_rule_failure=True` (default) and rule-based validation failed
+**When** the pipeline finishes phase 1
+**Then** the pipeline returns immediately without attempting clearinghouse or AI phases
+
+**Given** custom validator configuration
+**When** I call `check_eligibility(request, settings=ClaimValidatorSettings(eligibility_rule_validators=[...]))`
 **Then** only the configured validators execute
 
-**Given** a developer wanting programmatic pipeline construction
-**When** they use `ValidationPipeline.builder().add(NPIValidator).add(CodingValidator).build()`
-**Then** a pipeline with only those validators is created and functional
+**Given** a developer importing from the package
+**When** they write `from claim_validator import check_eligibility`
+**Then** the import succeeds and `check_eligibility` is available at the top level
+**And** `EligibilityRequest`, `EligibilityResponse`, `EligibilityResult` are also importable from `claim_validator`
 
-**Given** the two-phase pipeline design
-**When** rule-based validation runs
-**Then** Phase 1 (rule-based) completes with all findings aggregated
-**And** Phase 2 (AI) is skipped when no AI config is provided (rule-based-only mode)
-
-**Given** `validate()` is called with zero configuration
-**When** I inspect the pipeline
-**Then** all 8 default rule-based validators are loaded from `ClaimValidatorSettings` defaults
-
-**Given** rule-based validation on a typical claim
+**Given** rule-based validation on a typical eligibility request
 **When** I measure execution time
-**Then** it completes in under 50ms per claim
+**Then** it completes in under 100ms
+
+**Given** a custom validator subclassing `BaseValidator`
+**When** registered via dotted-path in `eligibility_rule_validators` settings
+**Then** it integrates into the eligibility pipeline and receives `EligibilityRequest` data
 
 ---
 
-## Epic 3: AI-Powered Clinical Validation
+## Epic 2: Stedi Clearinghouse Integration & 271 Response Parsing
 
-Developer can add LLM-powered clinical validation using Anthropic, OpenAI, or any compatible endpoint. Claims are automatically de-identified (all 18 HIPAA identifiers stripped). AI catches clinical edge cases that rules miss.
+Developer can submit validated requests to Stedi clearinghouse via `check_eligibility()` and receive structured `EligibilityResponse` with coverage status, benefits (copay, coinsurance, deductible), coverage dates, plan/group info, prior auth requirements, and AAA rejection errors. Raw JSON also available for advanced users.
 
-### Story 3.1: HIPAA De-identification Engine
+### Story 2.1: BaseClearinghouseClient Abstraction & Stedi Client
 
 As a **developer**,
-I want claims automatically de-identified before any LLM call,
-So that I can use AI validation with zero risk of PHI leakage — guaranteed by the library.
+I want a pluggable clearinghouse client with Stedi as the first implementation,
+So that I can submit eligibility requests to Stedi and switch to other clearinghouses in the future without code changes.
 
 **Acceptance Criteria:**
 
-**Given** a `ClaimData` instance with full PHI (patient name, SSN, DOB, address, member ID, phone, email, etc.)
-**When** `ClaimDeidentifier.deidentify(claim)` is called
-**Then** a `DeidentifiedClaim` is returned with all 18 HIPAA identifiers stripped
-**And** only clinically relevant, non-PHI data remains: codes, charges, payer ID, NPI, patient age, gender, state, service year
+**Given** the `BaseClearinghouseClient` abstract base class
+**When** I inspect its contract
+**Then** it defines `submit_eligibility(request: EligibilityRequest) -> dict`, `provider_name: str`, `environment: str`, `close() -> None`
+**And** it supports context manager protocol (`__enter__`/`__exit__`)
+
+**Given** a `StediClient` instance with valid API key and sandbox environment
+**When** I call `client.submit_eligibility(request)` with a valid `EligibilityRequest`
+**Then** it submits the request to Stedi's JSON API endpoint over HTTPS
+**And** returns the raw 271 response as a Python dict
+
+**Given** Stedi API credentials
+**When** I construct `StediClient(api_key="key_...", environment="sandbox")`
+**Then** it creates an `httpx.Client` with base URL for sandbox, `Authorization: Key` header, and 30-second default timeout
+
+**Given** `environment="production"`
+**When** I construct `StediClient(api_key="key_...", environment="production")`
+**Then** it uses the production Stedi API base URL
+
+**Given** a `StediClient` used as a context manager
+**When** the `with` block exits
+**Then** the underlying `httpx.Client` is properly closed
+
+**Given** a network timeout or HTTP 5xx error from Stedi
+**When** `submit_eligibility()` is called
+**Then** a `ClearinghouseError` is raised with structured error information (status code, message, provider name)
+
+**Given** an HTTP 4xx error from Stedi (e.g., invalid request, authentication failure)
+**When** `submit_eligibility()` is called
+**Then** a `ClearinghouseError` is raised with the Stedi error response details
+
+**Given** the `get_clearinghouse_client(provider, **config)` factory function
+**When** I call `get_clearinghouse_client("stedi", api_key="key_...", environment="sandbox")`
+**Then** a `StediClient` instance is returned
+
+**Given** a developer subclassing `BaseClearinghouseClient`
+**When** they implement `submit_eligibility()` and set `provider_name`
+**Then** their custom client can be used directly with `EligibilityPipeline`
+
+### Story 2.2: 271 Response Parser & AAA Error Handling
+
+As a **developer**,
+I want 271 responses parsed into structured Pydantic models with AAA errors clearly surfaced,
+So that I can programmatically access coverage status, benefits, copays, deductibles, and rejection reasons without parsing raw JSON.
+
+**Acceptance Criteria:**
+
+**Given** a raw 271 JSON response from Stedi indicating active coverage
+**When** `parse_271_response(raw_dict)` is called
+**Then** an `EligibilityResponse` is returned with `eligible=True`, populated `coverage` (status, effective date, plan name), and `benefits` list
+
+**Given** a 271 response with benefit information
+**When** I inspect `response.benefits`
+**Then** each `BenefitInfo` contains `service_type_code`, `service_type_name`, `copay`, `coinsurance`, `deductible`, `in_network`, and `prior_auth_required` fields
+**And** monetary values are parsed as `float | None`
+
+**Given** a 271 response with coverage dates
+**When** I inspect `response.coverage`
+**Then** `CoverageInfo` contains `status` (CoverageStatus enum), `effective_date`, `termination_date`, `plan_name`, and `group_number`
+
+**Given** a 271 response with prior authorization requirements for specific service types
+**When** I inspect the relevant `BenefitInfo`
+**Then** `prior_auth_required=True` is set for those service types
+
+**Given** a 271 response containing AAA rejection segments (subscriber not found, invalid payer, etc.)
+**When** `parse_271_response(raw_dict)` is called
+**Then** `response.errors` contains `AAAError` objects with `rejection_code`, `follow_up_code`, and `message`
+**And** `response.eligible` is `False` or `None` depending on the rejection type
+
+**Given** a 271 response with unexpected or unmapped fields
+**When** `parse_271_response(raw_dict)` is called
+**Then** unmapped fields are silently ignored (no exception)
+**And** a warning-level log is emitted for unrecognized segments
+
+**Given** any `EligibilityResponse`
+**When** I access `response.raw_response`
+**Then** the complete unmodified Stedi JSON dict is available for advanced users
+
+**Given** a 271 response parser
+**When** I measure execution time on a typical response
+**Then** parsing completes in under 50ms
+
+### Story 2.3: Clearinghouse Pipeline Phase & Full Integration
+
+As a **developer**,
+I want `check_eligibility()` to orchestrate rule-based validation followed by Stedi clearinghouse submission and response parsing,
+So that I get a complete `EligibilityResult` with eligibility status, structured response, and all findings from a single function call.
+
+**Acceptance Criteria:**
+
+**Given** a valid eligibility request and Stedi credentials
+**When** I call `check_eligibility(request, stedi_api_key="key_...")`
+**Then** Phase 1 (rule-based) runs first, then Phase 2 (clearinghouse) submits to Stedi
+**And** the 271 response is parsed into `EligibilityResponse`
+**And** an `EligibilityResult` is returned with `eligible` status, `response`, `findings`, and `raw_response` populated
+
+**Given** rule-based validation fails and `skip_clearinghouse_on_rule_failure=True` (default)
+**When** the pipeline reaches the phase 2 gate
+**Then** the clearinghouse phase is skipped entirely
+**And** `EligibilityResult` has `response=None`, `raw_response=None`, and only rule-based findings
+
+**Given** rule-based validation fails and `skip_clearinghouse_on_rule_failure=False`
+**When** the pipeline reaches the phase 2 gate
+**Then** the clearinghouse phase still runs
+**And** findings from both phases are combined in the result
+
+**Given** a clearinghouse error (network timeout, HTTP error, Stedi downtime)
+**When** the pipeline catches the `ClearinghouseError`
+**Then** a `Finding` with code `CLEARINGHOUSE_ERROR`, severity `ERROR` is added to the result
+**And** `EligibilityResult` has `response=None` and the error details in findings
+**And** no unhandled exception propagates to the caller
+
+**Given** a 271 response with AAA rejection segments
+**When** the pipeline processes the response
+**Then** `AAAError` models are in `result.response.errors`
+**And** corresponding `Finding` objects with code `AAA_REJECTION` are in `result.findings`
+**And** both provide the rejection reason code and human-readable message
+
+**Given** Stedi credentials configured via environment variable `CLAIM_VALIDATOR_STEDI_API_KEY`
+**When** I call `check_eligibility(request)` without explicit credentials
+**Then** the pipeline reads credentials from settings (env vars)
+
+**Given** no Stedi credentials configured and no explicit credentials passed
+**When** I call `check_eligibility(request)`
+**Then** only rule-based validation runs (phase 1 only)
+**And** `EligibilityResult` has `response=None` — no clearinghouse call attempted
+
+**Given** the full rule-based + clearinghouse pipeline
+**When** I measure library overhead (excluding Stedi network latency)
+**Then** it adds less than 2 seconds on top of the Stedi round-trip
+
+---
+
+## Epic 3: AI-Powered Eligibility Interpretation
+
+Developer can enable AI interpretation to get human-readable coverage summaries, actionable insights, and plain-English AAA error explanations via `check_eligibility()`. PHI is automatically stripped before any LLM call. Full three-phase pipeline orchestrated with graceful degradation if LLM is unavailable.
+
+### Story 3.1: Eligibility De-identification Engine
+
+As a **developer**,
+I want eligibility response data automatically de-identified before any LLM call,
+So that I can use AI interpretation with zero risk of PHI leakage — guaranteed by the library.
+
+**Acceptance Criteria:**
+
+**Given** an `EligibilityResponse` with full PHI (subscriber name, DOB, member ID, group-specific identifiers)
+**When** `EligibilityDeidentifier.deidentify(response)` is called
+**Then** a `DeidentifiedEligibilityResponse` is returned with all 18 HIPAA identifiers stripped
+**And** only safe data remains: payer ID, service type codes, benefit amounts, copay/coinsurance values, deductible amounts, coverage dates (year only), plan type codes
 
 **Given** the 18 HIPAA identifier categories
-**When** I run the de-identifier against test claims containing each identifier type
-**Then** all 18 types are removed: names, geographic data (below state), dates (except year), phone/fax, email, SSN, medical record numbers, health plan beneficiary numbers, account numbers, certificate/license numbers, vehicle identifiers, device identifiers, URLs, IP addresses, biometric identifiers, full-face photos, any other unique number
+**When** I run the de-identifier against test responses containing each identifier type
+**Then** all are stripped: subscriber name, DOB (replaced with year only), member ID, address, SSN, account numbers, group-specific identifiers, and all other HIPAA-defined identifiers
 
-**Given** a `DeidentifiedClaim` instance
-**When** I check `claim.is_deidentified`
-**Then** it returns `True`
-**And** the type system (mypy/pyright) distinguishes `DeidentifiedClaim` from `ClaimData`
+**Given** a `DeidentifiedEligibilityResponse` instance
+**When** I check its type
+**Then** mypy/pyright distinguishes it from `EligibilityResponse` at the type level
+**And** the type system prevents accidentally passing raw `EligibilityResponse` to LLM-facing functions
 
-**Given** any code path that calls an LLM
-**When** I trace the data flow
-**Then** `BaseLLMClient.send_messages()` accepts only `DeidentifiedClaim` at the type level
-**And** a runtime assertion `assert claim.is_deidentified` provides belt-and-suspenders protection
+**Given** an `EligibilityResponse` with AAA errors containing subscriber-identifying information
+**When** `EligibilityDeidentifier.deidentify(response)` is called
+**Then** PHI in error messages is also stripped while preserving rejection codes and follow-up codes
 
-**Given** a claim with edge cases (PHI in unexpected fields, mixed PHI/clinical data)
-**When** the de-identifier processes it
+**Given** edge cases (PHI embedded in unexpected response fields, mixed PHI/clinical data)
+**When** the de-identifier processes them
 **Then** it errs on the side of stripping — false positive removal is acceptable, false negative (PHI leakage) is not
 
-### Story 3.2: LLM Provider Abstraction & Factory
+**Given** a comprehensive PHI leak test suite
+**When** run against `EligibilityDeidentifier`
+**Then** all tests pass confirming zero PHI in the de-identified output
+**And** tests cover all 18 HIPAA identifier categories
+
+### Story 3.2: AI Eligibility Interpreter & Full Pipeline
 
 As a **developer**,
-I want to use any supported LLM provider for AI validation by changing configuration only,
-So that I can switch between Anthropic, OpenAI, or self-hosted models without code changes.
+I want AI-powered interpretation that turns cryptic 271 data into human-readable coverage summaries and actionable AAA error explanations,
+So that my application can display clear eligibility information without my team learning X12 segment semantics.
 
 **Acceptance Criteria:**
 
-**Given** AI configuration with `provider="anthropic"`, `api_key`, and `model`
-**When** I call `get_llm_client(provider="anthropic", api_key="sk-...", model="claude-sonnet-4-5-20241022")`
-**Then** an `AnthropicClient` instance is returned using the Anthropic SDK's Messages API
+**Given** a de-identified eligibility response with active coverage and benefits
+**When** `EligibilityInterpreterAI` processes it via the configured LLM
+**Then** `ai_summary` contains a human-readable coverage summary (e.g., "Patient has $40 copay for office visits, $2,500 annual deductible with $1,847 remaining, prior auth required for imaging")
+**And** AI-generated `Finding` objects with code prefix `AI_ELIG_` provide actionable insights about coverage limitations and requirements
 
-**Given** AI configuration with `provider="openai"`
-**When** I call `get_llm_client(provider="openai", api_key="sk-...", model="gpt-4o")`
-**Then** an `OpenAIClient` instance is returned using the OpenAI SDK's Chat Completions API
+**Given** a de-identified eligibility response with AAA rejection errors
+**When** `EligibilityInterpreterAI` processes it
+**Then** the AI interprets rejection codes into plain-English explanations with suggested next steps (e.g., "Patient's coverage under plan XYZ terminated — suggest verifying with patient for updated insurance information")
 
-**Given** AI configuration with `provider="openai_compatible"` and a custom `base_url`
-**When** I call `get_llm_client(provider="openai_compatible", api_key="...", model="llama3", base_url="http://localhost:11434/v1")`
-**Then** an `OpenAICompatibleClient` instance is returned using httpx to call the OpenAI-compatible endpoint
+**Given** AI configuration with `provider="anthropic"` (or `"openai"` or `"openai_compatible"`)
+**When** I call `check_eligibility(request, stedi_api_key="...", ai_config={"provider": "anthropic", "api_key": "sk-..."})`
+**Then** the full three-phase pipeline executes: rule-based → clearinghouse → AI interpretation
+**And** `EligibilityResult` contains `eligible`, `response`, `findings` (from all phases), `ai_summary`, and `raw_response`
 
-**Given** the `BaseLLMClient` abstract base class
-**When** a developer subclasses it and implements `send_messages(messages: list[Message]) -> str`
-**Then** their custom provider integrates with the AI validation pipeline
-**And** the factory can be extended to instantiate it
-
-**Given** the `[ai]` extra is not installed
-**When** I attempt to import LLM classes
-**Then** a clear `ImportError` is raised explaining which extra to install (`pip install claim-validator[ai]`)
-
-**Given** provider-specific extras (`[anthropic]`, `[openai]`)
-**When** I install only `claim-validator[anthropic]`
-**Then** only the Anthropic SDK is installed, and `AnthropicClient` works while `OpenAIClient` raises a clear import error
-
-### Story 3.3: AI Validation Pipeline Integration
-
-As a **developer**,
-I want AI validators to run as the second phase of the pipeline with automatic de-identification,
-So that I can get AI-powered clinical insights with zero manual PHI handling.
-
-**Acceptance Criteria:**
-
-**Given** a `ClaimValidatorSettings` with `ai_config` configured
-**When** `validate(claim_dict, ai_config={"provider": "anthropic", "api_key": "sk-...", "model": "..."})` is called
-**Then** Phase 1 (rule-based) runs first, then Phase 2 (AI) runs with de-identified claim data
-**And** the `PipelineResult` contains findings from both phases
-
-**Given** `skip_ai_on_rule_failure=True` (default) and rule-based validation produced ERROR findings
-**When** the pipeline reaches the AI phase gate
-**Then** AI validators are skipped entirely
-**And** the `PipelineResult` includes only rule-based findings
-
-**Given** `skip_ai_on_rule_failure=False` and rule-based validation produced ERROR findings
-**When** the pipeline reaches the AI phase gate
-**Then** AI validators still run and their findings are appended to the result
+**Given** `skip_ai=True` in settings or no `ai_config` provided
+**When** I call `check_eligibility(request, stedi_api_key="...")`
+**Then** the AI phase is skipped entirely
+**And** `EligibilityResult` has `ai_summary=None` and only rule-based + clearinghouse findings
 
 **Given** the LLM provider is unreachable or returns an error
-**When** AI validators attempt to call the provider
-**Then** the pipeline returns rule-based results plus a `Finding(code="AI_PROVIDER_ERROR", severity=WARNING)` with the error context
-**And** no exception is propagated to the caller
+**When** the AI phase attempts to call the provider
+**Then** the pipeline returns the structured `EligibilityResponse` from phase 2 plus a `Finding(code="AI_ELIG_PROVIDER_ERROR", severity=WARNING)`
+**And** no exception propagates to the caller — graceful degradation
 
-**Given** the `BaseAIValidator` base class
-**When** an AI validator is constructed by the pipeline
-**Then** it receives a pre-configured `BaseLLMClient` instance via constructor injection
-**And** `self._send_to_llm(messages)` helper is available for sending messages
+**Given** the de-identification step in the pipeline
+**When** the AI phase begins
+**Then** `EligibilityDeidentifier.deidentify()` runs before any LLM call
+**And** only `DeidentifiedEligibilityResponse` data reaches the LLM provider
 
-**Given** any AI validator in the pipeline
-**When** it receives claim data
-**Then** the data is always a `DeidentifiedClaim` (de-identification happens once in the pipeline, before all AI validators)
+**Given** AI interpretation using any configured LLM provider
+**When** I switch providers via configuration (e.g., from Anthropic to OpenAI)
+**Then** the pipeline works identically with the new provider — no code changes needed
 
-### Story 3.4: AI Clinical Validators
+**Given** AI-generated findings
+**When** I inspect them
+**Then** all use `AI_ELIG_` code prefix, severity is always `WARNING` (advisory, not authoritative)
+**And** no PHI appears in any finding message, suggestion, or the `ai_summary`
+
+---
+
+# Prior Authorization Module - Epic Breakdown
+
+## Overview
+
+This section provides the complete epic and story breakdown for the Prior Authorization Module, decomposing the requirements from the PA PRD and Architecture PA extension into implementable stories. The PA module completes the pre-claim workflow chain: eligibility (270/271) → PA determination → PA submission (278) → claim (837).
+
+## Requirements Inventory
+
+### Functional Requirements
+
+**PA Determination from Eligibility (FR1-FR5)**
+
+- FR1: Developer can determine if prior authorization is required by passing an eligibility response (dict or `EligibilityResponse`) to `determine_pa_required()`
+- FR2: System can parse `authOrCertIndicator` field (Y/N/U) from 271 benefit information to determine PA requirement
+- FR3: System can parse free-text `additionalInformation.description` from 271 responses for PA indicators
+- FR4: System can resolve conflicts between `authOrCertIndicator` and free-text indicators (free-text takes precedence when it indicates PA required)
+- FR5: Developer can access the determination result as a `PADeterminationResult` with `required` (bool), `confidence` (high/medium/low), and `reason` (human-readable string)
+
+**PA Request Data Modeling (FR6-FR10)**
+
+- FR6: Developer can construct a `PriorAuthRequest` from a Python dict with subscriber, patient, requester, diagnosis, and service line data
+- FR7: Developer can construct a `PriorAuthRequest` directly using typed Pydantic model with field validation
+- FR8: System can validate that all Pydantic models are immutable (`frozen=True`) after creation
+- FR9: Developer can represent individual services within a PA request as `ServiceLine` objects with CPT/HCPCS code, quantity, and date range
+- FR10: Developer can specify request category (AR/HS/SC/IN) and certification type (I/R/S/E) via typed enums
+
+**Pre-Submission Rule-Based Validation (FR11-FR19)**
+
+- FR11: System can validate requester NPI using Luhn check algorithm and return `PA_INVALID_NPI` finding on failure
+- FR12: System can validate that subscriber member ID is present and non-empty
+- FR13: System can validate patient date of birth is present and is a valid date
+- FR14: System can validate ICD-10 diagnosis codes against bundled code tables and return `PA_INVALID_DIAGNOSIS` for unknown codes
+- FR15: System can validate CPT/HCPCS procedure codes against bundled code tables and return `PA_INVALID_PROCEDURE` for unknown codes
+- FR16: System can validate service dates are not in the past and are within a reasonable future range
+- FR17: System can perform cross-field consistency checks (diagnosis-supports-procedure, gender/age-procedure compatibility) and return WARNING-level findings
+- FR18: Developer can run rule-based validation with zero API keys and zero external network calls (fully offline)
+- FR19: Developer can skip specific rule-based validators via `skip_rule_validators` configuration option
+
+**Clearinghouse Integration (FR20-FR24)**
+
+- FR20: Developer can implement a custom clearinghouse client by subclassing `BaseClearinghouseClient` and implementing `submit_prior_auth()`
+- FR21: System can submit a validated `PriorAuthRequest` to a clearinghouse via the abstract client interface and receive a raw dict response
+- FR22: System can raise `ClearinghouseError` for HTTP/network failures while returning business rejections (AAA segments) as normal responses
+- FR23: System can enforce a configurable timeout on clearinghouse calls (default 30 seconds)
+- FR24: Clearinghouse client can be used as a context manager with `__enter__`, `__exit__`, and `close()` methods
+
+**278 Response Parsing (FR25-FR31)**
+
+- FR25: Developer can parse a raw 278 JSON dict into a structured `PriorAuthResponse` model via `parse_278_response()`
+- FR26: System can map all 7 HCR action codes to structured decisions: A1 (approved), A2 (partial approval), A3 (denied), A4 (pended), A6 (modified), CT (contact payer), NA (not required)
+- FR27: System can extract authorization number from approved/partial/modified responses
+- FR28: System can extract effective date range (start/end) from authorization decisions
+- FR29: System can parse per-service-line decisions into `ServiceLineDecision` objects
+- FR30: Developer can access convenience properties on `PriorAuthResponse`: `is_approved`, `is_denied`, `is_pended`, `authorization_number`, `decision_reason_description`
+- FR31: System can handle missing or unexpected fields in 278 response gracefully (return None, not exception)
+
+**AAA Error Handling (FR32-FR35)**
+
+- FR32: System can parse AAA reject segments from 278 responses into `PriorAuthError` objects
+- FR33: System can map top 20+ AAA reject reason codes (04, 15, 33, 35, 41-58, 60, 71-73, 79, T4) to human-readable error messages
+- FR34: System can provide suggested fixes alongside each AAA error message
+- FR35: System can generate `AAA_PA_REJECTION` finding codes for each AAA error encountered
+
+**PHI De-Identification (FR36-FR40)**
+
+- FR36: System can strip all 18 HIPAA identifiers from PA request/response data before any LLM call via `PriorAuthDeidentifier`
+- FR37: System can cap ages 90+ to 90 per HIPAA Safe Harbor
+- FR38: System can reduce dates to year-only before sending to LLM
+- FR39: System can enforce de-identification as a mandatory pipeline gate — if de-identification fails, AI phase must not execute
+- FR40: System can ensure PHI does not persist in memory beyond a single `submit_prior_auth()` call
+
+**AI-Powered Interpretation (FR41-FR46)**
+
+- FR41: Developer can enable AI-powered response interpretation via `PriorAuthInterpreterAI` using existing LLM configuration (`CLAIM_VALIDATOR_AI_CONFIG`)
+- FR42: System can generate a human-readable decision summary from HCR action codes and decision reason codes
+- FR43: System can generate next-step recommendations for pended cases (A4) including likely documentation needed
+- FR44: System can generate appeal strategy suggestions for denied cases (A3) based on decision reason codes
+- FR45: System can produce AI findings with `AI_PA_` prefix codes at WARNING severity level
+- FR46: System can include raw HCR/AAA codes alongside AI interpretation for verification
+
+**Pipeline Orchestration (FR47-FR51)**
+
+- FR47: Developer can submit a prior authorization through the complete three-phase pipeline via `submit_prior_auth()`
+- FR48: System can orchestrate rule-based validation → clearinghouse submission → AI interpretation as sequential pipeline phases
+- FR49: System can skip clearinghouse and AI phases when no clearinghouse client is configured (rule-based-only mode)
+- FR50: System can skip AI phase when no LLM provider is configured (clearinghouse-only mode)
+- FR51: Developer can access the pipeline result as `PriorAuthResult` with `approved`, `response`, `findings`, `ai_summary`, `passed`, `authorization_number`, `raw_response`, `execution_time`
+
+**Finding Code System (FR52-FR56)**
+
+- FR52: System can generate findings with `PA_` prefix for rule-based validation issues
+- FR53: System can generate findings with `AI_PA_` prefix for AI interpretation results
+- FR54: System can generate findings with `AAA_PA_REJECTION` prefix for AAA business rejections
+- FR55: System can generate findings with `CLEARINGHOUSE_` prefix for infrastructure errors
+- FR56: System can assign severity levels (ERROR, WARNING, INFO) to all findings using existing `FindingSeverity` enum
+
+### NonFunctional Requirements
+
+**Performance (NFR1-NFR6)**
+
+- NFR1: Rule-based validation phase must complete in < 100ms for a single PA request (offline, no network calls)
+- NFR2: Code table loading (ICD-10, CPT, AAA codes) must use lazy singleton pattern — first load < 500ms, subsequent lookups < 1ms
+- NFR3: `parse_278_response()` must complete in < 50ms for a single 278 response dict
+- NFR4: `determine_pa_required()` must complete in < 10ms for a single eligibility response
+- NFR5: Pipeline overhead (orchestration, finding aggregation) must add < 20ms beyond individual phase execution times
+- NFR6: Memory footprint of loaded code tables must not exceed 50MB
+
+**Security & Privacy (NFR7-NFR15)**
+
+- NFR7: All 18 HIPAA identifiers must be stripped by `PriorAuthDeidentifier` before any data reaches an LLM provider — verified by automated tests
+- NFR8: De-identification must be a mandatory pipeline gate: if `PriorAuthDeidentifier` raises an exception, the AI phase must not execute under any circumstance
+- NFR9: Clearinghouse communication must use TLS 1.2+ — `BaseClearinghouseClient` implementations must enforce TLS verification (no `verify=False`)
+- NFR10: API keys and credentials must be sourced from environment variables only — never hardcoded, never in logs, never in exception messages
+- NFR11: PHI must not appear in log output — clearinghouse request/response bodies must never be logged at any log level
+- NFR12: PHI must not appear in exception messages or stack traces — error messages must reference field names, not field values
+- NFR13: PHI must not persist in memory beyond a single `submit_prior_auth()` call — no module-level caching of patient data
+- NFR14: Ages 90+ must be capped to 90 per HIPAA Safe Harbor before LLM path
+- NFR15: Dates must be reduced to year-only before LLM path
+
+**Reliability & Error Handling (NFR16-NFR21)**
+
+- NFR16: Missing or unexpected fields in 278 response must return `None` or generate a WARNING finding — never raise an unhandled exception
+- NFR17: Unmapped HCR action codes must generate a WARNING finding with the raw code value — never raise an exception
+- NFR18: Unmapped AAA reject reason codes must generate a WARNING finding with the raw code value and a generic "Contact payer for details" message
+- NFR19: Clearinghouse HTTP errors (timeout, connection refused, 5xx) must raise `ClearinghouseError` with a descriptive message — never expose raw HTTP response bodies
+- NFR20: LLM provider errors (timeout, rate limit, API error) must be caught and result in AI phase skipping gracefully — rule-based and clearinghouse results must still be returned
+- NFR21: Invalid input to `submit_prior_auth()` (wrong type, missing required fields) must raise `ValueError` with a clear message before any pipeline phase executes
+
+**Integration Compatibility (NFR22-NFR28)**
+
+- NFR22: PA module must not introduce any breaking changes to existing `validate()` or `check_eligibility()` public APIs
+- NFR23: PA module must reuse existing `BaseLLMClient`, `LLMFactory`, and `CLAIM_VALIDATOR_AI_CONFIG` configuration — no parallel LLM configuration system
+- NFR24: PA module must reuse existing `FindingSeverity` enum and finding model — no parallel finding system
+- NFR25: PA module must reuse existing code table loading infrastructure (`claim_validator/data/`) with lazy singleton + `threading.Lock` pattern
+- NFR26: New finding code prefixes (`PA_`, `AI_PA_`, `AAA_PA_REJECTION`, `CLEARINGHOUSE_`) must not conflict with existing prefixes (`CLM_`, `AI_`, `ELIG_`)
+- NFR27: `PriorAuthRequest` must accept both dict and Pydantic model input (same as `validate()` and `check_eligibility()` patterns)
+- NFR28: Default clearinghouse timeout must be 30 seconds (consistent with eligibility module)
+
+**Code Quality & Maintainability (NFR29-NFR36)**
+
+- NFR29: All `prior_auth/` module code must achieve > 90% test coverage
+- NFR30: All code must pass mypy strict mode with zero errors
+- NFR31: All code must pass ruff linting (line-length=100, rules E,F,I,N,W,UP) with zero warnings
+- NFR32: All public classes and functions must have docstrings
+- NFR33: All Pydantic models must use `frozen=True` (immutable after creation)
+- NFR34: `parse_278_response()` must not modify the input dict (no side effects)
+- NFR35: Module structure must mirror existing `claim_validator/eligibility/` layout for developer familiarity
+- NFR36: Test structure must include dedicated `test_hipaa/` subdirectory verifying all 18 HIPAA identifier de-identification
+
+### Additional Requirements
+
+**From Architecture — PA Extension Context:**
+
+- No starter template needed — brownfield extension of existing package
+- ~30 source files, ~25 test files across `src/claim_validator/prior_auth/` and `tests/test_prior_auth/`
+- 3 existing files modified: `__init__.py` (re-exports), `conf.py` (PA settings), `pyproject.toml` (version bump)
+
+**From Architecture — Core Decisions (D24-D33):**
+
+- D24: `BasePAClearinghouseClient` — subclass of existing `BaseClearinghouseClient` with `submit_prior_auth()` abstract method (non-breaking)
+- D25: PA model design — flat `PriorAuthRequest`, nested `PriorAuthResponse` with `ServiceLineDecision` per-service-line
+- D26: Separate `PriorAuthPipeline` — three-phase (rule-based → clearinghouse → AI), matching eligibility pattern
+- D27: PHI dual-path — pipeline-level + type-driven enforcement via `PriorAuthDeidentifier` as mandatory gate
+- D28: PA determination bridge — `determine_pa_required()` with duck-typed input (`dict | EligibilityResponse`), loose coupling
+- D29: HCR action codes — `CertificationActionCode` StrEnum + `hcr_action_codes.json` description table, lazy singleton
+- D30: AAA errors — `PriorAuthError` model + `Finding` objects (dual access, mirrors D20)
+- D31: PA de-identifier — separate `PriorAuthDeidentifier` class, strips clinical justification free-text PII
+- D32: AI interpretation — single `PriorAuthInterpreterAI` validator for holistic 278 interpretation
+- D33: Settings — extend `ClaimValidatorSettings` with flat PA fields (`pa_rule_validators`, `pa_ai_validators`, `skip_clearinghouse_on_pa_failure`, `pa_skip_ai`)
+
+**From Architecture — Implementation Patterns:**
+
+- Finding code prefixes: `PA_` (rule-based), `AI_PA_` (AI), `AAA_PA_REJECTION` (rejections), `CLEARINGHOUSE_` (infrastructure)
+- PHI dual-path: clearinghouse receives raw PHI (covered entity), AI path strips PHI via `PriorAuthDeidentifier`
+- `BasePAClearinghouseClient` subclass of existing `BaseClearinghouseClient` — non-breaking extension
+- Three-phase pipeline: rule-based → clearinghouse → AI (same as eligibility pattern)
+- Cross-module bridge: `determine_pa_required()` accepts `dict | EligibilityResponse` via duck typing
+
+**From Architecture — Implementation Sequence:**
+
+1. PA models (D25) — `PriorAuthRequest`, `PriorAuthResponse`, `ServiceLine`, `ServiceLineDecision`, `PriorAuthError`, `PriorAuthResult`, `PADeterminationResult`
+2. PA enums/constants (D29) — `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode` StrEnums
+3. Settings extension (D33) — PA validator lists, PA-specific config
+4. PA code tables — `aaa_reject_codes.json`, `hcr_action_codes.json`, `service_type_codes.json` with lazy loaders
+5. Rule-based PA validators — 7 validators (NPI utility reuse + 6 new)
+6. PA determination bridge (D28) — `determine_pa_required()` function
+7. 278 response parser — `parse_278_response()` function
+8. PA clearinghouse abstraction (D24) — `BasePAClearinghouseClient` subclass
+9. PA de-identifier (D31) — `PriorAuthDeidentifier`, `DeidentifiedPriorAuthResponse`
+10. AI interpreter (D32) — `PriorAuthInterpreterAI`
+11. Pipeline (D26, D27) — `PriorAuthPipeline` with three-phase execution and PHI enforcement
+12. Top-level API — `submit_prior_auth()` convenience function
+13. `__init__.py` re-exports — add PA symbols
+14. Test suite
+
+### FR Coverage Map
+
+| FR | Epic | Description |
+|---|---|---|
+| FR1 | Epic 1 | Determine PA required from eligibility response |
+| FR2 | Epic 1 | Parse `authOrCertIndicator` (Y/N/U) |
+| FR3 | Epic 1 | Parse free-text PA indicators |
+| FR4 | Epic 1 | Resolve indicator vs free-text conflicts |
+| FR5 | Epic 1 | `PADeterminationResult` with required, confidence, reason |
+| FR6 | Epic 1 | Construct `PriorAuthRequest` from dict |
+| FR7 | Epic 1 | Construct `PriorAuthRequest` from Pydantic model |
+| FR8 | Epic 1 | Models immutable (`frozen=True`) |
+| FR9 | Epic 1 | `ServiceLine` objects with CPT, quantity, dates |
+| FR10 | Epic 1 | Request category and certification type enums |
+| FR11 | Epic 1 | NPI Luhn validation → `PA_INVALID_NPI` |
+| FR12 | Epic 1 | Member ID presence validation |
+| FR13 | Epic 1 | DOB validation |
+| FR14 | Epic 1 | ICD-10 diagnosis validation → `PA_INVALID_DIAGNOSIS` |
+| FR15 | Epic 1 | CPT/HCPCS procedure validation → `PA_INVALID_PROCEDURE` |
+| FR16 | Epic 1 | Service date validation |
+| FR17 | Epic 1 | Cross-field consistency checks |
+| FR18 | Epic 1 | Zero API keys / zero network (offline) |
+| FR19 | Epic 1 | Skip validators via config |
+| FR20 | Epic 3 | Custom clearinghouse via `BasePAClearinghouseClient` |
+| FR21 | Epic 3 | Submit request, receive raw dict |
+| FR22 | Epic 3 | `ClearinghouseError` for HTTP, AAA as normal responses |
+| FR23 | Epic 3 | Configurable timeout (30s default) |
+| FR24 | Epic 3 | Context manager support |
+| FR25 | Epic 2 | Parse 278 JSON → `PriorAuthResponse` |
+| FR26 | Epic 2 | Map all 7 HCR action codes |
+| FR27 | Epic 2 | Extract authorization number |
+| FR28 | Epic 2 | Extract effective date range |
+| FR29 | Epic 2 | Parse per-service-line decisions |
+| FR30 | Epic 2 | Convenience properties (`is_approved`, `is_denied`, etc.) |
+| FR31 | Epic 2 | Handle missing/unexpected fields gracefully |
+| FR32 | Epic 2 | Parse AAA segments → `PriorAuthError` |
+| FR33 | Epic 2 | Map 20+ AAA codes to human-readable messages |
+| FR34 | Epic 2 | Suggested fixes per AAA error |
+| FR35 | Epic 2 | `AAA_PA_REJECTION` finding codes |
+| FR36 | Epic 4 | Strip 18 HIPAA identifiers via `PriorAuthDeidentifier` |
+| FR37 | Epic 4 | Cap ages 90+ to 90 |
+| FR38 | Epic 4 | Dates to year-only before LLM |
+| FR39 | Epic 4 | De-id as mandatory pipeline gate |
+| FR40 | Epic 4 | PHI not persisted beyond single call |
+| FR41 | Epic 4 | AI via existing LLM config |
+| FR42 | Epic 4 | Human-readable decision summary |
+| FR43 | Epic 4 | Next-step recommendations for pended (A4) |
+| FR44 | Epic 4 | Appeal strategies for denied (A3) |
+| FR45 | Epic 4 | `AI_PA_` prefix findings |
+| FR46 | Epic 4 | Raw codes alongside AI interpretation |
+| FR47 | Epic 1→3 | Full pipeline via `submit_prior_auth()` (built progressively) |
+| FR48 | Epic 3 | Sequential phase orchestration |
+| FR49 | Epic 1 | Skip clearinghouse/AI when unconfigured |
+| FR50 | Epic 3 | Skip AI when no LLM configured |
+| FR51 | Epic 1→3 | `PriorAuthResult` (grows with pipeline phases) |
+| FR52 | Epic 1 | `PA_` prefix findings |
+| FR53 | Epic 4 | `AI_PA_` prefix findings |
+| FR54 | Epic 2 | `AAA_PA_REJECTION` findings |
+| FR55 | Epic 3 | `CLEARINGHOUSE_` prefix findings |
+| FR56 | Epic 1 | Severity levels from existing enum |
+
+**Coverage: 56/56 FRs mapped (100%)**
+
+## Epic List
+
+### Epic 1: PA Request Validation & Determination (Offline)
+Developer can create `PriorAuthRequest` models, determine if PA is required from eligibility responses via `determine_pa_required()`, validate PA requests with 7 rule-based validators, and call `submit_prior_auth()` for offline validation. Invalid NPIs, missing member IDs, invalid diagnosis/procedure codes, date issues, and cross-field inconsistencies are caught before any clearinghouse call. Zero API keys, zero network access needed.
+**FRs covered:** FR1-FR19, FR47 (offline mode), FR49, FR51 (partial), FR52, FR56
+
+### Epic 2: 278 Response Parsing & AAA Error Handling
+Developer can parse raw 278 JSON responses into structured `PriorAuthResponse` models via `parse_278_response()`, with all 7 HCR action codes mapped to human-readable decisions, per-service-line authorization decisions extracted, and AAA reject errors mapped to human-readable messages with suggested fixes. Authorization numbers and effective date ranges extracted automatically.
+**FRs covered:** FR25-FR35, FR54
+
+### Epic 3: Clearinghouse Integration & Full Pipeline
+Developer can implement custom clearinghouse clients by subclassing `BasePAClearinghouseClient`, submit PA requests through the complete three-phase pipeline via `submit_prior_auth()`, and get structured `PriorAuthResult` with approval status, authorization number, findings from all phases, and execution time. Pipeline orchestrates rule-based → clearinghouse → response parsing automatically.
+**FRs covered:** FR20-FR24, FR47-FR48 (full pipeline), FR50-FR51, FR55
+
+### Epic 4: AI-Powered PA Interpretation
+Developer can enable AI-powered response interpretation with automatic PHI de-identification. `PriorAuthDeidentifier` strips all 18 HIPAA identifiers before any LLM call. `PriorAuthInterpreterAI` generates decision summaries, next-step recommendations for pended cases (A4), and appeal strategies for denied cases (A3). Full three-phase pipeline complete.
+**FRs covered:** FR36-FR46, FR53
+
+---
+
+## Epic 1: PA Request Validation & Determination (Offline)
+
+Developer can create `PriorAuthRequest` models, determine if PA is required from eligibility responses via `determine_pa_required()`, validate PA requests with 7 rule-based validators, and call `submit_prior_auth()` for offline validation. Invalid NPIs, missing member IDs, invalid diagnosis/procedure codes, date issues, and cross-field inconsistencies are caught before any clearinghouse call. Zero API keys, zero network access needed.
+
+### Story 1.1: PA Data Models, Enums & Package Configuration
 
 As a **developer**,
-I want AI validators that catch clinical edge cases rules miss — implausible diagnosis-procedure pairs, coverage concerns, and prior auth requirements,
-So that I can reduce denials caused by clinical issues that deterministic rules can't detect.
+I want typed Pydantic models and enums to represent prior authorization requests, responses, and results,
+So that I have a validated, immutable data layer for the PA module that integrates with the existing claim-validator package.
 
 **Acceptance Criteria:**
 
-**Given** a de-identified claim with a clinically implausible diagnosis-procedure combination (e.g., CPT 59400 obstetric package for a male patient)
-**When** `CodeValidationAI.validate(claim)` is called
-**Then** a `Finding` with code `AI_CLINICAL_IMPLAUSIBILITY`, severity `WARNING`, specific `field_name`, and `line_number` is produced
-**And** the suggestion explains why the combination is implausible
+**Given** a valid PA request as a Python dictionary with subscriber, diagnosis, and service line data
+**When** I construct `PriorAuthRequest(**request_dict)` or `PriorAuthRequest.model_validate(request_dict)`
+**Then** a frozen, immutable instance is created with all fields validated
+**And** string coercion works (e.g., `"2026-04-01"` → date)
 
-**Given** a de-identified claim with valid clinical coding
-**When** `CodeValidationAI.validate(claim)` is called
-**Then** zero AI clinical findings are produced
+**Given** a `PriorAuthRequest` instance
+**When** I access its fields
+**Then** `requester_npi`, `requester_taxonomy`, `payer_id`, `subscriber` (SubscriberInfo), `patient` (PatientInfo | None), `diagnosis_codes` (list[str]), `service_lines` (list[ServiceLine]), `request_category_code`, `certification_type_code`, and `clinical_info` are available
+**And** `subscriber` contains `member_id`, `first_name`, `last_name`, `dob`
 
-**Given** a de-identified claim with a service likely to be denied for medical necessity
-**When** `CoverageCheckAI.validate(claim)` is called
-**Then** a `Finding` with code `AI_COVERAGE_CONCERN`, severity `WARNING` is produced
-**And** the suggestion describes the coverage concern and recommended documentation
+**Given** a `ServiceLine` model
+**When** I construct it
+**Then** it contains `cpt_code`, `quantity`, `from_date`, `to_date` (optional), and `place_of_service_code` (optional)
+**And** it is frozen (immutable)
 
-**Given** a de-identified claim with a service likely requiring prior authorization
-**When** `PriorAuthAI.validate(claim)` is called
-**Then** a `Finding` with code `AI_PRIOR_AUTH_LIKELY`, severity `WARNING` is produced
-**And** the suggestion recommends checking prior auth status before submission
+**Given** the PA response models
+**When** I construct `PriorAuthResponse`, `ServiceLineDecision`, `PriorAuthError`
+**Then** all are frozen Pydantic models with `strict=False`
+**And** `PriorAuthResponse` contains `action_code` (CertificationActionCode), `is_approved`, `is_denied`, `is_pended`, `authorization_number`, `effective_date`, `expiration_date`, `decision_reason_code`, `decision_reason_description`, `service_line_decisions`, `errors`, and `raw_response`
 
-**Given** each AI validator
-**When** I inspect its implementation
-**Then** it has per-validator prompt templates as class constants (system prompt, user prompt template)
-**And** uses hybrid response parsing (structured JSON preferred, free-text regex fallback)
+**Given** the `PriorAuthResult` model
+**When** I inspect its fields
+**Then** it contains `approved: bool | None`, `response: PriorAuthResponse | None`, `findings: list[Finding]`, `ai_summary: str | None`, `passed: bool`, `authorization_number: str | None`, `raw_response: dict | None`, and `execution_time: float`
+**And** `passed` returns `True` only when zero ERROR-severity findings exist
 
-**Given** AI findings from any AI validator
-**When** I inspect the findings
-**Then** all AI finding codes are prefixed with `AI_` (e.g., `AI_CLINICAL_IMPLAUSIBILITY`, `AI_COVERAGE_CONCERN`, `AI_PRIOR_AUTH_LIKELY`)
-**And** severity is always `WARNING` (AI findings are advisory, never authoritative ERROR)
-**And** no PHI appears in any finding message or suggestion
+**Given** the `PADeterminationResult` model
+**When** I inspect its fields
+**Then** it contains `required: bool`, `confidence: str` (high/medium/low), `reason: str`, `auth_or_cert_indicator: str | None`, and `free_text_indicators: list[str]`
+
+**Given** the PA enums in `prior_auth/constants.py`
+**When** I import them
+**Then** `CertificationActionCode` is a StrEnum with values A1, A2, A3, A4, A6, CT, NA
+**And** `RequestCategoryCode` is a StrEnum with values AR, HS, SC, IN
+**And** `CertificationTypeCode` is a StrEnum with values I, R, S, E
+
+**Given** the `ClaimValidatorSettings` in `conf.py`
+**When** I inspect new PA fields
+**Then** `pa_rule_validators`, `pa_ai_validators`, `skip_clearinghouse_on_pa_failure`, and `pa_skip_ai` are available with sensible defaults
+**And** all use `CLAIM_VALIDATOR_` env prefix
+
+**Given** a developer importing PA models
+**When** they write `from claim_validator import PriorAuthRequest, PriorAuthResponse, PriorAuthResult`
+**Then** the import succeeds and models are available at the top level via `__init__.py` re-exports
+
+**Given** the existing `validate()` and `check_eligibility()` APIs
+**When** the PA module is installed
+**Then** zero breaking changes — all existing APIs continue to work identically
+
+### Story 1.2: PA Code Tables (HCR Action Codes, AAA Reject Codes, Service Types)
+
+As a **developer**,
+I want bundled reference data for HCR action codes, AAA reject reason codes, and service type codes,
+So that the PA module can map X12 278 codes to human-readable descriptions offline.
+
+**Acceptance Criteria:**
+
+**Given** the installed package
+**When** I call `get_hcr_action_codes()` with a valid action code (e.g., `"A1"`)
+**Then** it returns the human-readable description ("Certified in Total") and suggested action
+**And** all 7 HCR codes are mapped: A1, A2, A3, A4, A6, CT, NA
+
+**Given** the HCR action code data
+**When** I inspect `prior_auth/data/hcr_action_codes.json`
+**Then** it contains all 7 action codes with descriptions, categories (approved/denied/pended/other), and suggested actions
+
+**Given** the installed package
+**When** I call `get_aaa_reject_codes()` with a valid reject code (e.g., `"04"`)
+**Then** it returns the human-readable message and suggested fix
+**And** top 20+ codes are mapped (04, 15, 33, 35, 41-58, 60, 71-73, 79, T4)
+
+**Given** the AAA reject code data
+**When** I inspect `prior_auth/data/aaa_reject_codes.json`
+**Then** it contains reject codes with human-readable messages and suggested corrective actions
+
+**Given** the installed package
+**When** I call `get_pa_service_types()` with a valid service type code
+**Then** it returns the service type description
+
+**Given** two threads calling `get_hcr_action_codes()` concurrently
+**When** both trigger the first load simultaneously
+**Then** the data is loaded exactly once (double-check locking with `threading.Lock`)
+**And** both threads receive correct results
+
+**Given** any code table lookup with a non-existent code
+**When** I query it
+**Then** `None` is returned (no exception raised)
+
+**Given** code table loading
+**When** I measure the first load time
+**Then** it completes in under 500ms
+**And** subsequent lookups complete in under 1ms
+
+### Story 1.3: PA Determination from Eligibility Response
+
+As a **developer**,
+I want to determine if prior authorization is required based on an eligibility response,
+So that I can programmatically bridge the eligibility → PA workflow without manually interpreting 271 data.
+
+**Acceptance Criteria:**
+
+**Given** an `EligibilityResponse` (or dict) with `authOrCertIndicator: "Y"` in benefit information
+**When** I call `determine_pa_required(response)`
+**Then** a `PADeterminationResult` is returned with `required=True`, `confidence="high"`, and `reason` containing "authOrCertIndicator=Y"
+**And** `auth_or_cert_indicator` is `"Y"`
+
+**Given** an eligibility response with `authOrCertIndicator: "N"`
+**When** I call `determine_pa_required(response)`
+**Then** `required=False`, `confidence="high"`, and `reason` indicates PA not required
+
+**Given** an eligibility response with `authOrCertIndicator: "U"` or missing
+**When** I call `determine_pa_required(response)`
+**Then** `confidence="low"` and `reason` indicates the indicator is unknown/missing
+
+**Given** an eligibility response with free-text `additionalInformation.description` containing "prior auth" or "precertification" or "preauthorization"
+**When** I call `determine_pa_required(response)`
+**Then** `required=True` with `confidence="medium"` and `free_text_indicators` contains the matched phrases
+
+**Given** an eligibility response where `authOrCertIndicator="N"` but free-text says "prior authorization required"
+**When** I call `determine_pa_required(response)`
+**Then** `required=True` (free-text takes precedence per FR4)
+**And** `reason` explains the conflict resolution
+
+**Given** a plain Python dict instead of an `EligibilityResponse` object
+**When** I call `determine_pa_required(dict_response)`
+**Then** it works via duck typing — no hard import of eligibility models required
+
+**Given** `determine_pa_required()` execution
+**When** I measure performance
+**Then** it completes in under 10ms (NFR4)
+
+**Given** a developer importing from the package
+**When** they write `from claim_validator import determine_pa_required`
+**Then** the import succeeds and the function is available at the top level
+
+### Story 1.4: Pre-Submission Validators (NPI, Member ID, DOB, Diagnosis, Procedure)
+
+As a **developer**,
+I want PA requests validated for NPI correctness, member ID presence, DOB validity, and diagnosis/procedure code accuracy,
+So that requests with invalid data are caught offline before clearinghouse submission.
+
+**Acceptance Criteria:**
+
+**Given** a `PriorAuthRequest` with a valid NPI (passes Luhn check, e.g., `"1234567893"`)
+**When** rule-based validation runs
+**Then** zero NPI-related findings are produced
+
+**Given** a `PriorAuthRequest` with an invalid NPI (fails Luhn check or wrong length)
+**When** rule-based validation runs
+**Then** a `Finding` with code `PA_INVALID_NPI`, severity `ERROR`, field_name `requester_npi` is produced
+**And** the NPI validation reuses the shared `_validate_npi()` utility from the eligibility module
+
+**Given** a `PriorAuthRequest` with a non-empty subscriber member ID
+**When** `PAMemberIDValidator.validate(request)` is called
+**Then** zero member ID findings are produced
+
+**Given** a `PriorAuthRequest` with an empty or missing subscriber member ID
+**When** `PAMemberIDValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_MISSING_MEMBER_ID`, severity `ERROR`, field_name `subscriber.member_id` is produced
+
+**Given** a `PriorAuthRequest` with a valid patient DOB
+**When** `PADateOfBirthValidator.validate(request)` is called
+**Then** zero DOB findings are produced
+
+**Given** a `PriorAuthRequest` with a missing or invalid DOB
+**When** `PADateOfBirthValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_INVALID_DOB`, severity `ERROR` is produced
+
+**Given** a `PriorAuthRequest` with valid ICD-10 diagnosis codes (present in bundled code tables)
+**When** `PADiagnosisValidator.validate(request)` is called
+**Then** zero diagnosis findings are produced
+
+**Given** a `PriorAuthRequest` with an unknown ICD-10 code
+**When** `PADiagnosisValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_INVALID_DIAGNOSIS`, severity `ERROR`, and the invalid code in the message is produced
+
+**Given** a `PriorAuthRequest` with valid CPT/HCPCS procedure codes in service lines
+**When** `PAProcedureValidator.validate(request)` is called
+**Then** zero procedure findings are produced
+
+**Given** a `PriorAuthRequest` with an unknown CPT/HCPCS code
+**When** `PAProcedureValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_INVALID_PROCEDURE`, severity `ERROR` is produced
+
+**Given** any finding produced by these validators
+**When** I inspect the `message` field
+**Then** it references field names only, never actual PHI values (NFR12)
+
+### Story 1.5: Service Date, Cross-Field Validators & Pipeline
+
+As a **developer**,
+I want PA requests validated for service date logic and cross-field consistency, and I want to call `submit_prior_auth()` as a single entry point that runs all rule-based validators,
+So that I can validate PA requests with one function call, zero configuration, and zero network access.
+
+**Acceptance Criteria:**
+
+**Given** a `PriorAuthRequest` with service dates in the future (within reasonable range)
+**When** `PAServiceDateValidator.validate(request)` is called
+**Then** zero date findings are produced
+
+**Given** a `PriorAuthRequest` with a service date in the past
+**When** `PAServiceDateValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_SERVICE_DATE_PAST`, severity `ERROR` is produced
+
+**Given** a `PriorAuthRequest` with a service date unreasonably far in the future (> 365 days)
+**When** `PAServiceDateValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_SERVICE_DATE_FUTURE`, severity `WARNING` is produced
+
+**Given** a `PriorAuthRequest` where the diagnosis codes do not clinically support the requested procedure
+**When** `PACrossFieldValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_DX_PROCEDURE_MISMATCH`, severity `WARNING` is produced
+**And** the finding includes a suggestion about verifying clinical appropriateness
+
+**Given** a `PriorAuthRequest` where gender/age is incompatible with the procedure
+**When** `PACrossFieldValidator.validate(request)` is called
+**Then** a `Finding` with code `PA_DEMOGRAPHIC_PROCEDURE_MISMATCH`, severity `WARNING` is produced
+
+**Given** a valid PA request dictionary
+**When** I call `submit_prior_auth(request_dict)` with no clearinghouse or AI configured
+**Then** a `PriorAuthResult` is returned with `passed=True`, empty findings list, and `approved=None` (no clearinghouse call)
+**And** the call requires zero configuration, zero API keys, and zero network calls
+
+**Given** a PA request with multiple validation issues
+**When** I call `submit_prior_auth(request_dict)`
+**Then** all 7 rule-based validators run (NPI, member ID, DOB, diagnosis, procedure, date, cross-field)
+**And** findings are aggregated into a single `PriorAuthResult` ordered by severity
+
+**Given** a `PriorAuthRequest` Pydantic model instance
+**When** I call `submit_prior_auth(request_model)`
+**Then** it accepts both dict and Pydantic model input seamlessly (NFR27)
+
+**Given** no clearinghouse client configured and no AI configured
+**When** the pipeline finishes phase 1
+**Then** the pipeline returns immediately with rule-based-only results (FR49)
+
+**Given** custom validator configuration via `skip_rule_validators`
+**When** I call `submit_prior_auth(request)` with specific validators disabled
+**Then** only the remaining validators execute (FR19)
+
+**Given** invalid input to `submit_prior_auth()` (wrong type, missing required fields)
+**When** the function is called
+**Then** a `ValueError` is raised with a clear message before any pipeline phase executes (NFR21)
+
+**Given** rule-based validation on a typical PA request
+**When** I measure execution time
+**Then** it completes in under 100ms (NFR1)
+
+**Given** a developer importing from the package
+**When** they write `from claim_validator import submit_prior_auth`
+**Then** the import succeeds and `submit_prior_auth` is available at the top level
+
+**Given** all findings produced by PA validators
+**When** I inspect their codes
+**Then** all use the `PA_` prefix (FR52)
+**And** severity levels use the existing `FindingSeverity` enum (FR56)
+
+---
+
+## Epic 2: 278 Response Parsing & AAA Error Handling
+
+Developer can parse raw 278 JSON responses into structured `PriorAuthResponse` models via `parse_278_response()`, with all 7 HCR action codes mapped to human-readable decisions, per-service-line authorization decisions extracted, and AAA reject errors mapped to human-readable messages with suggested fixes. Authorization numbers and effective date ranges extracted automatically.
+
+### Story 2.1: 278 Response Parser & HCR Action Code Mapping
+
+As a **developer**,
+I want to parse raw 278 JSON responses into structured Pydantic models with HCR action codes mapped to human-readable decisions,
+So that I can programmatically determine authorization status without reading the X12 278 specification.
+
+**Acceptance Criteria:**
+
+**Given** a raw 278 JSON dict from a clearinghouse with HCR01=A1 (approved)
+**When** `parse_278_response(raw_dict)` is called
+**Then** a `PriorAuthResponse` is returned with `action_code=CertificationActionCode.A1`, `is_approved=True`, `is_denied=False`, `is_pended=False`
+**And** `authorization_number` contains the extracted auth number
+**And** `effective_date` and `expiration_date` are populated
+
+**Given** a 278 response with HCR01=A3 (denied)
+**When** `parse_278_response(raw_dict)` is called
+**Then** `is_denied=True`, `is_approved=False`
+**And** `decision_reason_code` and `decision_reason_description` are populated
+
+**Given** a 278 response with HCR01=A4 (pended)
+**When** `parse_278_response(raw_dict)` is called
+**Then** `is_pended=True`, `is_approved=False`, `is_denied=False`
+
+**Given** a 278 response with HCR01=A2 (partial approval)
+**When** `parse_278_response(raw_dict)` is called
+**Then** `action_code=CertificationActionCode.A2`
+**And** per-service-line decisions show which services were approved vs denied
+
+**Given** a 278 response with per-service-line authorization decisions
+**When** I inspect `response.service_line_decisions`
+**Then** each `ServiceLineDecision` contains `cpt_code`, `action_code`, `authorization_number`, `approved_quantity`, and `denied_reason`
+
+**Given** all 7 HCR action codes (A1, A2, A3, A4, A6, CT, NA)
+**When** each is processed by `parse_278_response()`
+**Then** the correct `CertificationActionCode` enum value is set
+**And** the correct convenience property returns `True` (`is_approved` for A1, `is_denied` for A3, etc.)
+
+**Given** a 278 response with missing or unexpected fields
+**When** `parse_278_response(raw_dict)` is called
+**Then** missing fields return `None` (not exception) (FR31, NFR16)
+**And** unexpected fields are silently ignored
+
+**Given** an unmapped HCR action code (future code not in enum)
+**When** `parse_278_response()` encounters it
+**Then** a WARNING finding is generated with the raw code value (NFR17)
+**And** no exception is raised
+
+**Given** any `PriorAuthResponse`
+**When** I access `response.raw_response`
+**Then** the complete unmodified 278 JSON dict is available
+
+**Given** the response parser
+**When** I verify it does not modify the input dict
+**Then** the original `raw_dict` is unchanged after parsing (NFR34)
+
+**Given** `parse_278_response()` execution on a typical response
+**When** I measure performance
+**Then** it completes in under 50ms (NFR3)
+
+**Given** a developer importing from the package
+**When** they write `from claim_validator import parse_278_response`
+**Then** the import succeeds and the function is available at the top level
+
+### Story 2.2: AAA Error Parsing & Human-Readable Messages
+
+As a **developer**,
+I want AAA reject errors from 278 responses parsed into structured models with human-readable messages and suggested fixes,
+So that my application can display actionable error information instead of cryptic X12 reject codes.
+
+**Acceptance Criteria:**
+
+**Given** a 278 response containing AAA reject segments
+**When** `parse_278_response(raw_dict)` is called
+**Then** `response.errors` contains `PriorAuthError` objects for each AAA segment
+**And** each `PriorAuthError` has `rejection_code`, `follow_up_code`, `message`, and `suggested_fix`
+
+**Given** AAA reject code `"04"` (Authorized Quantity Exceeded)
+**When** the code is mapped
+**Then** `message` is a human-readable description (e.g., "Authorized quantity exceeded")
+**And** `suggested_fix` provides actionable guidance (e.g., "Verify requested quantity against payer limits")
+
+**Given** the top 20+ AAA reject codes (04, 15, 33, 35, 41-58, 60, 71-73, 79, T4)
+**When** each is encountered in a 278 response
+**Then** all have human-readable messages and suggested fixes from the bundled code table
+
+**Given** an unmapped AAA reject code (not in the code table)
+**When** it is encountered
+**Then** a WARNING finding is generated with the raw code value and a generic "Contact payer for details" message (NFR18)
+**And** no exception is raised
+
+**Given** AAA errors in a 278 response
+**When** the pipeline processes the response
+**Then** corresponding `Finding` objects with code `AAA_PA_REJECTION` are generated (FR35, FR54)
+**And** each finding includes the rejection code, human-readable message, and suggested fix in the `context` dict
+
+**Given** multiple AAA errors in a single 278 response
+**When** they are parsed
+**Then** all errors are captured in `response.errors` and corresponding findings are generated for each
+
+**Given** a 278 response with both HCR action code and AAA errors
+**When** processed together
+**Then** both the `PriorAuthResponse` model and the findings list reflect the complete error picture
+
+---
+
+## Epic 3: Clearinghouse Integration & Full Pipeline
+
+Developer can implement custom clearinghouse clients by subclassing `BasePAClearinghouseClient`, submit PA requests through the complete three-phase pipeline via `submit_prior_auth()`, and get structured `PriorAuthResult` with approval status, authorization number, findings from all phases, and execution time. Pipeline orchestrates rule-based → clearinghouse → response parsing automatically.
+
+### Story 3.1: BasePAClearinghouseClient Abstraction
+
+As a **developer**,
+I want a pluggable clearinghouse client interface for 278 PA submissions,
+So that I can implement my own clearinghouse integration by subclassing an abstract base class.
+
+**Acceptance Criteria:**
+
+**Given** the `BasePAClearinghouseClient` abstract base class
+**When** I inspect its contract
+**Then** it defines `submit_prior_auth(request: PriorAuthRequest) -> dict` as an abstract method
+**And** it inherits from `BaseClearinghouseClient` (existing base class) (D24)
+**And** it has `provider_name: str`, `environment: str`, `close() -> None`
+**And** it supports context manager protocol (`__enter__`/`__exit__`)
+
+**Given** a developer subclassing `BasePAClearinghouseClient`
+**When** they implement `submit_prior_auth()` and set `provider_name`
+**Then** their custom client can be used directly with `PriorAuthPipeline`
+
+**Given** a custom clearinghouse client that returns a raw 278 JSON dict
+**When** `submit_prior_auth(request)` is called
+**Then** it returns the raw response dict for downstream parsing
+
+**Given** a clearinghouse client encountering an HTTP/network failure
+**When** `submit_prior_auth()` is called
+**Then** it raises `ClearinghouseError` with a descriptive message (FR22)
+**And** the error message contains no PHI (NFR12)
+
+**Given** a clearinghouse client receiving an AAA business rejection
+**When** `submit_prior_auth()` is called
+**Then** it returns the response normally (does NOT raise — FR22)
+**And** AAA errors are in the response dict for downstream parsing
+
+**Given** a clearinghouse client with a configurable timeout
+**When** no timeout is explicitly set
+**Then** the default timeout is 30 seconds (FR23, NFR28)
+
+**Given** a clearinghouse client used as a context manager
+**When** the `with` block exits
+**Then** the client is properly closed (FR24)
+
+**Given** the existing `BaseClearinghouseClient` (eligibility)
+**When** the PA subclass is added
+**Then** zero breaking changes to the existing `StediClient` or eligibility pipeline (NFR22)
+
+### Story 3.2: Full Pipeline Orchestration & submit_prior_auth() API
+
+As a **developer**,
+I want `submit_prior_auth()` to orchestrate the full three-phase pipeline (rule-based → clearinghouse → AI) and return a complete `PriorAuthResult`,
+So that I get end-to-end PA submission with a single function call.
+
+**Acceptance Criteria:**
+
+**Given** a valid PA request and a configured clearinghouse client
+**When** I call `submit_prior_auth(request, clearinghouse_client=client)`
+**Then** Phase 1 (rule-based) runs first, then Phase 2 (clearinghouse) submits to the clearinghouse
+**And** the 278 response is parsed into `PriorAuthResponse`
+**And** a `PriorAuthResult` is returned with `approved`, `response`, `findings`, `authorization_number`, and `raw_response` populated
+
+**Given** rule-based validation fails and `skip_clearinghouse_on_pa_failure=True` (default)
+**When** the pipeline reaches the phase 2 gate
+**Then** the clearinghouse phase is skipped entirely
+**And** `PriorAuthResult` has `response=None`, `raw_response=None`, and only rule-based findings
+
+**Given** rule-based validation fails and `skip_clearinghouse_on_pa_failure=False`
+**When** the pipeline reaches the phase 2 gate
+**Then** the clearinghouse phase still runs
+**And** findings from both phases are combined in the result
+
+**Given** a clearinghouse error (network timeout, HTTP error)
+**When** the pipeline catches the `ClearinghouseError`
+**Then** a `Finding` with code `CLEARINGHOUSE_ERROR`, severity `ERROR` is added to the result (FR55)
+**And** `PriorAuthResult` has `response=None` and the error details in findings
+**And** no unhandled exception propagates to the caller
+
+**Given** no AI/LLM provider configured
+**When** the pipeline reaches the phase 3 gate
+**Then** the AI phase is skipped entirely (FR50)
+**And** `PriorAuthResult` has `ai_summary=None` and only rule-based + clearinghouse findings
+
+**Given** the pipeline producing a `PriorAuthResult`
+**When** the response has HCR01=A1 (approved)
+**Then** `result.approved=True` and `result.authorization_number` contains the auth number
+
+**Given** the pipeline producing a `PriorAuthResult`
+**When** the response has HCR01=A3 (denied)
+**Then** `result.approved=False`
+
+**Given** `PriorAuthResult`
+**When** I inspect `execution_time`
+**Then** it contains the total pipeline execution time in seconds
+
+**Given** the pipeline overhead (orchestration, finding aggregation)
+**When** measured separately from phase execution
+**Then** it adds less than 20ms (NFR5)
+
+---
+
+## Epic 4: AI-Powered PA Interpretation
+
+Developer can enable AI-powered response interpretation with automatic PHI de-identification. `PriorAuthDeidentifier` strips all 18 HIPAA identifiers before any LLM call. `PriorAuthInterpreterAI` generates decision summaries, next-step recommendations for pended cases (A4), and appeal strategies for denied cases (A3). Full three-phase pipeline complete.
+
+### Story 4.1: PA De-identification Engine
+
+As a **developer**,
+I want PA response data automatically de-identified before any LLM call,
+So that I can use AI interpretation with zero risk of PHI leakage — guaranteed by the library.
+
+**Acceptance Criteria:**
+
+**Given** a `PriorAuthResponse` with full PHI (patient name, DOB, member ID, clinical justification text)
+**When** `PriorAuthDeidentifier.deidentify(response)` is called
+**Then** a `DeidentifiedPriorAuthResponse` is returned with all 18 HIPAA identifiers stripped
+**And** only safe data remains: HCR action codes, decision reason codes, AAA reject codes, CPT/HCPCS codes (without patient context), authorization status, effective dates (year only)
+
+**Given** the 18 HIPAA identifier categories
+**When** I run the de-identifier against test responses containing each identifier type
+**Then** all are stripped: patient name, DOB (replaced with year only), member ID, address, SSN, phone, email, subscriber ID, NPI (when combined with patient data), and all other HIPAA-defined identifiers
+
+**Given** clinical justification free-text containing PII
+**When** the de-identifier processes it
+**Then** PII is scrubbed from the clinical text while preserving medical terminology
+
+**Given** ages 90+
+**When** the de-identifier processes them
+**Then** age is capped to 90 per HIPAA Safe Harbor (FR37)
+
+**Given** dates in the response
+**When** the de-identifier processes them
+**Then** dates are reduced to year-only (FR38)
+
+**Given** a `DeidentifiedPriorAuthResponse` instance
+**When** I check its type
+**Then** mypy/pyright distinguishes it from `PriorAuthResponse` at the type level
+**And** the type system prevents accidentally passing raw `PriorAuthResponse` to LLM-facing functions
+
+**Given** the de-identifier failing (exception during de-identification)
+**When** the pipeline reaches the AI phase
+**Then** the AI phase must NOT execute under any circumstance (FR39, NFR8)
+
+**Given** PHI in the PA request/response
+**When** the `submit_prior_auth()` call completes
+**Then** PHI does not persist in memory beyond that single call (FR40, NFR13)
+
+**Given** a comprehensive PHI leak test suite in `tests/test_prior_auth/test_hipaa/`
+**When** run against `PriorAuthDeidentifier`
+**Then** all tests pass confirming zero PHI in de-identified output
+**And** tests cover all 18 HIPAA identifier categories (NFR36)
+
+### Story 4.2: AI PA Interpreter & Full Pipeline
+
+As a **developer**,
+I want AI-powered interpretation that turns cryptic HCR action codes and AAA errors into actionable decision summaries, next-step recommendations, and appeal strategies,
+So that my application can display clear PA guidance without my team learning X12 278 semantics.
+
+**Acceptance Criteria:**
+
+**Given** a de-identified PA response with HCR01=A1 (approved)
+**When** `PriorAuthInterpreterAI` processes it via the configured LLM
+**Then** `ai_summary` contains a human-readable approval summary (e.g., "All requested services approved. Include authorization number AUTH123 on the 837 claim. Authorization valid through 2026-04-01.")
+
+**Given** a de-identified PA response with HCR01=A3 (denied)
+**When** `PriorAuthInterpreterAI` processes it
+**Then** `ai_summary` includes denial reason interpretation, appeal strategy suggestions, and recommended documentation to gather (FR44)
+**And** AI findings with `AI_PA_` prefix are generated
+
+**Given** a de-identified PA response with HCR01=A4 (pended)
+**When** `PriorAuthInterpreterAI` processes it
+**Then** `ai_summary` includes likely documentation needed and recommended follow-up timeline (FR43)
+
+**Given** AI interpretation with raw HCR/AAA codes
+**When** the AI generates its summary
+**Then** raw codes are included alongside the interpretation for verification (FR46)
+
+**Given** AI configuration with any supported LLM provider (Anthropic, OpenAI)
+**When** I call `submit_prior_auth(request, clearinghouse_client=client, ai_config={...})`
+**Then** the full three-phase pipeline executes: rule-based → clearinghouse → AI interpretation
+**And** `PriorAuthResult` contains `approved`, `response`, `findings` (from all phases), `ai_summary`, and `raw_response`
+
+**Given** `pa_skip_ai=True` in settings or no `ai_config` provided
+**When** I call `submit_prior_auth(request, clearinghouse_client=client)`
+**Then** the AI phase is skipped entirely
+**And** `PriorAuthResult` has `ai_summary=None` and only rule-based + clearinghouse findings
+
+**Given** the LLM provider is unreachable or returns an error
+**When** the AI phase attempts to call the provider
+**Then** the pipeline returns the structured `PriorAuthResponse` from phase 2 plus a `Finding(code="AI_PA_PROVIDER_ERROR", severity=WARNING)` (NFR20)
+**And** no exception propagates to the caller — graceful degradation
+
+**Given** the de-identification step in the pipeline
+**When** the AI phase begins
+**Then** `PriorAuthDeidentifier.deidentify()` runs before any LLM call
+**And** only `DeidentifiedPriorAuthResponse` data reaches the LLM provider
+
+**Given** AI-generated findings
+**When** I inspect them
+**Then** all use `AI_PA_` code prefix (FR45, FR53), severity is always `WARNING` (advisory, not authoritative)
+**And** no PHI appears in any finding message, suggestion, or the `ai_summary`
+
+**Given** AI interpretation using the existing LLM configuration
+**When** I verify LLM setup
+**Then** it reuses `BaseLLMClient`, `LLMFactory`, and `CLAIM_VALIDATOR_AI_CONFIG` — no parallel LLM configuration system (NFR23)

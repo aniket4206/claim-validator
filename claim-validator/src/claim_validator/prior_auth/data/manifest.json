@@ -1,0 +1,20 @@
+{
+  "hcr_action_codes": {
+    "code_count": 7,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 HCR01 Certification Action Codes",
+    "version": "005010"
+  },
+  "aaa_reject_codes": {
+    "code_count": 23,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 AAA03 Reject Reason Codes",
+    "version": "005010"
+  },
+  "service_types": {
+    "code_count": 22,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 UM04 Service Type Codes (PA-relevant subset)",
+    "version": "005010"
+  }
+}

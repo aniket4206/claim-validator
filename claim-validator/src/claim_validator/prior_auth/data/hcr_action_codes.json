@@ -1,0 +1,37 @@
+{
+  "A1": {
+    "description": "Certified in Total",
+    "category": "approved",
+    "suggested_action": "Proceed with service; include authorization number on 837 claim"
+  },
+  "A2": {
+    "description": "Certified Partial",
+    "category": "partial",
+    "suggested_action": "Review which services approved; may appeal denied items"
+  },
+  "A3": {
+    "description": "Not Certified",
+    "category": "denied",
+    "suggested_action": "File appeal or provide additional documentation"
+  },
+  "A4": {
+    "description": "Pended",
+    "category": "pended",
+    "suggested_action": "Submit additional documentation (275 transaction or fax)"
+  },
+  "A6": {
+    "description": "Modified",
+    "category": "modified",
+    "suggested_action": "Review modifications (reduced units, different dates, etc.)"
+  },
+  "CT": {
+    "description": "Contact Payer",
+    "category": "contact",
+    "suggested_action": "Call payer for manual processing"
+  },
+  "NA": {
+    "description": "No Action Required",
+    "category": "no_action",
+    "suggested_action": "Proceed without authorization; PA not needed for this service"
+  }
+}

@@ -3,10 +3,25 @@ stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 lastStep: 8
 status: 'complete'
 completedAt: '2026-02-18'
+extensionStartedAt: '2026-02-27'
+extensionScope: 'eligibility-verification-module'
+extensionStepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
+extensionStatus: 'complete'
+extensionCompletedAt: '2026-02-27'
+paExtensionStartedAt: '2026-03-01'
+paExtensionScope: 'prior-authorization-module'
+paExtensionStepsCompleted: [2, 3, 4, 5, 6, 7, 8]
+paExtensionStatus: 'complete'
+paExtensionCompletedAt: '2026-03-01'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
   - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-18.md'
   - '_bmad-output/project-context.md'
+  - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-26.md'
+  - '_bmad-output/planning-artifacts/research/domain-healthcare-eligibility-verification-research-2026-02-26.md'
+  - 'docs/Claim-Eligibility-Check-Implementation-Guide.md'
+  - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-27.md'
+  - '_bmad-output/planning-artifacts/research/domain-healthcare-prior-authorization-278-research-2026-02-27.md'
 workflowType: 'architecture'
 project_name: 'healthcare-claim-analyzer'
 user_name: 'aniket'
@@ -1046,3 +1061,1545 @@ All technology choices are compatible and conflict-free:
 uv init --lib --build-backend hatchling claim-validator
 ```
 Then: pyproject.toml configuration → core models → constants → exceptions → configuration → code tables → validator base + registry → pipeline → rule-based validators → de-identifier → LLM abstraction → AI validators → `validate()` API → `__init__.py` re-exports
+
+---
+
+## Eligibility Verification Module — Context Analysis
+
+### Requirements Overview
+
+**Functional Requirements:**
+47 FRs across 8 categories extending the library with clearinghouse connectivity, eligibility-specific models, and AI-powered 271 interpretation.
+
+| Category | Count | Architectural Impact |
+|---|---|---|
+| Eligibility Request Data (FR1-FR7) | 7 | New `EligibilityRequest` model family, subscriber/patient/provider fields |
+| Rule-Based Validation (FR8-FR15) | 8 | 6 new validators reusing `BaseValidator`; payer directory as new code table |
+| Clearinghouse Integration (FR16-FR22) | 7 | NEW: `BaseClearinghouseClient` ABC + `StediClient`; first external service beyond LLMs |
+| Response Parsing (FR23-FR29) | 7 | New `EligibilityResponse`, `BenefitInfo`, `CoverageInfo` models; 271 JSON→Pydantic |
+| AI Interpretation (FR30-FR35) | 6 | Extend de-identifier for eligibility; reuse LLM providers; eligibility-specific prompts |
+| Pipeline Orchestration (FR36-FR40) | 5 | `EligibilityPipeline` — three-phase (validate→clearinghouse→AI); `EligibilityResult` |
+| Configuration (FR41-FR44) | 4 | Extend `ClaimValidatorSettings` with Stedi credentials and eligibility validator lists |
+| Extensibility (FR45-FR47) | 3 | Custom eligibility validators + custom clearinghouse clients via subclassing |
+
+**Non-Functional Requirements:**
+23 NFRs across 5 categories, largely consistent with existing constraints.
+
+| Category | Count | Key Constraint |
+|---|---|---|
+| Performance (NFR1-NFR5) | 5 | <100ms rule-based, <2s library overhead on top of Stedi RTT, <50ms response parsing |
+| Security & Privacy (NFR6-NFR10) | 5 | 18 HIPAA identifiers stripped before LLM; PHI allowed to clearinghouse; no PHI in logs |
+| Integration Reliability (NFR11-NFR14) | 4 | HTTP 4xx/5xx → structured errors; 30s default timeout; LLM failure → graceful degradation |
+| Code Quality (NFR15-NFR20) | 6 | mypy strict, ruff clean, >90% coverage, backward compatible, optional deps |
+| Documentation (NFR21-NFR23) | 3 | Docstrings, quickstart, API reference |
+
+**Scale & Complexity:**
+
+- Primary domain: **Python library extension** (brownfield, same package)
+- Complexity level: **Medium-High** — new clearinghouse integration layer, but 60% pattern reuse from existing architecture
+- New architectural components: **~8 major** — eligibility models, eligibility validators, clearinghouse abstraction, Stedi client, response parser, eligibility de-identifier extension, eligibility pipeline, `check_eligibility()` API
+
+### New Technical Constraints & Dependencies
+
+| Constraint | Source | Architectural Implication |
+|---|---|---|
+| **Stedi JSON API** | FR16-FR22 | New external HTTP dependency; requires `httpx`; sandbox + production modes; API key management |
+| **PHI dual-path** | NFR6, FR30 | Clearinghouse REQUIRES PHI (covered entity). AI path STRIPS PHI. Architecture must enforce both paths correctly |
+| **Backward compatibility** | NFR19 | Existing `validate()` API must remain unchanged; `check_eligibility()` is additive |
+| **Optional `[stedi]` extra** | NFR20 | Rule-based eligibility validation works without httpx; clearinghouse requires it |
+| **30-second timeout** | NFR12 | CAQH CORE mandates 20s clearinghouse response; library adds 10s buffer |
+| **Payer directory** | FR9 | Bundled static data (~3,400 payer IDs from Stedi); same lazy-load pattern as code tables |
+| **AAA error segments** | FR21 | 271 responses include structured rejection codes; need dedicated error model |
+
+### New Cross-Cutting Concerns
+
+| Concern | Scope | Strategy |
+|---|---|---|
+| **Clearinghouse abstraction** | Stedi (MVP), future providers | `BaseClearinghouseClient` ABC mirrors `BaseLLMClient` pattern: abstract interface + factory + concrete implementations |
+| **PHI dual-path enforcement** | Clearinghouse path vs AI path | Pipeline enforces: raw `EligibilityRequest` → clearinghouse (PHI allowed); de-identified response → LLM (PHI stripped). Type-driven boundary |
+| **Payer directory loading** | Offline payer ID validation | Reuse code tables lazy singleton pattern; new `data/payer_directory.json.gz` |
+| **Eligibility settings** | Stedi config, eligibility validators | Extend `ClaimValidatorSettings` with `stedi_api_key`, `stedi_environment`, `eligibility_rule_validators`, `eligibility_ai_validators` |
+| **Graceful degradation (3-tier)** | Rule-based → Clearinghouse → AI | Each phase fails independently: rule-based always works; clearinghouse down → structured error; LLM down → return structured response without AI summary |
+| **Error model extension** | Clearinghouse errors, AAA rejections | New `ClearinghouseError` exception; `AAAError` model for rejection segments; integrate into `Finding` pattern |
+
+### Reuse Analysis
+
+| Existing Component | Reuse Strategy | Modification Needed |
+|---|---|---|
+| `BaseValidator` ABC | Direct reuse | None — eligibility validators subclass the same base |
+| `ValidatorRegistry` | Direct reuse | None — same dotted-path loading for eligibility validators |
+| `BaseLLMClient` + providers | Direct reuse | None — eligibility AI uses same LLM providers |
+| `ClaimDeidentifier` | Extend | Add eligibility-specific field mappings (subscriber name, member ID, DOB) |
+| `Finding`, `Severity`, `ValidatorOutput` | Direct reuse | None — eligibility validators produce same output types |
+| `ClaimValidatorSettings` | Extend | Add Stedi config, eligibility validator lists, eligibility-specific settings |
+| Code table loader pattern | Pattern reuse | New payer directory table using same lazy singleton pattern |
+| Exception hierarchy | Extend | Add `ClearinghouseError` as new subclass of `ClaimValidatorError` |
+| Test patterns | Direct reuse | Same class-based structure, PHI-leak assertions, factory pattern |
+| `__init__.py` re-export pattern | Extend | Add eligibility symbols to top-level exports |
+
+### Starter Template Evaluation (Extension)
+
+**Primary Technology Domain:** Python library extension — adding `eligibility/` subpackage to existing `claim-validator` package.
+
+**Starter: N/A — Existing Package Extension**
+
+All foundational decisions from the original architecture (D1-D13) remain in effect. No new starter template needed.
+
+**What the extension adds to `pyproject.toml`:**
+
+```toml
+[project.optional-dependencies]
+stedi = ["httpx>=0.27"]  # NEW — clearinghouse connectivity
+all = ["claim-validator[ai,stedi,server,django,fastapi]"]  # MODIFIED — include stedi
+```
+
+**Extension lives inside the existing package** as `src/claim_validator/eligibility/` subpackage. All existing tooling (hatchling, uv, ruff, mypy, pytest) applies unchanged.
+
+## Eligibility Module — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+- D14: Clearinghouse client abstraction → ABC + factory
+- D15: Eligibility data models → Flat request, nested response
+- D16: Eligibility pipeline → Separate `EligibilityPipeline`, three-phase
+- D17: PHI dual-path enforcement → Pipeline-level + type-driven
+
+**Important Decisions (Shape Architecture):**
+- D18: Stedi client → Sync `httpx.Client` with context manager
+- D19: Payer directory → Uncompressed JSON, lazy singleton
+- D20: AAA error model → Dual access (AAAError model + Finding objects)
+- D21: Eligibility de-identification → Separate `EligibilityDeidentifier`
+- D22: AI interpretation → Single `EligibilityInterpreterAI` validator
+- D23: Settings → Extend `ClaimValidatorSettings` with flat fields
+
+**Deferred Decisions (Post-MVP):**
+- Batch eligibility pipeline — v1.1
+- Multi-clearinghouse factory implementations — v1.2
+- Async pipeline execution — v1.1
+- FHIR model mapping — v2.0
+
+### Clearinghouse Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D14: BaseClearinghouseClient** | ABC + factory — mirrors `BaseLLMClient` pattern | `BaseClearinghouseClient` ABC with `submit_eligibility(request) -> dict` method. `get_clearinghouse_client(provider, **config)` factory. `StediClient` as first concrete implementation. Consistent with D7 (LLM client) pattern | `eligibility/clearinghouse/base.py`, `eligibility/clearinghouse/factory.py`, `eligibility/clearinghouse/stedi.py` |
+| **D18: HTTP client** | Sync `httpx.Client` with context manager | PRD explicitly defers async. `httpx.Client` supports session reuse, configurable timeout (30s default per NFR12), connection pooling. Context manager ensures proper cleanup | `eligibility/clearinghouse/stedi.py` |
+
+**Clearinghouse client contract:**
+```
+BaseClearinghouseClient (ABC)
+├── submit_eligibility(request: EligibilityRequest) -> dict  # raw 271 JSON
+├── provider_name: str
+├── environment: str  # "sandbox" | "production"
+│
+└── StediClient — httpx.Client, Stedi JSON API
+```
+
+**StediClient internals:**
+```python
+class StediClient(BaseClearinghouseClient):
+    provider_name = "stedi"
+
+    def __init__(self, api_key: str, environment: str = "sandbox", timeout: float = 30.0):
+        self._client = httpx.Client(
+            base_url=self._base_url(environment),
+            headers={"Authorization": f"Key {api_key}"},
+            timeout=timeout,
+        )
+
+    def submit_eligibility(self, request: EligibilityRequest) -> dict: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *args) -> None: ...
+```
+
+### Data Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D15: Model design** | Flat request, nested response | `EligibilityRequest` is flat (like `ClaimData`) — simple dict-compatible input. `EligibilityResponse` is nested — 271 data has inherent hierarchy (coverage status, benefit list, plan info). All frozen=True, strict=False (matches D3) | `eligibility/models/` |
+| **D19: Payer directory** | Uncompressed JSON, lazy singleton | ~3,400 payer entries (~200KB). No compression needed. Same lazy singleton pattern (D2) with `threading.Lock`. JSON dict keyed by payer ID for O(1) lookup | `eligibility/data/payer_directory.json`, `eligibility/code_tables/payer_directory.py` |
+| **D20: AAA errors** | Dual access — `AAAError` model + `Finding` objects | `AAAError` Pydantic model in `EligibilityResponse.errors` for programmatic access. Pipeline also creates `Finding(code="AAA_REJECTION")` for consistent pipeline output | `eligibility/models/errors.py`, `eligibility/pipeline.py` |
+
+**Model hierarchy:**
+```
+EligibilityRequest (frozen, flat)
+├── provider_npi, provider_taxonomy
+├── payer_id
+├── subscriber_id, subscriber_first_name, subscriber_last_name, subscriber_dob
+├── patient_* (optional, for dependents)
+├── service_type_code, date_of_service
+└── relationship_code
+
+EligibilityResponse (frozen, nested)
+├── eligible: bool | None
+├── coverage: CoverageInfo
+│   ├── status: CoverageStatus (active/inactive/unknown)
+│   ├── effective_date, termination_date
+│   └── plan_name, group_number
+├── benefits: list[BenefitInfo]
+│   ├── service_type_code, service_type_name
+│   ├── copay, coinsurance, deductible
+│   ├── in_network: bool | None
+│   └── prior_auth_required: bool | None
+├── errors: list[AAAError]
+│   ├── rejection_code, follow_up_code
+│   └── message
+└── raw_response: dict  # full Stedi JSON
+
+EligibilityResult (pipeline output)
+├── eligible: bool | None
+├── response: EligibilityResponse | None
+├── findings: list[Finding]
+├── ai_summary: str | None
+├── passed: bool (rule-based)
+├── raw_response: dict | None
+└── execution_time: float
+```
+
+### Security Architecture (HIPAA Extension)
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D17: PHI dual-path** | Both: pipeline-level + type-driven (belt-and-suspenders) | Matches existing D5+D6 pattern. Clearinghouse receives raw `EligibilityRequest` (PHI required). AI receives `DeidentifiedEligibilityResponse` (PHI stripped). Pipeline enforces ordering | `eligibility/pipeline.py`, `eligibility/deidentifier.py`, `eligibility/models/deidentified.py` |
+| **D21: De-identifier** | New `EligibilityDeidentifier` — separate class | Eligibility data has different fields than claims. Separate class, same patterns as `ClaimDeidentifier`. Operates on `EligibilityResponse` → `DeidentifiedEligibilityResponse` | `eligibility/deidentifier.py` |
+
+**PHI flow:**
+```
+EligibilityRequest (has PHI) ──────────→ Clearinghouse (PHI allowed)
+                                              │
+                                              ▼
+                                     EligibilityResponse (has PHI)
+                                              │
+                              EligibilityDeidentifier.deidentify()
+                                              │
+                                              ▼
+                              DeidentifiedEligibilityResponse (no PHI) → LLM
+```
+
+**Safe fields for LLM:** payer ID, service type codes, benefit amounts, copay/coinsurance values, deductible amounts, coverage dates (year only), plan type codes.
+**Stripped fields:** subscriber name, DOB, member ID, address, SSN, group-specific identifiers.
+
+### Pipeline Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D16: Pipeline design** | Separate `EligibilityPipeline` — three-phase | Eligibility has fundamentally different flow: rule-based → clearinghouse → AI. The clearinghouse step is an external API call that transforms data, not a validator. Separate class, same patterns | `eligibility/pipeline.py` |
+| **D22: AI interpretation** | Single `EligibilityInterpreterAI` validator | One AI validator for eligibility (not 3 like claim validation). 271 response is one document to interpret holistically. Returns `Finding` objects + `ai_summary` string | `eligibility/validators/ai/interpreter.py` |
+
+**Pipeline execution model:**
+```
+EligibilityPipeline.run(request_data)
+  ├── Phase 1: Rule-based validators (sequential, offline)
+  │   ├── NPIValidator (reuse existing)
+  │   ├── PayerIDValidator (new)
+  │   ├── DemographicsValidator (new, eligibility-specific)
+  │   ├── ServiceTypeValidator (new)
+  │   ├── DateValidator (new)
+  │   ├── MemberIDValidator (new)
+  │   └── Aggregate → partial EligibilityResult (passed, findings)
+  │
+  ├── Gate: if rule_phase_failed AND skip_clearinghouse_on_failure → return
+  │
+  ├── Phase 2: Clearinghouse (single call, network)
+  │   ├── get_clearinghouse_client(config) → BaseClearinghouseClient
+  │   ├── client.submit_eligibility(request) → raw 271 dict
+  │   ├── Parse raw dict → EligibilityResponse
+  │   └── If error → ClearinghouseError finding, return partial result
+  │
+  ├── Gate: if skip_ai → return with structured response
+  │
+  └── Phase 3: AI interpretation (optional, network)
+      ├── EligibilityDeidentifier.deidentify(response) → DeidentifiedEligibilityResponse
+      ├── EligibilityInterpreterAI(deidentified_response) → AI findings + summary
+      └── Aggregate → complete EligibilityResult
+```
+
+### Configuration
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D23: Settings** | Extend `ClaimValidatorSettings` with flat fields | Add `stedi_api_key`, `stedi_environment`, `eligibility_rule_validators`, `eligibility_ai_validators`, `skip_clearinghouse_on_rule_failure`, `skip_ai` as flat fields. All use `CLAIM_VALIDATOR_` env prefix (FR41) | `conf.py` (modify existing) |
+
+### Decision Impact Analysis
+
+**Implementation Sequence (eligibility module):**
+1. Eligibility models (D15) — `EligibilityRequest`, `EligibilityResponse`, `BenefitInfo`, `CoverageInfo`, `AAAError`, `EligibilityResult`
+2. Settings extension (D23) — Stedi config, eligibility validator lists
+3. Payer directory (D19) — bundled JSON, lazy loader
+4. Rule-based eligibility validators — 6 validators (NPI reuse + 5 new)
+5. Clearinghouse abstraction (D14) — `BaseClearinghouseClient` ABC, factory
+6. Stedi client (D18) — `StediClient` implementation
+7. Response parser — raw 271 JSON → `EligibilityResponse`
+8. Eligibility de-identifier (D21) — `EligibilityDeidentifier`, `DeidentifiedEligibilityResponse`
+9. AI interpreter (D22) — `EligibilityInterpreterAI`
+10. Pipeline (D16, D17) — `EligibilityPipeline` with three-phase execution and PHI enforcement
+11. Top-level API — `check_eligibility()` convenience function
+12. `__init__.py` re-exports — add eligibility symbols
+
+**Cross-Component Dependencies:**
+- D15 (models) enables D16 (pipeline) — pipeline operates on eligibility models
+- D14 (clearinghouse) + D18 (Stedi client) — StediClient implements BaseClearinghouseClient
+- D16 (pipeline) requires D17 (PHI dual-path) + D21 (de-identifier) — pipeline enforces de-id before AI
+- D17 (PHI dual-path) requires D15 (models) — `DeidentifiedEligibilityResponse` is a model
+- D23 (settings) required by D16 (pipeline) — pipeline reads settings for config
+- D19 (payer directory) required by `PayerIDValidator` — offline payer lookup
+
+## Eligibility Module — Implementation Patterns & Consistency Rules
+
+### Eligibility-Specific Conflict Points
+
+**12 new conflict areas** identified for the eligibility extension, all resolved below. These extend the existing 28 conflict points from the core architecture.
+
+### Eligibility Naming Patterns
+
+**Module & Class Naming:**
+
+| Element | Convention | Example | Anti-Pattern |
+|---|---|---|---|
+| Eligibility models | `Eligibility{Name}` or `{Name}Info` for sub-models | `EligibilityRequest`, `BenefitInfo` | `EligRequest`, `Benefit`, `BenefitData` |
+| Eligibility validators | `{Name}Validator` (same base convention) | `PayerIDValidator`, `ServiceTypeValidator` | `PayerValidator`, `CheckPayerID` |
+| Clearinghouse clients | `{Provider}Client` (mirrors LLM) | `StediClient` | `StediAPI`, `StediProvider` |
+| Clearinghouse base | `BaseClearinghouseClient` | — | `ClearinghouseBase`, `AbstractClearinghouse` |
+| Eligibility AI | `EligibilityInterpreterAI` | — | `EligibilityAI`, `InterpretEligibilityAI` |
+| Pipeline | `EligibilityPipeline` | — | `EligPipeline`, `EligibilityValidationPipeline` |
+| De-identifier | `EligibilityDeidentifier` | — | `EligDeidentifier`, `ResponseDeidentifier` |
+| Top-level API | `check_eligibility()` | — | `verify_eligibility()`, `eligibility_check()` |
+
+**Finding Code Conventions:**
+
+| Category | Prefix | Example | Anti-Pattern |
+|---|---|---|---|
+| Rule-based eligibility | `ELIG_` prefix | `ELIG_INVALID_PAYER`, `ELIG_MISSING_SUBSCRIBER` | `INVALID_PAYER` (conflicts with claim codes) |
+| Clearinghouse errors | `CLEARINGHOUSE_` prefix | `CLEARINGHOUSE_TIMEOUT`, `CLEARINGHOUSE_ERROR` | `STEDI_ERROR` (vendor-specific) |
+| AAA rejections | `AAA_REJECTION` | `AAA_REJECTION` with context dict containing code | `AAA_71`, `REJECTION_SUBSCRIBER_NOT_FOUND` |
+| AI eligibility | `AI_ELIG_` prefix | `AI_ELIG_COVERAGE_SUMMARY`, `AI_ELIG_LIMITATION` | `AI_COVERAGE` (conflicts with claim AI codes) |
+
+### Eligibility Communication Patterns
+
+**Clearinghouse → Pipeline:**
+- `BaseClearinghouseClient.submit_eligibility()` returns raw `dict` (JSON), never raises for business-level rejections
+- HTTP errors (4xx, 5xx, timeout) → raise `ClearinghouseError` with structured info
+- AAA rejections → returned in the response dict, parsed into `AAAError` models by response parser
+- Pipeline catches `ClearinghouseError` → converts to `Finding(code="CLEARINGHOUSE_ERROR", severity=ERROR)`
+
+**Response Parser → Pipeline:**
+- `parse_271_response(raw: dict) -> EligibilityResponse` — pure function
+- Unmapped/unexpected fields → logged as WARNING, never exceptions (NFR14)
+- Missing expected fields → populate with `None`, create `Finding(code="ELIG_INCOMPLETE_RESPONSE", severity=WARNING)`
+
+**Pipeline → User:**
+- `EligibilityResult.passed` = `True` only if zero ERROR-severity findings from rule-based phase
+- `EligibilityResult.eligible` = coverage status from 271 response (`True`/`False`/`None`)
+- `EligibilityResult.response` = structured `EligibilityResponse` (None if clearinghouse not called)
+- `EligibilityResult.ai_summary` = human-readable string (None if AI not called)
+- `EligibilityResult.findings` = flat list from all phases, ordered by: phase (rule→clearinghouse→AI), then severity
+
+### Eligibility Process Patterns
+
+**Clearinghouse client contract:**
+
+```python
+class BaseClearinghouseClient(ABC):
+    provider_name: str
+    environment: str  # "sandbox" | "production"
+
+    @abstractmethod
+    def submit_eligibility(self, request: EligibilityRequest) -> dict:
+        """
+        MUST:
+        - Return raw JSON dict from clearinghouse (271 response)
+        - Raise ClearinghouseError for HTTP/network failures
+        - NOT raise for business rejections (AAA segments)
+
+        MUST NOT:
+        - Parse the response into models (response_parser's job)
+        - Strip or modify PHI (clearinghouse needs PHI)
+        - Log PHI (no logging of request/response bodies)
+        """
+
+    def close(self) -> None: ...
+    def __enter__(self) -> Self: ...
+    def __exit__(self, *args) -> None: ...
+```
+
+**Response parser contract:**
+
+```python
+def parse_271_response(raw: dict) -> EligibilityResponse:
+    """
+    MUST:
+    - Handle missing fields gracefully (None, not exception)
+    - Map Stedi JSON structure to EligibilityResponse model
+    - Extract all BenefitInfo from EB segments
+    - Extract AAAError from AAA segments
+    - Preserve raw_response for advanced users
+
+    MUST NOT:
+    - Make network calls
+    - Modify the raw response dict
+    - Raise exceptions for malformed data (return partial model + warnings)
+    """
+```
+
+**Eligibility validator example:**
+
+```python
+class PayerIDValidator(BaseValidator):
+    name = "payer_id"
+
+    def validate(self, claim: EligibilityRequest) -> ValidatorOutput:
+        findings: list[Finding] = []
+        payer_dir = get_payer_directory()
+        if claim.payer_id not in payer_dir:
+            findings.append(Finding(
+                code="ELIG_INVALID_PAYER",
+                message="Payer ID not found in known payer directory",
+                severity=Severity.ERROR,
+                field_name="payer_id",
+                suggestion="Verify payer ID at https://www.stedi.com/app/payers",
+                context={"payer_id_length": len(claim.payer_id)},
+            ))
+        return self._make_output(findings)
+```
+
+**BaseValidator input type:** Eligibility validators accept `EligibilityRequest` (not `ClaimData`). `BaseValidator.validate()` uses `validate(self, data: Any) -> ValidatorOutput` internally, with concrete validators type-hinting their specific input type.
+
+### Eligibility Enforcement Guidelines
+
+**All AI Agents MUST (eligibility-specific):**
+
+1. Use `ELIG_` prefix for all eligibility finding codes to avoid collision with claim finding codes
+2. Use `CLEARINGHOUSE_` prefix for clearinghouse infrastructure findings
+3. Never log request or response bodies from clearinghouse calls (PHI)
+4. Use `EligibilityDeidentifier` before passing any response data to LLM
+5. Handle missing 271 fields with `None` and WARNING findings — never crash on unexpected data
+6. Return `EligibilityResult` from pipeline — never return raw dicts or unstructured data
+7. Follow the clearinghouse client contract — return raw dict, raise only for infrastructure errors
+8. Follow the response parser contract — no exceptions for malformed data, return partial models
+
+## Eligibility Module — Project Structure & Boundaries
+
+### Eligibility Directory Structure
+
+**New files added to existing package** (existing files unchanged):
+
+```
+src/claim_validator/
+├── ... (all existing modules unchanged)
+├── eligibility/                          # NEW subpackage
+│   ├── __init__.py                       # Re-exports: check_eligibility, EligibilityRequest, etc.
+│   ├── _api.py                           # check_eligibility() convenience function
+│   ├── pipeline.py                       # EligibilityPipeline (three-phase)
+│   ├── response_parser.py               # parse_271_response() — raw JSON → EligibilityResponse
+│   ├── deidentifier.py                   # EligibilityDeidentifier
+│   ├── models/
+│   │   ├── __init__.py                   # Re-exports all eligibility models
+│   │   ├── request.py                    # EligibilityRequest (frozen, flat)
+│   │   ├── response.py                   # EligibilityResponse, CoverageInfo, BenefitInfo
+│   │   ├── errors.py                     # AAAError, CoverageStatus enum
+│   │   ├── result.py                     # EligibilityResult
+│   │   └── deidentified.py              # DeidentifiedEligibilityResponse
+│   ├── validators/
+│   │   ├── __init__.py
+│   │   ├── rule_based/
+│   │   │   ├── __init__.py
+│   │   │   ├── payer_id.py              # PayerIDValidator (FR9)
+│   │   │   ├── demographics.py          # EligibilityDemographicsValidator (FR10)
+│   │   │   ├── service_type.py          # ServiceTypeValidator (FR11)
+│   │   │   ├── date.py                  # EligibilityDateValidator (FR12)
+│   │   │   └── member_id.py             # MemberIDValidator (FR13)
+│   │   └── ai/
+│   │       ├── __init__.py
+│   │       └── interpreter.py           # EligibilityInterpreterAI (FR31-FR35)
+│   ├── clearinghouse/
+│   │   ├── __init__.py                  # Re-exports: BaseClearinghouseClient, get_clearinghouse_client
+│   │   ├── base.py                      # BaseClearinghouseClient ABC
+│   │   ├── factory.py                   # get_clearinghouse_client()
+│   │   └── stedi.py                     # StediClient (FR16-FR22)
+│   ├── code_tables/
+│   │   ├── __init__.py                  # Re-exports: get_payer_directory, get_service_types
+│   │   ├── payer_directory.py           # Payer ID lookup (lazy singleton)
+│   │   └── service_types.py             # X12 service type code lookup (lazy singleton)
+│   └── data/
+│       ├── payer_directory.json         # ~3,400 payer IDs (~200KB)
+│       └── service_types.json           # X12 service type codes
+```
+
+**Test structure:**
+
+```
+tests/
+├── ... (all existing tests unchanged)
+├── test_eligibility/
+│   ├── conftest.py                      # Eligibility fixtures, request factories
+│   ├── test_api.py                      # check_eligibility() top-level function
+│   ├── test_pipeline.py                 # Three-phase execution, gate logic, aggregation
+│   ├── test_response_parser.py          # parse_271_response() with real/mock 271 data
+│   ├── test_deidentifier.py             # All 18 HIPAA identifiers stripped from response
+│   ├── test_models/
+│   │   ├── test_request.py              # EligibilityRequest validation, dict input, frozen
+│   │   ├── test_response.py             # EligibilityResponse, BenefitInfo, CoverageInfo
+│   │   ├── test_errors.py               # AAAError model
+│   │   ├── test_result.py               # EligibilityResult
+│   │   └── test_deidentified.py         # DeidentifiedEligibilityResponse type enforcement
+│   ├── test_validators/
+│   │   ├── test_rule_based/
+│   │   │   ├── test_payer_id.py
+│   │   │   ├── test_demographics.py
+│   │   │   ├── test_service_type.py
+│   │   │   ├── test_date.py
+│   │   │   └── test_member_id.py
+│   │   └── test_ai/
+│   │       └── test_interpreter.py
+│   ├── test_clearinghouse/
+│   │   ├── test_base.py
+│   │   ├── test_factory.py
+│   │   └── test_stedi.py
+│   ├── test_code_tables/
+│   │   ├── test_payer_directory.py
+│   │   └── test_service_types.py
+│   └── test_hipaa/
+│       ├── test_phi_leak.py
+│       ├── test_no_network.py
+│       └── test_deidentification.py
+```
+
+**Modified existing files:**
+
+| File | Change |
+|---|---|
+| `pyproject.toml` | Add `stedi` extra, update `all` extra |
+| `src/claim_validator/__init__.py` | Add eligibility re-exports |
+| `src/claim_validator/conf.py` | Add Stedi config and eligibility validator list settings |
+| `src/claim_validator/exceptions.py` | Add `ClearinghouseError` subclass |
+| `src/claim_validator/constants.py` | Add `CoverageStatus` enum |
+
+**New file count:** ~35 source files + ~25 test files = ~60 new files
+
+### Eligibility Architectural Boundaries
+
+**Public API Boundary (new symbols):**
+
+| Symbol | Module | Stability |
+|---|---|---|
+| `check_eligibility()` | `eligibility/_api.py` | Stable from v1.0 |
+| `EligibilityRequest` | `eligibility/models/request.py` | Stable from v1.0 |
+| `EligibilityResponse` | `eligibility/models/response.py` | Stable from v1.0 |
+| `EligibilityResult` | `eligibility/models/result.py` | Stable from v1.0 |
+| `BenefitInfo`, `CoverageInfo` | `eligibility/models/response.py` | Stable from v1.0 |
+| `BaseClearinghouseClient` | `eligibility/clearinghouse/base.py` | Stable from v1.0 (requires `[stedi]`) |
+| `EligibilityPipeline` | `eligibility/pipeline.py` | Stable from v1.0 |
+
+**Internal boundary:** `response_parser.py`, `stedi.py` (via factory), `code_tables/*.py`, `deidentifier.py` (via pipeline)
+
+**Optional dependency boundary:** `clearinghouse/` requires `[stedi]` extra; `validators/ai/` requires LLM client; rule-based works with zero additional deps
+
+### Requirements to Structure Mapping
+
+| FR Category | Primary Location | Supporting Files |
+|---|---|---|
+| **Request Data (FR1-FR7)** | `eligibility/models/request.py` | `eligibility/_api.py` |
+| **Rule-Based Validation (FR8-FR15)** | `eligibility/validators/rule_based/*.py` | `eligibility/code_tables/*.py`, `eligibility/data/*` |
+| **Clearinghouse (FR16-FR22)** | `eligibility/clearinghouse/stedi.py` | `eligibility/clearinghouse/base.py`, `factory.py` |
+| **Response Parsing (FR23-FR29)** | `eligibility/response_parser.py`, `eligibility/models/response.py` | `eligibility/models/errors.py` |
+| **AI Interpretation (FR30-FR35)** | `eligibility/validators/ai/interpreter.py`, `eligibility/deidentifier.py` | `llm/` (reuse) |
+| **Pipeline (FR36-FR40)** | `eligibility/pipeline.py` | `eligibility/models/result.py` |
+| **Configuration (FR41-FR44)** | `conf.py` (extend) | — |
+| **Extensibility (FR45-FR47)** | `validators/base.py` (reuse), `eligibility/clearinghouse/base.py` | `validators/registry.py` (reuse) |
+
+### Eligibility Data Flow
+
+```
+User Input (dict or EligibilityRequest)
+    │
+    ▼
+check_eligibility() [eligibility/_api.py]
+    │ Constructs EligibilityRequest if dict, builds pipeline from settings
+    ▼
+EligibilityPipeline.run(request) [eligibility/pipeline.py]
+    │
+    ├── Phase 1: Rule-Based (offline, synchronous)
+    │   ├── NPIValidator(request) → reuse existing
+    │   ├── PayerIDValidator(request) → payer_directory lookup
+    │   ├── EligibilityDemographicsValidator(request)
+    │   ├── ServiceTypeValidator(request) → service_types lookup
+    │   ├── EligibilityDateValidator(request)
+    │   ├── MemberIDValidator(request)
+    │   └── Aggregate → partial EligibilityResult
+    │
+    ├── Gate: skip_clearinghouse_on_rule_failure check
+    │
+    ├── Phase 2: Clearinghouse (single call, network)
+    │   ├── get_clearinghouse_client(settings) → StediClient
+    │   ├── client.submit_eligibility(request) → raw 271 dict
+    │   ├── parse_271_response(raw) → EligibilityResponse
+    │   └── If ClearinghouseError → Finding, return partial result
+    │
+    ├── Gate: skip_ai check
+    │
+    └── Phase 3: AI Interpretation (optional, network)
+        ├── EligibilityDeidentifier.deidentify(response) → DeidentifiedEligibilityResponse
+        ├── get_llm_client(settings) → BaseLLMClient (reuse)
+        ├── EligibilityInterpreterAI(deidentified) → findings + ai_summary
+        └── Aggregate → complete EligibilityResult
+    │
+    ▼
+EligibilityResult (eligible, response, findings, ai_summary, passed, raw_response)
+```
+
+## Eligibility Module — Architecture Validation Results
+
+### Coherence Validation
+
+**Decision Compatibility:**
+All 10 new decisions (D14-D23) compatible with 13 existing decisions (D1-D13):
+- D14 (clearinghouse ABC) mirrors D7 (LLM client ABC) — consistent pattern
+- D15 (frozen models) matches D3 — same immutability/coercion
+- D16 (separate pipeline) independent from ValidationPipeline — no conflict
+- D17 (PHI dual-path) extends D5+D6 — same belt-and-suspenders
+- D18 (sync httpx) uses same dep already in AI extras — no version conflict
+- D19 (lazy JSON singleton) follows D1+D2 — identical pattern
+- D23 (extend settings) follows D4 — consistent
+
+**No contradictory decisions found.**
+
+**Pattern Consistency:**
+- Naming: All eligibility names follow existing conventions (ELIG_ prefix avoids collision)
+- Test structure mirrors source 1:1
+- One-file-per-class maintained
+- Error handling follows existing pattern (validators return findings, infrastructure raises exceptions)
+
+**Structure Alignment:**
+- Eligibility subpackage cleanly nested in existing package
+- Optional dependency boundary maintained (stedi extra)
+- Public/internal boundary clear
+
+### Requirements Coverage Validation
+
+**Functional Requirements Coverage: 47/47 (100%)**
+
+| FR Range | Category | Architectural Support | Status |
+|---|---|---|---|
+| FR1-FR7 | Request Data | `EligibilityRequest` model, dict + typed input | Full |
+| FR8-FR15 | Rule-Based Validation | 6 validators (1 reuse + 5 new), payer directory, service types | Full |
+| FR16-FR22 | Clearinghouse | `BaseClearinghouseClient` ABC + `StediClient` + factory | Full |
+| FR23-FR29 | Response Parsing | `EligibilityResponse`, `BenefitInfo`, `CoverageInfo`, `AAAError`, raw response | Full |
+| FR30-FR35 | AI Interpretation | `EligibilityDeidentifier` + `EligibilityInterpreterAI` + reuse LLM providers | Full |
+| FR36-FR40 | Pipeline | `EligibilityPipeline` three-phase + `EligibilityResult` | Full |
+| FR41-FR44 | Configuration | Extend `ClaimValidatorSettings` with Stedi config + eligibility validators | Full |
+| FR45-FR47 | Extensibility | `BaseValidator` + `BaseClearinghouseClient` subclassing + dotted-path registry | Full |
+
+**Non-Functional Requirements Coverage: 23/23 (100%)**
+
+| NFR Range | Category | Architectural Support | Status |
+|---|---|---|---|
+| NFR1-NFR5 | Performance | Stateless validators, lazy loading, pure response parser, lightweight models | Full |
+| NFR6-NFR10 | Security | EligibilityDeidentifier, no PHI logging, TLS via httpx, env-only keys | Full |
+| NFR11-NFR14 | Reliability | ClearinghouseError, 30s timeout, LLM graceful degradation, partial model parsing | Full |
+| NFR15-NFR20 | Code Quality | Same tooling (mypy/ruff/pytest), backward compat, optional deps | Full |
+| NFR21-NFR23 | Documentation | Convention maintained, quickstart, API reference | Full |
+
+### Implementation Readiness Validation
+
+**Decision Completeness:** 23/23 decisions documented (13 base + 10 eligibility) with choices, rationale, and affected components. Implementation sequence defined with dependency chain.
+
+**Structure Completeness:** Full eligibility directory tree with ~60 files (35 source + 25 test). Every file mapped to specific FRs. 5 modified existing files identified.
+
+**Pattern Completeness:** 40 conflict points addressed (28 base + 12 eligibility). Code examples for clearinghouse contract, response parser contract, and eligibility validator. Anti-patterns documented via existing architecture patterns.
+
+### Gap Analysis Results
+
+**Critical Gaps: 0**
+
+**Important Gaps: 2 (resolved)**
+
+1. **BaseValidator.validate() type signature** — Use `validate(self, data: Any) -> ValidatorOutput` in the ABC. Concrete validators type-hint their specific input. Mypy strict catches type issues in concrete implementations.
+
+2. **NPIValidator reuse** — Extract `_validate_npi(npi: str) -> list[Finding]` utility function in `validators/rule_based/_npi_utils.py`. Both claim NPIValidator and eligibility pipeline call the same utility.
+
+**Nice-to-Have: 1 (noted)**
+
+1. **Stedi 271 response fixtures** — Include example 271 JSON responses in `tests/test_eligibility/fixtures/` for testing.
+
+### Architecture Completeness Checklist
+
+**Requirements Analysis**
+
+- [x] Eligibility PRD analyzed (47 FRs + 23 NFRs)
+- [x] Scale and complexity assessed (Medium-High, 60% reuse)
+- [x] Technical constraints identified (7 new)
+- [x] Cross-cutting concerns mapped (6 new/modified)
+
+**Architectural Decisions**
+
+- [x] 10 new decisions documented with rationale (D14-D23)
+- [x] Technology choices compatible with existing stack
+- [x] Clearinghouse integration pattern defined
+- [x] PHI dual-path enforcement designed
+
+**Implementation Patterns**
+
+- [x] Eligibility naming conventions established (12 conflict points)
+- [x] Finding code prefixes defined (ELIG_, CLEARINGHOUSE_, AAA_, AI_ELIG_)
+- [x] Clearinghouse client contract specified with code example
+- [x] Response parser contract specified with code example
+
+**Project Structure**
+
+- [x] Complete eligibility directory structure (~35 source files)
+- [x] Test mirror defined (~25 test files)
+- [x] All 47 FRs mapped to specific files
+- [x] Modified existing files identified (5 files)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — 47/47 FRs and 23/23 NFRs covered, zero critical gaps, 23 coherent decisions, proven pattern reuse.
+
+**Key Strengths:**
+1. **60% pattern reuse** — validators, LLM providers, de-identification, settings, pipeline all follow proven patterns
+2. **PHI dual-path by architecture** — type-driven + pipeline-level enforcement prevents bypass
+3. **Clean extension** — zero changes to existing `validate()` API; eligibility is purely additive
+4. **Clearinghouse abstraction** — `BaseClearinghouseClient` mirrors `BaseLLMClient`; ready for future providers
+5. **Graceful 3-tier degradation** — rule-based always works; clearinghouse failure → partial result; LLM failure → structured response without AI
+
+**Areas for Future Enhancement:**
+1. Async eligibility pipeline — v1.1
+2. Multi-clearinghouse implementations — v1.2
+3. Batch eligibility checks — v1.1
+4. FHIR mapping — v2.0
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+- Follow all 23 architectural decisions (D1-D13 base + D14-D23 eligibility) exactly
+- Use ELIG_ prefix for all eligibility finding codes
+- Follow clearinghouse client and response parser contracts
+- Every eligibility validator must pass PHI-leak test
+- Extract NPI logic into shared utility (`_npi_utils.py`), don't duplicate
+
+**Eligibility Implementation Sequence:**
+1. Eligibility models (D15) — `EligibilityRequest`, `EligibilityResponse`, `BenefitInfo`, `CoverageInfo`, `AAAError`, `EligibilityResult`
+2. Settings extension (D23) — Stedi config, eligibility validator lists
+3. Payer directory + service types (D19) — bundled JSON, lazy loaders
+4. NPI utility extraction — `_npi_utils.py` shared module
+5. Rule-based eligibility validators — 5 new validators
+6. Clearinghouse abstraction (D14) — `BaseClearinghouseClient` ABC, factory
+7. Stedi client (D18) — `StediClient` implementation
+8. Response parser — `parse_271_response()` function
+9. Eligibility de-identifier (D21) — `EligibilityDeidentifier`, `DeidentifiedEligibilityResponse`
+10. AI interpreter (D22) — `EligibilityInterpreterAI`
+11. Pipeline (D16, D17) — `EligibilityPipeline` with three-phase execution and PHI enforcement
+12. Top-level API — `check_eligibility()` convenience function
+13. `__init__.py` re-exports — add eligibility symbols
+14. Test suite — all ~25 test files
+
+---
+
+## Prior Authorization Module — Context Analysis
+
+### Requirements Overview
+
+**Functional Requirements:**
+56 FRs across 9 categories extending the library with PA-specific models, validators, 278 response parsing, and eligibility-to-PA bridge function.
+
+| Category | Count | Architectural Impact |
+|---|---|---|
+| PA Determination from Eligibility (FR1-FR5) | 5 | NEW: Cross-module bridge function `determine_pa_required()` — accepts `EligibilityResponse`, returns `PADeterminationResult` |
+| PA Request Data Modeling (FR6-FR10) | 5 | `PriorAuthRequest`, `ServiceLine` models; `RequestCategoryCode`, `CertificationTypeCode`, `CertificationActionCode` enums |
+| Pre-Submission Rule-Based Validation (FR11-FR19) | 9 | 7 validators reusing `BaseValidator`; cross-field consistency checks (dx-supports-procedure, gender/age-procedure) |
+| Clearinghouse Integration (FR20-FR24) | 5 | Extend `BaseClearinghouseClient` with `submit_prior_auth()` method — same abstract pattern |
+| 278 Response Parsing (FR25-FR31) | 7 | `PriorAuthResponse`, `ServiceLineDecision` models; HCR action code mapping (7 codes); `parse_278_response()` |
+| AAA Error Handling (FR32-FR35) | 4 | `PriorAuthError` model; 20+ AAA reject reason code table; `AAA_PA_REJECTION` finding codes |
+| PHI De-Identification (FR36-FR40) | 5 | `PriorAuthDeidentifier` — same pattern as `EligibilityDeidentifier`; mandatory pipeline gate |
+| AI Interpretation (FR41-FR46) | 6 | `PriorAuthInterpreterAI` — denial appeal strategies, pended case guidance; reuses `BaseLLMClient` |
+| Pipeline Orchestration (FR47-FR51) | 5 | `PriorAuthPipeline` three-phase; `PriorAuthResult`; rule-based-only mode when no clearinghouse configured |
+| Finding Code System (FR52-FR56) | 5 | `PA_`, `AI_PA_`, `AAA_PA_REJECTION`, `CLEARINGHOUSE_` prefixes |
+
+**Non-Functional Requirements:**
+36 NFRs across 5 categories, largely consistent with existing constraints.
+
+| Category | Count | Key Constraint |
+|---|---|---|
+| Performance (NFR1-NFR6) | 6 | <100ms rule-based, <500ms code table first-load, <50ms response parsing, <10ms PA determination, <20ms pipeline overhead, <50MB code table memory |
+| Security & Privacy (NFR7-NFR15) | 9 | 18 HIPAA identifiers stripped; mandatory de-id gate; TLS 1.2+; no PHI in logs/exceptions/memory persistence |
+| Reliability & Error Handling (NFR16-NFR21) | 6 | Missing fields → None/WARNING; unmapped HCR/AAA codes → WARNING; graceful LLM degradation |
+| Integration Compatibility (NFR22-NFR28) | 7 | Zero breaking changes; reuse existing LLM/finding/code table infrastructure; consistent timeouts |
+| Code Quality (NFR29-NFR36) | 8 | >90% coverage; mypy strict; ruff clean; frozen models; mirror eligibility layout; HIPAA test subdirectory |
+
+**Scale & Complexity:**
+
+- Primary domain: **Python library extension** (brownfield, same package)
+- Complexity level: **Medium** — 70%+ pattern reuse from existing architecture; clearinghouse abstraction, pipeline, de-identification all follow proven patterns
+- New architectural components: **~7 major** — PA models (request + response + result + determination), PA validators (7 rule-based + 1 AI), PA code tables (3 new), PA de-identifier, PA pipeline, `determine_pa_required()` bridge, `submit_prior_auth()` API
+
+### New Technical Constraints & Dependencies
+
+| Constraint | Source | Architectural Implication |
+|---|---|---|
+| **BaseClearinghouseClient extension** | FR20-FR24 | Must add `submit_prior_auth()` to existing ABC or create PA-specific subclass — key design decision |
+| **PHI dual-path (same pattern)** | NFR7-NFR15 | `PriorAuthDeidentifier` mirrors `EligibilityDeidentifier`; pipeline enforces de-id gate before AI |
+| **Cross-module dependency** | FR1-FR5 | `determine_pa_required()` imports `EligibilityResponse` from eligibility module — first cross-module dependency |
+| **278 per-service-line decisions** | FR29 | 278 responses have per-service decisions (unlike 271 which is holistic) — response model more complex |
+| **Abstract clearinghouse (no concrete MVP)** | FR20 | Rule-based + response parsing work fully offline; concrete provider deferred to v2.1 |
+| **HCR action code mapping** | FR26 | 7 action codes (A1/A2/A3/A4/A6/CT/NA) need structured enum + description table |
+| **AAA reject code table** | FR33 | 20+ reject codes bundled as new `prior_auth/data/aaa_reject_codes.json` |
+| **Backward compatibility** | NFR22 | Existing `validate()` and `check_eligibility()` APIs must remain unchanged |
+
+### New Cross-Cutting Concerns
+
+| Concern | Scope | Strategy |
+|---|---|---|
+| **Clearinghouse method extension** | `BaseClearinghouseClient` needs both `submit_eligibility()` and `submit_prior_auth()` | Design decision: extend existing ABC vs PA-specific subclass |
+| **Cross-module imports** | `determine_pa_required()` depends on eligibility models | Loose coupling via duck typing — accept `dict \| EligibilityResponse` |
+| **PA-specific code tables** | AAA reject codes, HCR action codes, service type codes | Same lazy singleton pattern; new `prior_auth/data/` directory |
+| **Finding code namespace** | PA codes must not conflict with existing CLM_, AI_, ELIG_ prefixes | `PA_` (rule-based), `AI_PA_` (AI), `AAA_PA_REJECTION` (AAA) |
+| **Response model complexity** | 278 has per-service-line decisions vs 271 holistic response | Nested `ServiceLineDecision` within `PriorAuthResponse` |
+| **Pipeline gate behavior** | Three different gate scenarios: no clearinghouse, no AI, or full pipeline | Same EligibilityPipeline gate pattern; additional "no clearinghouse configured" gate |
+
+### Reuse Analysis
+
+| Existing Component | Reuse Strategy | Modification Needed |
+|---|---|---|
+| `BaseValidator` ABC | Direct reuse | None — PA validators subclass same base |
+| `ValidatorRegistry` | Direct reuse | None — same dotted-path loading |
+| `BaseLLMClient` + providers | Direct reuse | None — PA AI uses same LLM providers |
+| `BaseClearinghouseClient` | **Extend** | Add `submit_prior_auth()` method to ABC (or create `BasePAClearinghouseClient`) |
+| `EligibilityDeidentifier` pattern | Pattern reuse | New `PriorAuthDeidentifier` class, same approach |
+| `Finding`, `Severity`, `ValidatorOutput` | Direct reuse | None — PA validators produce same output types |
+| `ClaimValidatorSettings` | Extend | Add PA validator lists, PA-specific settings |
+| Code table loader pattern | Pattern reuse | New PA-specific tables using same lazy singleton |
+| Exception hierarchy | Direct reuse | `ClearinghouseError` already exists — reuse directly |
+| Test patterns | Direct reuse | Same class-based structure, PHI-leak assertions |
+| `__init__.py` re-export pattern | Extend | Add PA symbols to top-level exports |
+| `EligibilityPipeline` pattern | Pattern reuse | New `PriorAuthPipeline` class, same three-phase architecture |
+
+### Starter Template Evaluation (Extension)
+
+**Primary Technology Domain:** Python library extension — adding `prior_auth/` subpackage to existing `claim-validator` package.
+
+**Starter: N/A — Existing Package Extension**
+
+All foundational decisions from the original architecture (D1-D13) and eligibility extension (D14-D23) remain in effect. No new starter template needed.
+
+**What the extension adds to `pyproject.toml`:** No new optional extras in MVP — PA module uses existing `[ai]` extra for AI interpretation and existing `[stedi]` extra when concrete provider ships in v2.1. Rule-based PA validation works with zero additional dependencies.
+
+**Extension lives inside the existing package** as `src/claim_validator/prior_auth/` subpackage. All existing tooling (hatchling, uv, ruff, mypy, pytest) applies unchanged.
+
+## Prior Authorization Module — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+- D24: Clearinghouse client extension → Separate `BasePAClearinghouseClient` subclass
+- D25: PA data models → Flat request, nested response with per-service-line decisions
+- D26: PA pipeline → Separate `PriorAuthPipeline`, three-phase
+- D27: PHI dual-path → Same pattern, `PriorAuthDeidentifier`
+
+**Important Decisions (Shape Architecture):**
+- D28: PA determination bridge → Cross-module function with duck-typed input
+- D29: HCR action code mapping → Enum + JSON description table
+- D30: AAA error model → `PriorAuthError` + Finding objects (mirrors D20)
+- D31: PA de-identification → Separate `PriorAuthDeidentifier` class
+- D32: AI interpretation → Single `PriorAuthInterpreterAI` validator
+- D33: Settings extension → Extend `ClaimValidatorSettings` with PA fields
+
+**Deferred Decisions (Post-MVP):**
+- Concrete clearinghouse provider (Stedi 278 / Optum) — v2.1
+- FHIR PAS model mapping — v2.1
+- Status polling for pended PAs — v2.1
+- 278 update/revision/extension requests — v2.1
+- 275 attachment submission — v2.2
+- Batch 278 submissions — v2.2
+
+### Clearinghouse Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D24: BasePAClearinghouseClient** | Subclass of `BaseClearinghouseClient` with `submit_prior_auth()` abstract method | Non-breaking — existing `StediClient` (eligibility-only) continues working. PA-capable clients subclass the new base. Consistent with NFR22. When Stedi adds 278 in v2.1, `StediClient` inherits from `BasePAClearinghouseClient` instead | `prior_auth/clearinghouse/base.py`, `prior_auth/pipeline.py` |
+
+**Clearinghouse client hierarchy:**
+```
+BaseClearinghouseClient (ABC) [existing — eligibility/clearinghouse/base.py]
+├── submit_eligibility(request: EligibilityRequest) -> dict
+├── provider_name: str
+├── environment: str
+│
+├── StediClient [existing — eligibility/clearinghouse/stedi.py]
+│   └── submit_eligibility() implemented
+│
+└── BasePAClearinghouseClient (ABC) [NEW — prior_auth/clearinghouse/base.py]
+    ├── submit_prior_auth(request: PriorAuthRequest) -> dict  # NEW abstract
+    │
+    └── (No concrete implementation in MVP)
+    └── (v2.1: StediPAClient or StediClient extends this)
+```
+
+### Data Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D25: PA model design** | Flat request, nested response with `ServiceLineDecision` list | `PriorAuthRequest` is flat (like `EligibilityRequest`) — simple dict-compatible input. `PriorAuthResponse` is nested — 278 has per-service-line authorization decisions + overall HCR action. All frozen=True, strict=False (matches D3) | `prior_auth/models/` |
+| **D29: HCR action codes** | `CertificationActionCode` StrEnum + `prior_auth/data/hcr_action_codes.json` description table | Enum for type safety in code; JSON table for human-readable descriptions, suggested actions. Lazy-loaded singleton | `prior_auth/constants.py`, `prior_auth/data/hcr_action_codes.json`, `prior_auth/code_tables/hcr_actions.py` |
+| **D30: AAA errors** | Dual access — `PriorAuthError` model + `Finding` objects (mirrors D20) | `PriorAuthError` Pydantic model in `PriorAuthResponse.errors` for programmatic access. Pipeline also creates `Finding(code="AAA_PA_REJECTION")` for consistent pipeline output. Same pattern as eligibility | `prior_auth/models/errors.py`, `prior_auth/pipeline.py` |
+
+**Model hierarchy:**
+```
+PriorAuthRequest (frozen, flat)
+├── requester_npi, requester_taxonomy
+├── payer_id
+├── subscriber: SubscriberInfo (member_id, first_name, last_name, dob)
+├── patient: PatientInfo | None (for dependents)
+├── diagnosis_codes: list[str] (ICD-10-CM)
+├── service_lines: list[ServiceLine]
+│   ├── cpt_code, quantity, from_date, to_date
+│   └── place_of_service_code
+├── request_category_code: RequestCategoryCode (AR/HS/SC/IN)
+├── certification_type_code: CertificationTypeCode (I/R/S/E)
+└── clinical_info: str | None (free-text clinical justification)
+
+PriorAuthResponse (frozen, nested)
+├── action_code: CertificationActionCode (A1/A2/A3/A4/A6/CT/NA)
+├── is_approved: bool  # A1
+├── is_denied: bool    # A3
+├── is_pended: bool    # A4
+├── authorization_number: str | None
+├── effective_date: date | None
+├── expiration_date: date | None
+├── decision_reason_code: str | None
+├── decision_reason_description: str | None
+├── service_line_decisions: list[ServiceLineDecision]
+│   ├── cpt_code, action_code, authorization_number
+│   └── approved_quantity, denied_reason
+├── errors: list[PriorAuthError]
+│   ├── rejection_code, follow_up_code
+│   └── message, suggested_fix
+└── raw_response: dict  # full 278 JSON
+
+PADeterminationResult (frozen)
+├── required: bool
+├── confidence: str  # "high" / "medium" / "low"
+├── reason: str  # human-readable explanation
+├── auth_or_cert_indicator: str | None  # raw Y/N/U
+└── free_text_indicators: list[str]  # parsed free-text PA signals
+
+PriorAuthResult (pipeline output)
+├── approved: bool | None
+├── response: PriorAuthResponse | None
+├── findings: list[Finding]
+├── ai_summary: str | None
+├── passed: bool (rule-based)
+├── authorization_number: str | None
+├── raw_response: dict | None
+└── execution_time: float
+```
+
+### Security Architecture (HIPAA Extension)
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D27: PHI dual-path** | Same pattern as D17 — pipeline-level + type-driven | `PriorAuthDeidentifier` operates on `PriorAuthResponse` → `DeidentifiedPriorAuthResponse`. Pipeline enforces ordering. Clearinghouse receives raw `PriorAuthRequest` (PHI required) | `prior_auth/pipeline.py`, `prior_auth/deidentifier.py`, `prior_auth/models/deidentified.py` |
+| **D31: PA de-identifier** | Separate `PriorAuthDeidentifier` class | PA data has different sensitive fields than eligibility (clinical justification text, diagnosis descriptions). Separate class, same patterns. Strips: patient name, DOB, member ID, SSN, address, phone, clinical free-text PII. Caps age 90+. Dates to year-only | `prior_auth/deidentifier.py` |
+
+**PHI flow:**
+```
+PriorAuthRequest (has PHI) ──────────→ Clearinghouse (PHI allowed)
+                                             │
+                                             ▼
+                                    PriorAuthResponse (has PHI)
+                                             │
+                             PriorAuthDeidentifier.deidentify()
+                                             │
+                                             ▼
+                             DeidentifiedPriorAuthResponse (no PHI) → LLM
+```
+
+**Safe fields for LLM:** HCR action code, decision reason code, AAA reject codes, service type codes, CPT/HCPCS codes (without patient context), authorization status, effective date ranges (year only).
+**Stripped fields:** patient name, DOB, member ID, SSN, address, phone, subscriber ID, NPI (when combined with patient), clinical justification free-text (PII scrubbed), diagnosis code descriptions (when combined with demographics).
+
+### Pipeline Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D26: Pipeline design** | Separate `PriorAuthPipeline` — three-phase | Same rationale as D16 (eligibility pipeline). PA has same flow: rule-based → clearinghouse → AI. Separate class, same patterns. Additional gate: "no clearinghouse configured" → skip Phase 2 entirely (rule-based-only mode) | `prior_auth/pipeline.py` |
+| **D32: AI interpretation** | Single `PriorAuthInterpreterAI` validator | One AI validator for PA (mirrors D22). Interprets HCR action code + decision reason + AAA errors holistically. Generates: decision summary, next-step recommendations for pended/denied, appeal strategy for denials | `prior_auth/validators/ai/interpreter.py` |
+
+**Pipeline execution model:**
+```
+PriorAuthPipeline.run(request_data)
+  ├── Phase 1: Rule-based validators (sequential, offline)
+  │   ├── PANPIValidator (reuse NPI utility)
+  │   ├── PAMemberIDValidator
+  │   ├── PADateOfBirthValidator
+  │   ├── PADiagnosisValidator (ICD-10 lookup)
+  │   ├── PAProcedureValidator (CPT/HCPCS lookup)
+  │   ├── PAServiceDateValidator
+  │   ├── PACrossFieldValidator (dx-supports-procedure, gender/age)
+  │   └── Aggregate → partial PriorAuthResult (passed, findings)
+  │
+  ├── Gate: if rule_phase_failed AND skip_clearinghouse_on_failure → return
+  │
+  ├── Gate: if no clearinghouse_client configured → return (rule-based-only mode)
+  │
+  ├── Phase 2: Clearinghouse (single call, network)
+  │   ├── clearinghouse_client.submit_prior_auth(request) → raw 278 dict
+  │   ├── parse_278_response(raw) → PriorAuthResponse
+  │   └── If ClearinghouseError → Finding, return partial result
+  │
+  ├── Gate: if skip_ai → return with structured response
+  │
+  └── Phase 3: AI interpretation (optional, network)
+      ├── PriorAuthDeidentifier.deidentify(response) → DeidentifiedPriorAuthResponse
+      ├── get_llm_client(settings) → BaseLLMClient (reuse)
+      ├── PriorAuthInterpreterAI(deidentified) → findings + ai_summary
+      └── Aggregate → complete PriorAuthResult
+```
+
+### Cross-Module Bridge
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D28: PA determination** | Cross-module function with duck-typed input — `determine_pa_required(response: dict \| EligibilityResponse) -> PADeterminationResult` | Lives in `prior_auth/` module. Accepts both raw dict and typed `EligibilityResponse` via duck typing. Parses `authOrCertIndicator` (Y/N/U) and free-text `additionalInformation.description`. Free-text takes precedence when it indicates PA required (FR4). Loose coupling — no hard import of eligibility models at module level | `prior_auth/determination.py` |
+
+**Determination logic:**
+```
+determine_pa_required(response)
+  ├── Extract authOrCertIndicator from benefit info
+  │   ├── "Y" → required=True, confidence="high"
+  │   ├── "N" → required=False, confidence="high"
+  │   └── "U" or missing → required=None, confidence="low"
+  │
+  ├── Scan free-text additionalInformation.description
+  │   ├── Match PA indicators: "prior auth", "precertification", "preauthorization"
+  │   └── If found → override indicator, confidence="medium"
+  │
+  ├── Conflict resolution (FR4):
+  │   └── If free-text says required AND indicator says "N" → required=True (free-text wins)
+  │
+  └── Return PADeterminationResult(required, confidence, reason, raw_indicator, free_text_signals)
+```
+
+### Configuration
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D33: Settings** | Extend `ClaimValidatorSettings` with flat fields | Add `pa_rule_validators`, `pa_ai_validators`, `skip_clearinghouse_on_pa_failure`, `pa_skip_ai` as flat fields. All use `CLAIM_VALIDATOR_` env prefix. No new settings class — consistent with D23 | `conf.py` (modify existing) |
+
+### Decision Impact Analysis
+
+**Implementation Sequence (PA module):**
+1. PA models (D25) — `PriorAuthRequest`, `PriorAuthResponse`, `ServiceLine`, `ServiceLineDecision`, `PriorAuthError`, `PriorAuthResult`, `PADeterminationResult`
+2. PA enums/constants (D29) — `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode` StrEnums
+3. Settings extension (D33) — PA validator lists, PA-specific config
+4. PA code tables — `aaa_reject_codes.json`, `hcr_action_codes.json`, `service_type_codes.json` with lazy loaders
+5. Rule-based PA validators — 7 validators (NPI utility reuse + 6 new)
+6. PA determination bridge (D28) — `determine_pa_required()` function
+7. 278 response parser — `parse_278_response()` function
+8. PA clearinghouse abstraction (D24) — `BasePAClearinghouseClient` subclass
+9. PA de-identifier (D31) — `PriorAuthDeidentifier`, `DeidentifiedPriorAuthResponse`
+10. AI interpreter (D32) — `PriorAuthInterpreterAI`
+11. Pipeline (D26, D27) — `PriorAuthPipeline` with three-phase execution and PHI enforcement
+12. Top-level API — `submit_prior_auth()` convenience function
+13. `__init__.py` re-exports — add PA symbols
+
+**Cross-Component Dependencies:**
+- D25 (models) enables D26 (pipeline) — pipeline operates on PA models
+- D24 (clearinghouse subclass) — non-breaking extension of existing `BaseClearinghouseClient`
+- D26 (pipeline) requires D27 (PHI dual-path) + D31 (de-identifier) — pipeline enforces de-id before AI
+- D28 (PA determination) loosely depends on eligibility module — duck-typed input, no hard import
+- D29 (HCR codes) required by response parser and `PriorAuthResponse` model
+- D30 (AAA errors) required by response parser and pipeline Finding generation
+- D33 (settings) required by D26 (pipeline) — pipeline reads settings for config
+
+## Prior Authorization Module — Implementation Patterns & Consistency Rules
+
+### PA-Specific Conflict Points
+
+**10 new conflict areas** identified for the PA extension. These extend the existing 40 conflict points from the core + eligibility architecture.
+
+### PA Naming Patterns
+
+**Module & Class Naming:**
+
+| Element | Convention | Example | Anti-Pattern |
+|---|---|---|---|
+| PA models | `PriorAuth{Name}` or `{Name}` for sub-models | `PriorAuthRequest`, `ServiceLine`, `ServiceLineDecision` | `PARequest`, `PriorAuthReq`, `AuthRequest` |
+| PA validators | `PA{Name}Validator` | `PANPIValidator`, `PADiagnosisValidator` | `PriorAuthNPIValidator` (too long), `NPIValidator` (conflicts with claim) |
+| PA clearinghouse base | `BasePAClearinghouseClient` | — | `PAClearinghouseClient`, `PriorAuthClearinghouse` |
+| PA AI interpreter | `PriorAuthInterpreterAI` | — | `PAAI`, `InterpretPriorAuthAI` |
+| PA pipeline | `PriorAuthPipeline` | — | `PAPipeline`, `PriorAuthValidationPipeline` |
+| PA de-identifier | `PriorAuthDeidentifier` | — | `PADeidentifier`, `RequestDeidentifier` |
+| PA determination | `determine_pa_required()` | — | `check_pa_required()`, `pa_determination()` |
+| Top-level API | `submit_prior_auth()` | — | `prior_auth_submit()`, `send_prior_auth()` |
+| Response parser | `parse_278_response()` | — | `parse_pa_response()`, `read_278()` |
+| PA enums | `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode` | — | `HCRCode`, `ActionCode`, `PAActionCode` |
+
+**Finding Code Conventions:**
+
+| Category | Prefix | Example | Anti-Pattern |
+|---|---|---|---|
+| Rule-based PA | `PA_` prefix | `PA_INVALID_NPI`, `PA_MISSING_MEMBER_ID`, `PA_INVALID_DIAGNOSIS` | `INVALID_NPI` (conflicts with claim), `PRIOR_AUTH_NPI` (too long) |
+| AI PA | `AI_PA_` prefix | `AI_PA_DECISION_SUMMARY`, `AI_PA_APPEAL_STRATEGY` | `AI_PRIOR_AUTH_` (too long), `PA_AI_` (inconsistent order) |
+| AAA PA rejections | `AAA_PA_REJECTION` | `AAA_PA_REJECTION` with context dict containing rejection_code | `AAA_PA_04`, `PA_AAA_REJECTION` |
+| Clearinghouse | `CLEARINGHOUSE_` prefix (reuse) | `CLEARINGHOUSE_TIMEOUT`, `CLEARINGHOUSE_ERROR` | `PA_CLEARINGHOUSE_` (unnecessary prefix) |
+| Cross-field | `PA_CROSS_FIELD_` prefix | `PA_CROSS_FIELD_DX_PROCEDURE_MISMATCH` | `PA_MISMATCH` (unclear scope) |
+
+### PA Communication Patterns
+
+**Response Parser → Pipeline:**
+- `parse_278_response(raw: dict) -> PriorAuthResponse` — pure function
+- Unmapped HCR action codes → `Finding(code="PA_UNKNOWN_ACTION_CODE", severity=WARNING)` with raw code in context
+- Unmapped AAA codes → `Finding(code="AAA_PA_REJECTION", severity=WARNING)` with raw code + generic message
+- Missing fields → populate with `None`, create `Finding(code="PA_INCOMPLETE_RESPONSE", severity=WARNING)`
+- Per-service-line decisions → `ServiceLineDecision` objects within `PriorAuthResponse`
+
+**PA Determination → User:**
+- `PADeterminationResult.required` = `True`/`False`/`None` (None when indeterminate)
+- `PADeterminationResult.confidence` = `"high"`/`"medium"`/`"low"`
+- Free-text indicators override `authOrCertIndicator` when they indicate PA required (FR4)
+
+**Pipeline → User:**
+- `PriorAuthResult.passed` = `True` only if zero ERROR-severity findings from rule-based phase
+- `PriorAuthResult.approved` = authorization status from 278 response (`True`/`False`/`None`)
+- `PriorAuthResult.response` = structured `PriorAuthResponse` (None if clearinghouse not called)
+- `PriorAuthResult.ai_summary` = human-readable string (None if AI not called)
+- `PriorAuthResult.authorization_number` = shortcut to `response.authorization_number`
+- `PriorAuthResult.findings` = flat list from all phases, ordered by: phase (rule→clearinghouse→AI), then severity
+
+### PA Process Patterns
+
+**PA clearinghouse client contract:**
+
+```python
+class BasePAClearinghouseClient(BaseClearinghouseClient):
+    @abstractmethod
+    def submit_prior_auth(self, request: PriorAuthRequest) -> dict:
+        """
+        MUST:
+        - Return raw JSON dict from clearinghouse (278 response)
+        - Raise ClearinghouseError for HTTP/network failures
+        - NOT raise for business rejections (AAA segments)
+
+        MUST NOT:
+        - Parse the response into models (response_parser's job)
+        - Strip or modify PHI (clearinghouse needs PHI)
+        - Log PHI (no logging of request/response bodies)
+        """
+```
+
+**278 response parser contract:**
+
+```python
+def parse_278_response(raw: dict) -> PriorAuthResponse:
+    """
+    MUST:
+    - Handle missing fields gracefully (None, not exception)
+    - Map HCR action codes to CertificationActionCode enum
+    - Extract per-service-line decisions into ServiceLineDecision objects
+    - Extract PriorAuthError from AAA segments
+    - Preserve raw_response for advanced users
+    - Set convenience properties: is_approved, is_denied, is_pended
+
+    MUST NOT:
+    - Make network calls
+    - Modify the raw response dict
+    - Raise exceptions for malformed data (return partial model + warnings)
+    """
+```
+
+**PA validator example:**
+
+```python
+class PADiagnosisValidator(BaseValidator):
+    name = "pa_diagnosis"
+
+    def validate(self, data: PriorAuthRequest) -> ValidatorOutput:
+        findings: list[Finding] = []
+        icd10_table = get_icd10_table()
+        for dx_code in data.diagnosis_codes:
+            if dx_code not in icd10_table:
+                findings.append(Finding(
+                    code="PA_INVALID_DIAGNOSIS",
+                    message="ICD-10 diagnosis code not found in code tables",
+                    severity=Severity.ERROR,
+                    field_name="diagnosis_codes",
+                    suggestion="Verify ICD-10-CM code at https://www.icd10data.com",
+                    context={"code_length": len(dx_code)},
+                ))
+        return self._make_output(findings)
+```
+
+**BaseValidator input type:** PA validators accept `PriorAuthRequest` (not `ClaimData` or `EligibilityRequest`). Same approach as eligibility — `BaseValidator.validate(self, data: Any)` internally, concrete validators type-hint their specific input.
+
+### PA Enforcement Guidelines
+
+**All AI Agents MUST (PA-specific):**
+
+1. Use `PA_` prefix for all PA rule-based finding codes to avoid collision with claim (`CLM_`) and eligibility (`ELIG_`) codes
+2. Use `AI_PA_` prefix for AI interpretation findings
+3. Use `AAA_PA_REJECTION` for AAA business rejection findings (with raw code in context dict)
+4. Never log request or response bodies from clearinghouse calls (PHI)
+5. Use `PriorAuthDeidentifier` before passing any response data to LLM
+6. Handle missing 278 fields with `None` and WARNING findings — never crash on unexpected data
+7. Return `PriorAuthResult` from pipeline — never return raw dicts or unstructured data
+8. Follow the `BasePAClearinghouseClient` contract — return raw dict, raise only for infrastructure errors
+9. Follow the `parse_278_response()` contract — no exceptions for malformed data, return partial models
+10. Use `determine_pa_required()` for cross-module PA determination — never duplicate eligibility parsing logic
+
+## Prior Authorization Module — Project Structure & Boundaries
+
+### PA Directory Structure
+
+**New files added to existing package** (existing files unchanged):
+
+```
+src/claim_validator/
+├── ... (all existing modules unchanged)
+├── prior_auth/                              # NEW subpackage
+│   ├── __init__.py                          # Re-exports: submit_prior_auth, determine_pa_required, etc.
+│   ├── _api.py                              # submit_prior_auth() convenience function
+│   ├── determination.py                     # determine_pa_required() cross-module bridge
+│   ├── pipeline.py                          # PriorAuthPipeline (three-phase)
+│   ├── response_parser.py                   # parse_278_response() — raw JSON → PriorAuthResponse
+│   ├── deidentifier.py                      # PriorAuthDeidentifier
+│   ├── constants.py                         # CertificationActionCode, RequestCategoryCode, CertificationTypeCode
+│   ├── models/
+│   │   ├── __init__.py                      # Re-exports all PA models
+│   │   ├── request.py                       # PriorAuthRequest, ServiceLine, SubscriberInfo, PatientInfo
+│   │   ├── response.py                      # PriorAuthResponse, ServiceLineDecision
+│   │   ├── errors.py                        # PriorAuthError
+│   │   ├── result.py                        # PriorAuthResult
+│   │   ├── determination.py                 # PADeterminationResult
+│   │   └── deidentified.py                  # DeidentifiedPriorAuthResponse
+│   ├── validators/
+│   │   ├── __init__.py
+│   │   ├── rule_based/
+│   │   │   ├── __init__.py
+│   │   │   ├── npi.py                       # PANPIValidator (FR11, reuses NPI utility)
+│   │   │   ├── member_id.py                 # PAMemberIDValidator (FR12)
+│   │   │   ├── date_of_birth.py             # PADateOfBirthValidator (FR13)
+│   │   │   ├── diagnosis.py                 # PADiagnosisValidator (FR14)
+│   │   │   ├── procedure.py                 # PAProcedureValidator (FR15)
+│   │   │   ├── service_date.py              # PAServiceDateValidator (FR16)
+│   │   │   └── cross_field.py               # PACrossFieldValidator (FR17)
+│   │   └── ai/
+│   │       ├── __init__.py
+│   │       └── interpreter.py               # PriorAuthInterpreterAI (FR41-FR46)
+│   ├── clearinghouse/
+│   │   ├── __init__.py                      # Re-exports: BasePAClearinghouseClient
+│   │   └── base.py                          # BasePAClearinghouseClient ABC (extends BaseClearinghouseClient)
+│   ├── code_tables/
+│   │   ├── __init__.py                      # Re-exports: get_hcr_action_codes, get_aaa_reject_codes, get_pa_service_types
+│   │   ├── hcr_actions.py                   # HCR action code lookup (lazy singleton)
+│   │   ├── aaa_reject_codes.py              # AAA reject reason code lookup (lazy singleton)
+│   │   └── service_types.py                 # PA service type codes (lazy singleton)
+│   └── data/
+│       ├── hcr_action_codes.json            # 7 HCR action codes with descriptions
+│       ├── aaa_reject_codes.json            # 20+ AAA reject codes with messages + suggested fixes
+│       └── service_type_codes.json          # PA-relevant service type codes
+```
+
+**Test structure:**
+
+```
+tests/
+├── ... (all existing tests unchanged)
+├── test_prior_auth/
+│   ├── conftest.py                          # PA fixtures, request factories
+│   ├── test_api.py                          # submit_prior_auth() top-level function
+│   ├── test_determination.py                # determine_pa_required() cross-module bridge
+│   ├── test_pipeline.py                     # Three-phase execution, gate logic, aggregation
+│   ├── test_response_parser.py              # parse_278_response() with real/mock 278 data
+│   ├── test_deidentifier.py                 # All 18 HIPAA identifiers stripped from PA data
+│   ├── test_models/
+│   │   ├── test_request.py                  # PriorAuthRequest validation, dict input, frozen
+│   │   ├── test_response.py                 # PriorAuthResponse, ServiceLineDecision, convenience props
+│   │   ├── test_errors.py                   # PriorAuthError model
+│   │   ├── test_result.py                   # PriorAuthResult
+│   │   ├── test_determination.py            # PADeterminationResult
+│   │   └── test_deidentified.py             # DeidentifiedPriorAuthResponse type enforcement
+│   ├── test_validators/
+│   │   ├── test_rule_based/
+│   │   │   ├── test_npi.py
+│   │   │   ├── test_member_id.py
+│   │   │   ├── test_date_of_birth.py
+│   │   │   ├── test_diagnosis.py
+│   │   │   ├── test_procedure.py
+│   │   │   ├── test_service_date.py
+│   │   │   └── test_cross_field.py
+│   │   └── test_ai/
+│   │       └── test_interpreter.py
+│   ├── test_clearinghouse/
+│   │   └── test_base.py                     # BasePAClearinghouseClient contract tests
+│   ├── test_code_tables/
+│   │   ├── test_hcr_actions.py
+│   │   ├── test_aaa_reject_codes.py
+│   │   └── test_service_types.py
+│   └── test_hipaa/
+│       ├── test_phi_leak.py                 # Scan all PA Finding outputs for PHI patterns
+│       ├── test_no_network.py               # Rule-based PA makes zero network calls
+│       └── test_deidentification.py         # All 18 identifiers stripped before LLM
+```
+
+**Modified existing files:**
+
+| File | Change |
+|---|---|
+| `src/claim_validator/__init__.py` | Add PA re-exports: `submit_prior_auth`, `determine_pa_required`, `parse_278_response` |
+| `src/claim_validator/conf.py` | Add `pa_rule_validators`, `pa_ai_validators`, `skip_clearinghouse_on_pa_failure`, `pa_skip_ai` |
+| `src/claim_validator/constants.py` | Add `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode` enums (or import from `prior_auth/constants.py`) |
+
+**New file count:** ~30 source files + ~25 test files = ~55 new files
+
+### PA Architectural Boundaries
+
+**Public API Boundary (new symbols):**
+
+| Symbol | Module | Stability |
+|---|---|---|
+| `submit_prior_auth()` | `prior_auth/_api.py` | Stable from v2.0 |
+| `determine_pa_required()` | `prior_auth/determination.py` | Stable from v2.0 |
+| `parse_278_response()` | `prior_auth/response_parser.py` | Stable from v2.0 |
+| `PriorAuthRequest` | `prior_auth/models/request.py` | Stable from v2.0 |
+| `PriorAuthResponse` | `prior_auth/models/response.py` | Stable from v2.0 |
+| `PriorAuthResult` | `prior_auth/models/result.py` | Stable from v2.0 |
+| `PADeterminationResult` | `prior_auth/models/determination.py` | Stable from v2.0 |
+| `ServiceLine`, `ServiceLineDecision` | `prior_auth/models/request.py`, `response.py` | Stable from v2.0 |
+| `BasePAClearinghouseClient` | `prior_auth/clearinghouse/base.py` | Stable from v2.0 |
+| `PriorAuthPipeline` | `prior_auth/pipeline.py` | Stable from v2.0 |
+| `CertificationActionCode` | `prior_auth/constants.py` | Stable from v2.0 |
+
+**Internal boundary:** `response_parser.py` internals, `code_tables/*.py`, `deidentifier.py` (via pipeline), `validators/` (via registry)
+
+**Optional dependency boundary:** `validators/ai/` requires LLM client (`[ai]` extra); clearinghouse requires future `[stedi]` extra; rule-based + response parsing works with zero additional deps
+
+### Requirements to Structure Mapping
+
+| FR Category | Primary Location | Supporting Files |
+|---|---|---|
+| **PA Determination (FR1-FR5)** | `prior_auth/determination.py` | `prior_auth/models/determination.py` |
+| **Request Data (FR6-FR10)** | `prior_auth/models/request.py` | `prior_auth/constants.py` |
+| **Rule-Based Validation (FR11-FR19)** | `prior_auth/validators/rule_based/*.py` | `code_tables/*.py` (reuse), `prior_auth/code_tables/*.py` |
+| **Clearinghouse (FR20-FR24)** | `prior_auth/clearinghouse/base.py` | `prior_auth/pipeline.py` |
+| **Response Parsing (FR25-FR31)** | `prior_auth/response_parser.py`, `prior_auth/models/response.py` | `prior_auth/code_tables/hcr_actions.py` |
+| **AAA Errors (FR32-FR35)** | `prior_auth/models/errors.py`, `prior_auth/code_tables/aaa_reject_codes.py` | `prior_auth/data/aaa_reject_codes.json` |
+| **PHI De-Id (FR36-FR40)** | `prior_auth/deidentifier.py` | `prior_auth/models/deidentified.py` |
+| **AI Interpretation (FR41-FR46)** | `prior_auth/validators/ai/interpreter.py` | `llm/` (reuse) |
+| **Pipeline (FR47-FR51)** | `prior_auth/pipeline.py` | `prior_auth/models/result.py` |
+| **Finding Codes (FR52-FR56)** | All validators, pipeline | `constants.py` (reuse `Severity`) |
+
+### PA Data Flow
+
+```
+User Input (dict or PriorAuthRequest)
+    │
+    ▼
+submit_prior_auth() [prior_auth/_api.py]
+    │ Constructs PriorAuthRequest if dict, builds pipeline from settings
+    ▼
+PriorAuthPipeline.run(request) [prior_auth/pipeline.py]
+    │
+    ├── Phase 1: Rule-Based (offline, synchronous)
+    │   ├── PANPIValidator(request) → reuse NPI utility
+    │   ├── PAMemberIDValidator(request)
+    │   ├── PADateOfBirthValidator(request)
+    │   ├── PADiagnosisValidator(request) → ICD-10 lookup (reuse)
+    │   ├── PAProcedureValidator(request) → CPT/HCPCS lookup (reuse)
+    │   ├── PAServiceDateValidator(request)
+    │   ├── PACrossFieldValidator(request) → dx-procedure, gender/age
+    │   └── Aggregate → partial PriorAuthResult
+    │
+    ├── Gate: skip_clearinghouse_on_pa_failure check
+    ├── Gate: no clearinghouse_client configured → return (rule-based-only)
+    │
+    ├── Phase 2: Clearinghouse (single call, network)
+    │   ├── clearinghouse_client.submit_prior_auth(request) → raw 278 dict
+    │   ├── parse_278_response(raw) → PriorAuthResponse
+    │   └── If ClearinghouseError → Finding, return partial result
+    │
+    ├── Gate: pa_skip_ai check
+    │
+    └── Phase 3: AI Interpretation (optional, network)
+        ├── PriorAuthDeidentifier.deidentify(response) → DeidentifiedPriorAuthResponse
+        ├── get_llm_client(settings) → BaseLLMClient (reuse)
+        ├── PriorAuthInterpreterAI(deidentified) → findings + ai_summary
+        └── Aggregate → complete PriorAuthResult
+    │
+    ▼
+PriorAuthResult (approved, response, findings, ai_summary, passed, authorization_number, raw_response)
+```
+
+**Cross-module flow (eligibility → PA):**
+
+```
+check_eligibility(request) → EligibilityResult
+    │
+    ▼
+determine_pa_required(eligibility_result.response) → PADeterminationResult
+    │
+    ├── If required=True:
+    │   └── submit_prior_auth(pa_request) → PriorAuthResult
+    │       └── pa_result.authorization_number → embed in 837 claim
+    │
+    └── If required=False:
+        └── Proceed directly to claim submission
+```
+
+## Prior Authorization Module — Architecture Validation Results
+
+### Coherence Validation
+
+**Decision Compatibility:**
+All 10 new decisions (D24-D33) compatible with 23 existing decisions (D1-D23):
+- D24 (BasePAClearinghouseClient subclass) extends D14 (BaseClearinghouseClient) — non-breaking inheritance
+- D25 (frozen models) matches D3 + D15 — same immutability/coercion pattern
+- D26 (separate PriorAuthPipeline) independent from ValidationPipeline and EligibilityPipeline — no conflict
+- D27 (PHI dual-path) extends D5+D6+D17 — same belt-and-suspenders pattern
+- D28 (cross-module bridge) uses duck typing — loose coupling, no version conflicts
+- D29 (HCR enum + JSON) follows D1+D2 — same lazy singleton pattern
+- D30 (AAA errors) mirrors D20 — same dual-access pattern
+- D31 (PA de-identifier) follows D21 — same separate class pattern
+- D32 (single AI interpreter) mirrors D22 — same approach
+- D33 (extend settings) follows D4+D23 — consistent
+
+**No contradictory decisions found.**
+
+**Pattern Consistency:**
+- Naming: All PA names follow existing conventions (PA_ prefix avoids collision with CLM_ and ELIG_)
+- Test structure mirrors source 1:1
+- One-file-per-class maintained
+- Error handling follows existing pattern (validators return findings, infrastructure raises exceptions)
+
+**Structure Alignment:**
+- PA subpackage cleanly nested in existing package (mirrors `eligibility/` layout)
+- Optional dependency boundary maintained
+- Public/internal boundary clear
+- Cross-module bridge uses duck typing — no tight coupling
+
+### Requirements Coverage Validation
+
+**Functional Requirements Coverage: 56/56 (100%)**
+
+| FR Range | Category | Architectural Support | Status |
+|---|---|---|---|
+| FR1-FR5 | PA Determination | `determination.py` with duck-typed input, `PADeterminationResult` model | Full |
+| FR6-FR10 | Request Data | `PriorAuthRequest`, `ServiceLine` models, PA-specific enums | Full |
+| FR11-FR19 | Rule-Based Validation | 7 validators (NPI reuse + 6 new), cross-field consistency | Full |
+| FR20-FR24 | Clearinghouse | `BasePAClearinghouseClient` ABC + context manager + timeout | Full |
+| FR25-FR31 | Response Parsing | `parse_278_response()`, `PriorAuthResponse`, `ServiceLineDecision`, convenience properties | Full |
+| FR32-FR35 | AAA Errors | `PriorAuthError` model + AAA code table (20+ codes) + Finding generation | Full |
+| FR36-FR40 | PHI De-Id | `PriorAuthDeidentifier` + mandatory pipeline gate + memory lifecycle | Full |
+| FR41-FR46 | AI Interpretation | `PriorAuthInterpreterAI` + reuse LLM providers + AI_PA_ findings | Full |
+| FR47-FR51 | Pipeline | `PriorAuthPipeline` three-phase + `PriorAuthResult` + gate logic | Full |
+| FR52-FR56 | Finding Codes | PA_, AI_PA_, AAA_PA_REJECTION, CLEARINGHOUSE_ prefixes + Severity reuse | Full |
+
+**Non-Functional Requirements Coverage: 36/36 (100%)**
+
+| NFR Range | Category | Architectural Support | Status |
+|---|---|---|---|
+| NFR1-NFR6 | Performance | Stateless validators, lazy singletons, pure response parser, lightweight models | Full |
+| NFR7-NFR15 | Security | PriorAuthDeidentifier, mandatory gate, TLS via httpx, no PHI logging, memory lifecycle | Full |
+| NFR16-NFR21 | Reliability | Missing fields → None/WARNING, unmapped codes → WARNING, graceful LLM degradation, ClearinghouseError | Full |
+| NFR22-NFR28 | Integration | Zero breaking changes, reuse LLM/finding/code table infra, consistent 30s timeout | Full |
+| NFR29-NFR36 | Code Quality | Same tooling (mypy/ruff/pytest), frozen models, mirror eligibility layout, HIPAA test subdirectory | Full |
+
+### Implementation Readiness Validation
+
+**Decision Completeness:** 33/33 decisions documented (13 base + 10 eligibility + 10 PA) with choices, rationale, and affected components. Implementation sequence defined with dependency chain.
+
+**Structure Completeness:** Full PA directory tree with ~55 files (30 source + 25 test). Every file mapped to specific FRs. 3 modified existing files identified.
+
+**Pattern Completeness:** 50 conflict points addressed (28 base + 12 eligibility + 10 PA). Code examples for clearinghouse contract, response parser contract, and PA validator. Anti-patterns documented via existing architecture patterns.
+
+### Gap Analysis Results
+
+**Critical Gaps: 0**
+
+**Important Gaps: 1 (resolved)**
+
+1. **`BasePAClearinghouseClient` location** — Define in `prior_auth/clearinghouse/base.py`, not in the existing `eligibility/clearinghouse/base.py`. This keeps the PA module self-contained. The subclass imports `BaseClearinghouseClient` from the eligibility module.
+
+**Nice-to-Have: 1 (noted)**
+
+1. **278 response fixtures** — Include example 278 JSON responses in `tests/test_prior_auth/fixtures/` for testing all 7 HCR action codes and common AAA rejection scenarios.
+
+### Architecture Completeness Checklist
+
+**Requirements Analysis**
+
+- [x] PA PRD analyzed (56 FRs + 36 NFRs)
+- [x] Scale and complexity assessed (Medium, 70%+ reuse)
+- [x] Technical constraints identified (8 new)
+- [x] Cross-cutting concerns mapped (6 new)
+
+**Architectural Decisions**
+
+- [x] 10 new decisions documented with rationale (D24-D33)
+- [x] Technology choices compatible with existing stack
+- [x] Clearinghouse extension pattern defined (non-breaking subclass)
+- [x] PHI dual-path enforcement designed
+- [x] Cross-module bridge designed (duck-typed)
+
+**Implementation Patterns**
+
+- [x] PA naming conventions established (10 conflict points)
+- [x] Finding code prefixes defined (PA_, AI_PA_, AAA_PA_REJECTION, CLEARINGHOUSE_)
+- [x] PA clearinghouse client contract specified with code example
+- [x] Response parser contract specified with code example
+- [x] PA validator example provided
+
+**Project Structure**
+
+- [x] Complete PA directory structure (~30 source files)
+- [x] Test mirror defined (~25 test files)
+- [x] All 56 FRs mapped to specific files
+- [x] Modified existing files identified (3 files)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — 56/56 FRs and 36/36 NFRs covered, zero critical gaps, 33 coherent decisions, proven pattern reuse from two previous modules.
+
+**Key Strengths:**
+1. **70%+ pattern reuse** — pipeline, validators, de-identification, settings, code tables all follow proven patterns from claim + eligibility
+2. **Non-breaking clearinghouse extension** — `BasePAClearinghouseClient` subclass preserves existing `StediClient`
+3. **Cross-module bridge via duck typing** — `determine_pa_required()` loosely couples eligibility → PA without hard imports
+4. **PHI dual-path by architecture** — same type-driven + pipeline-level enforcement pattern proven in eligibility
+5. **Clean separation** — PA module is self-contained in `prior_auth/` subpackage, zero changes to existing claim/eligibility code paths
+
+**Areas for Future Enhancement:**
+1. Concrete clearinghouse provider (Stedi 278 / Optum) — v2.1
+2. FHIR PAS model mapping — v2.1
+3. Status polling for pended PAs — v2.1
+4. Async PA pipeline — v2.2
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+- Follow all 33 architectural decisions (D1-D13 base + D14-D23 eligibility + D24-D33 PA) exactly
+- Use PA_ prefix for all PA rule-based finding codes
+- Use AI_PA_ prefix for AI interpretation findings
+- Follow `BasePAClearinghouseClient` and `parse_278_response()` contracts
+- Every PA validator must pass PHI-leak test
+- Reuse NPI utility from `_npi_utils.py` — don't duplicate
+- Use `determine_pa_required()` for eligibility→PA bridge — don't reparse 271 data
+
+**PA Implementation Sequence:**
+1. PA models (D25) — `PriorAuthRequest`, `PriorAuthResponse`, `ServiceLine`, `ServiceLineDecision`, `PriorAuthError`, `PriorAuthResult`, `PADeterminationResult`
+2. PA enums/constants (D29) — `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode`
+3. Settings extension (D33) — PA validator lists, PA-specific config
+4. PA code tables — `aaa_reject_codes.json`, `hcr_action_codes.json`, `service_type_codes.json` with lazy loaders
+5. Rule-based PA validators — 7 validators (NPI utility reuse + 6 new)
+6. PA determination bridge (D28) — `determine_pa_required()` function
+7. 278 response parser — `parse_278_response()` function
+8. PA clearinghouse abstraction (D24) — `BasePAClearinghouseClient` subclass
+9. PA de-identifier (D31) — `PriorAuthDeidentifier`, `DeidentifiedPriorAuthResponse`
+10. AI interpreter (D32) — `PriorAuthInterpreterAI`
+11. Pipeline (D26, D27) — `PriorAuthPipeline` with three-phase execution and PHI enforcement
+12. Top-level API — `submit_prior_auth()` convenience function
+13. `__init__.py` re-exports — add PA symbols
+14. Test suite — all ~25 test files

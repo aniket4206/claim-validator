@@ -1,0 +1,117 @@
+{
+  "04": {
+    "meaning": "Authorized Quantity Exceeded",
+    "description": "Requested service quantity exceeds allowed limits",
+    "suggested_fix": "Reduce requested quantity or provide clinical justification for higher quantity"
+  },
+  "15": {
+    "meaning": "Required Application Data Missing",
+    "description": "Mandatory data elements not provided",
+    "suggested_fix": "Review 278 request for missing required fields and resubmit"
+  },
+  "33": {
+    "meaning": "Input Errors",
+    "description": "Syntax or formatting errors in the request",
+    "suggested_fix": "Validate request format against X12 278 specification and correct errors"
+  },
+  "35": {
+    "meaning": "Out of Network",
+    "description": "Requesting or servicing provider is not in the payer's network",
+    "suggested_fix": "Verify provider network status or obtain out-of-network authorization"
+  },
+  "41": {
+    "meaning": "Authorization/Access Restrictions",
+    "description": "Entity not authorized to submit/receive PA requests",
+    "suggested_fix": "Verify submitter credentials and enrollment for electronic PA submission"
+  },
+  "42": {
+    "meaning": "Unable to Respond at Current Time",
+    "description": "Payer system temporarily unavailable",
+    "suggested_fix": "Retry the request after a brief delay; contact payer if issue persists"
+  },
+  "43": {
+    "meaning": "Invalid/Missing Provider Identification",
+    "description": "NPI or provider ID invalid or not on file",
+    "suggested_fix": "Verify NPI is valid, active, and registered with the payer"
+  },
+  "44": {
+    "meaning": "Invalid/Missing Provider Name",
+    "description": "Provider name mismatch or missing",
+    "suggested_fix": "Ensure provider name matches NPI registry records exactly"
+  },
+  "45": {
+    "meaning": "Invalid/Missing Provider Specialty",
+    "description": "Provider specialty code invalid",
+    "suggested_fix": "Verify provider taxonomy code is valid and appropriate for the requested service"
+  },
+  "46": {
+    "meaning": "Invalid/Missing Provider Phone Number",
+    "description": "Required contact information missing",
+    "suggested_fix": "Include provider contact phone number in the request"
+  },
+  "47": {
+    "meaning": "Invalid/Missing Provider State",
+    "description": "Provider state not valid",
+    "suggested_fix": "Verify provider address state code is valid and matches NPI registry"
+  },
+  "48": {
+    "meaning": "Invalid/Missing Referring Provider",
+    "description": "Referring provider information required but missing",
+    "suggested_fix": "Include referring provider NPI and name in the request"
+  },
+  "49": {
+    "meaning": "Provider Ineligible for Inquiries",
+    "description": "Provider not enrolled for electronic PA submission",
+    "suggested_fix": "Enroll provider for electronic transactions with the payer"
+  },
+  "51": {
+    "meaning": "Provider Not on File",
+    "description": "Provider NPI not found in payer's directory",
+    "suggested_fix": "Verify provider is credentialed and enrolled with the payer"
+  },
+  "56": {
+    "meaning": "Provider Not Eligible",
+    "description": "Provider not eligible to submit this type of request",
+    "suggested_fix": "Confirm provider type is authorized for the requested service category"
+  },
+  "57": {
+    "meaning": "Patient Not Eligible",
+    "description": "Patient/subscriber not found or not eligible",
+    "suggested_fix": "Verify member ID, check eligibility status, and confirm coverage is active"
+  },
+  "58": {
+    "meaning": "Date of Birth Does Not Match",
+    "description": "Patient DOB mismatch with payer records",
+    "suggested_fix": "Verify patient date of birth matches insurance card and payer records"
+  },
+  "60": {
+    "meaning": "Date of Injury/Illness is in the Future",
+    "description": "Invalid date logic",
+    "suggested_fix": "Correct service dates to valid past or present dates"
+  },
+  "71": {
+    "meaning": "Patient Gender Mismatch",
+    "description": "Gender on request does not match payer records",
+    "suggested_fix": "Verify patient gender matches payer enrollment records"
+  },
+  "72": {
+    "meaning": "Invalid/Missing Subscriber ID",
+    "description": "Member ID not found or incorrect format",
+    "suggested_fix": "Verify member ID with patient's insurance card and resubmit"
+  },
+  "73": {
+    "meaning": "Invalid/Missing Subscriber Name",
+    "description": "Subscriber name mismatch",
+    "suggested_fix": "Ensure subscriber name matches payer enrollment records exactly"
+  },
+  "79": {
+    "meaning": "Invalid Participant Identification",
+    "description": "Generic identification error",
+    "suggested_fix": "Review all participant identifiers (NPI, member ID, payer ID) for accuracy"
+  },
+  "T4": {
+    "meaning": "Payer Name/ID Missing",
+    "description": "Required payer identification not provided",
+    "suggested_fix": "Include valid payer ID in the request"
+  }
+}

@@ -1,4 +1,4 @@
-# generated: 2026-02-18
+# generated: 2026-03-01
 # project: healthcare-claim-analyzer
 # project_key: NOKEY
 # tracking_system: file-system
@@ -32,14 +32,24 @@
 # - Stories can be worked in parallel if team capacity allows
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+#
+# MODULE NAMING:
+# ==============
+# - No prefix: Claim Validation module (original, v1.0)
+# - elig- prefix: Eligibility Verification module (v1.x)
+# - pa- prefix: Prior Authorization module (v2.x)
 
-generated: 2026-02-18
+generated: 2026-03-01
 project: healthcare-claim-analyzer
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
+  # ============================================================
+  # CLAIM VALIDATION MODULE (v1.0) - Original Module
+  # ============================================================
+
   # Epic 1: Package Foundation & Core Data Layer
   epic-1: in-progress
   1-1-project-initialization-package-scaffolding: done
@@ -68,3 +78,60 @@ development_status:
   3-3-ai-validation-pipeline-integration: review
   3-4-ai-clinical-validators: review
   epic-3-retrospective: optional
+
+  # ============================================================
+  # ELIGIBILITY VERIFICATION MODULE (v1.x)
+  # ============================================================
+
+  # Epic 1: Eligibility Request Validation (Offline)
+  elig-epic-1: backlog
+  elig-1-1-eligibility-data-models-package-configuration: backlog
+  elig-1-2-payer-directory-service-type-code-tables: backlog
+  elig-1-3-npi-utility-extraction-first-validators: backlog
+  elig-1-4-service-type-date-member-id-validators: backlog
+  elig-1-5-eligibility-pipeline-check-eligibility-api: backlog
+  elig-epic-1-retrospective: optional
+
+  # Epic 2: Stedi Clearinghouse Integration & 271 Response Parsing
+  elig-epic-2: backlog
+  elig-2-1-baseclearinghouseclient-abstraction-stedi-client: backlog
+  elig-2-2-271-response-parser-aaa-error-handling: backlog
+  elig-2-3-clearinghouse-pipeline-phase-full-integration: backlog
+  elig-epic-2-retrospective: optional
+
+  # Epic 3: AI-Powered Eligibility Interpretation
+  elig-epic-3: backlog
+  elig-3-1-eligibility-de-identification-engine: backlog
+  elig-3-2-ai-eligibility-interpreter-full-pipeline: backlog
+  elig-epic-3-retrospective: optional
+
+  # ============================================================
+  # PRIOR AUTHORIZATION MODULE (v2.x)
+  # ============================================================
+
+  # Epic 1: PA Request Validation & Determination (Offline)
+  pa-epic-1: in-progress
+  pa-1-1-pa-data-models-enums-package-configuration: done
+  pa-1-2-pa-code-tables-hcr-action-codes-aaa-reject-codes-service-types: done
+  pa-1-3-pa-determination-from-eligibility-response: done
+  pa-1-4-pre-submission-validators-npi-member-id-dob-diagnosis-procedure: done
+  pa-1-5-service-date-cross-field-validators-pipeline: done
+  pa-epic-1-retrospective: optional
+
+  # Epic 2: 278 Response Parsing & AAA Error Handling
+  pa-epic-2: backlog
+  pa-2-1-278-response-parser-hcr-action-code-mapping: backlog
+  pa-2-2-aaa-error-parsing-human-readable-messages: backlog
+  pa-epic-2-retrospective: optional
+
+  # Epic 3: Clearinghouse Integration & Full Pipeline
+  pa-epic-3: backlog
+  pa-3-1-basepaclearinghouseclient-abstraction: backlog
+  pa-3-2-full-pipeline-orchestration-submit-prior-auth-api: backlog
+  pa-epic-3-retrospective: optional
+
+  # Epic 4: AI-Powered PA Interpretation
+  pa-epic-4: backlog
+  pa-4-1-pa-de-identification-engine: backlog
+  pa-4-2-ai-pa-interpreter-full-pipeline: backlog
+  pa-epic-4-retrospective: optional

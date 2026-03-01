@@ -1,17 +1,14 @@
 ---
 stepsCompleted: ['step-01-init', 'step-02-discovery', 'step-03-success', 'step-04-journeys', 'step-05-domain', 'step-06-innovation', 'step-07-project-type', 'step-08-scoping', 'step-09-functional', 'step-10-nonfunctional', 'step-11-polish', 'step-12-complete']
-completedAt: '2026-02-18'
 inputDocuments:
-  - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-18.md'
-  - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-17.md'
-  - '_bmad-output/brainstorming/brainstorming-session-2026-02-17.md'
-  - '_bmad-output/brainstorming/brainstorming-session-2026-02-18.md'
+  - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-27.md'
+  - '_bmad-output/planning-artifacts/research/domain-healthcare-prior-authorization-278-research-2026-02-27.md'
   - '_bmad-output/project-context.md'
 workflowType: 'prd'
 documentCounts:
-  briefs: 2
-  research: 0
-  brainstorming: 2
+  briefs: 1
+  research: 1
+  brainstorming: 0
   projectDocs: 1
 classification:
   projectType: 'developer_tool'
@@ -20,32 +17,24 @@ classification:
   projectContext: 'brownfield'
 ---
 
-# Product Requirements Document - claim-validator
+# Product Requirements Document - Prior Authorization Module
 
 **Author:** aniket
-**Date:** 2026-02-18
+**Date:** 2026-02-27
 
 ## Executive Summary
 
-`claim-validator` is an open-source, pip-installable Python library for US healthcare claim validation (CMS-1500 / 837P). It provides a two-phase validation pipeline: deterministic rule-based checks that work fully offline with zero configuration, and AI-powered clinical validation that supports any LLM provider (Claude, GPT, Gemini, Llama, Ollama, or any OpenAI-compatible endpoint).
+The Prior Authorization (PA) module extends `claim-validator` to complete the pre-claim workflow chain: eligibility verification (270/271) → PA determination → PA submission (278) → claim submission (837). It is the first open-source Python library combining Pydantic-modeled 278 request/response validation, clearinghouse integration (abstract), and AI-powered response interpretation with HIPAA-compliant PHI de-identification.
 
-**The Problem:** The US healthcare system wastes $19.7 billion/year on claim denial rework. 60-80% of denials are preventable with pre-submission validation. Yet zero open-source Python libraries exist for claim validation — developers either pay $50K-$500K/year for commercial engines or build fragile custom solutions.
+**Core Problem:** After eligibility verification flags `authOrCertIndicator=Y`, no Python library exists to programmatically determine PA requirements, validate and submit 278 requests, or interpret HCR action codes and AAA reject reasons. Developers fall back to phone/fax workflows (65% of PA today), costing the industry $10B+ annually.
 
-**The Solution:** A framework-agnostic Python library — `pip install claim-validator` → `from claim_validator import validate` → `result = validate(claim_dict)`. Rule-based validation works offline with bundled code tables. AI validation is opt-in with built-in HIPAA de-identification that strips all 18 identifiers before any LLM call.
+**Solution:** Three-phase pipeline mirroring existing library patterns — rule-based validation (offline, catches 80%+ of rejections) → clearinghouse submission (abstract interface) → AI interpretation (PHI-safe). Top-level API: `submit_prior_auth(request) -> PriorAuthResult`.
 
-**Key Differentiators:**
-1. **Only open-source option** — zero competition on PyPI
-2. **Bring Your Own LLM** — no vendor lock-in on AI provider
-3. **Offline-first** — rule-based validation with zero network calls
-4. **5-minute integration** — pip install and call `validate()`
-5. **Two-phase pipeline** — deterministic rules catch 60-75%; AI catches clinical edge cases
-6. **Community-driven payer rules** — collective intelligence for payer-specific quirks
+**Target Users:** Healthcare platform developers (primary) already using `claim-validator`; solo devs building healthcare SaaS (secondary). Indirect beneficiaries: revenue cycle managers, compliance officers.
 
-**Business Model:** Open-source core (free forever) + paid premium tier (hosted API, enterprise support, managed AI, premium payer rules).
+**Key Differentiators:** (1) Pre-claim workflow chain completion in one package, (2) Pre-submission validation prevents rejections before clearinghouse, (3) AI-powered 278 interpretation with PHI de-identification, (4) CMS-0057-F ready architecture (FHIR PAS extensible), (5) Zero-config offline mode for immediate developer value.
 
-**Target Users:** Python developers building healthcare billing systems (primary), billing company tech leads (primary), CTOs evaluating build-vs-buy (secondary), medical billing specialists (indirect beneficiary).
-
-**Project Context:** Brownfield — extracting from an existing Django-based healthcare claim analyzer into a standalone library. Python 3.11+, Pydantic 2.x core.
+**MVP Scope:** 12 features — 278 Pydantic models, enums/code tables, rule-based validators, PA determination from 271, response parsing, AAA error mapping, AI interpretation, PHI de-identification, `submit_prior_auth()` API, abstract clearinghouse interface. No concrete clearinghouse provider in MVP.
 
 ## Success Criteria
 
@@ -53,595 +42,679 @@ classification:
 
 | Criteria | Metric | Target |
 |---|---|---|
-| **5-Minute Onboarding** | Time from `pip install` to first successful `validate()` call | < 5 min (Month 1), < 3 min (Month 6) |
-| **Denial Rate Reduction** | First-submission denial rate delta for adopters | 40-60% reduction (6 mo), 60-80% (12 mo) |
-| **Integration Effort** | Developer-hours to production integration | Rule-based: < 1 day. Full pipeline with AI: < 1 week |
-| **Aha! Moment** | AI catches a clinically implausible claim that rule-based passed | Within first 100 claims validated with AI enabled |
-| **Actionable Output** | Every finding includes field, severity, message, fix suggestion | 100% of findings — zero cryptic error codes |
-| **Week-2 Retention** | Developers still calling `validate()` in week 2 | 60%+ of first-week users |
+| Time to first PA submission | Minutes from `pip install` to working 278 submission (sandbox/mock) | < 45 minutes |
+| Pre-submission validation catch rate | % of common 278 rejections caught by rule-based validators before clearinghouse | > 80% of top 8 rejection categories |
+| PA determination accuracy | Correct PA required/not-required from 271 `authOrCertIndicator` + free-text | > 95% |
+| AI interpretation usefulness | Correct HCR action code interpretation + actionable next-step recommendation | > 85% vs manual review |
+| Zero-config rule-based mode | Developer can validate PA requests with zero API keys or external calls | 100% offline capability |
+| API ergonomics | `submit_prior_auth(dict)` accepts plain dict input, returns typed Pydantic model | Same pattern as `validate()` and `check_eligibility()` |
 
 ### Business Success
 
-| Criteria | Metric | Target (12 mo) |
+| Criteria | Target | Timeframe |
 |---|---|---|
-| **North Star** | Claims validated/month through the library | 10K (3 mo) → 100K (6 mo) → 1M (12 mo) |
-| **Adoption** | PyPI downloads/month | 500 (3 mo) → 2K (6 mo) → 10K (12 mo) |
-| **Community** | GitHub stars / contributors | 2K+ stars, 50+ contributors |
-| **Revenue** | ARR from premium tier | $100K ARR |
-| **Enterprise** | Enterprise contracts ($5K+/year) | 5+ contracts |
-| **Premium Conversion** | Free → paid conversion rate | 3-5% of active users |
-| **Category Ownership** | Default recommendation in r/healthIT, healthcare Python lists | Recognized as the standard by month 9-12 |
+| PyPI monthly downloads (PA module adoption) | 500+ | 6 months post-release |
+| GitHub stars (cumulative library) | 1,000+ | 12 months post-PA release |
+| PA rejection rate reduction for adopters | 50%+ reduction (from ~30% baseline to <15%) | 12 months |
+| Competitive gap | Only open-source Python library combining Pydantic 278 models + AI interpretation | At launch |
+| Regulatory readiness | Architecture supports FHIR PAS addition without breaking changes before CMS Jan 2027 deadline | v2.1 release by Q3 2026 |
 
 ### Technical Success
 
-| Criteria | Metric | Target |
-|---|---|---|
-| **Validator Accuracy** | Rule-based validators against curated test claims with known outcomes | 95%+ accuracy |
-| **Zero PHI Leakage** | No PHI ever sent to any LLM provider | 100% — de-identification automatic, verified by test suite |
-| **LLM Provider Coverage** | Working out-of-box providers | 3 at MVP (Anthropic, OpenAI, OpenAI-compatible), 5+ by month 12 |
-| **Offline-First** | Rule-based validation with zero network calls | 100% offline — bundled code tables, no API keys required |
-| **Framework Independence** | Core library has zero Django/Flask/FastAPI dependency | Core depends only on Pydantic + httpx |
-| **HIPAA Compliance** | De-identification strips all 18 HIPAA identifiers | 100% — verified by compliance test suite |
-| **Test Coverage** | Unit + integration test coverage on validators | 90%+ line coverage |
+| Criteria | Target |
+|---|---|
+| Test coverage | > 90% for all `prior_auth/` module code |
+| Type safety | mypy strict mode passes with zero errors |
+| Code quality | ruff clean (line-length=100, rules E,F,I,N,W,UP) |
+| Backwards compatibility | Zero breaking changes to existing `validate()` and `check_eligibility()` APIs |
+| PHI de-identification | All 18 HIPAA identifiers stripped — verified by automated tests |
+| PHI logging safety | Zero PHI in logs — clearinghouse request/response bodies never logged |
+| Response parsing resilience | Missing/unexpected fields return None or WARNING finding, never exception (NFR16) |
+| Pipeline latency (rule-based only) | < 100ms for pre-submission validation (NFR1) |
+| Public API docstrings | All public classes and functions documented (NFR32) |
 
-### Measurable Outcomes (Go/No-Go Gates)
+### Measurable Outcomes
 
-| Milestone | Timeframe | Go/No-Go Decision |
-|---|---|---|
-| **G1: It Works** | Month 1 | 10 external developers successfully validate claims with < 1hr support each |
-| **G2: It's Valued** | Month 2 | 200+ PyPI downloads/month with week-over-week growth |
-| **G3: It's Correct** | Month 2 | 95%+ accuracy against curated denial test suite |
-| **G4: AI Adds Value** | Month 3 | 5+ documented cases where AI caught clinical edge cases rules missed |
-| **G5: Community Interest** | Month 3-4 | 10+ issues filed, 3+ external PRs, 2+ custom validators shared |
+- **Developer adoption signal**: Number of `determine_pa_required()` calls in production (eligibility→PA chain)
+- **Full-chain signal**: % of `determine_pa_required()` calls that proceed to `submit_prior_auth()`
+- **Quality signal**: GitHub issues for incorrect HCR/AAA code mapping (target: < 5 in first 6 months)
+- **Ecosystem signal**: Third-party blog posts, tutorials, or integrations referencing PA module
 
 ## Product Scope
 
-### MVP Strategy
+### MVP — Minimum Viable Product (v2.0)
 
-**MVP Approach:** Problem-Solving MVP — deliver the minimum that makes a developer say "this replaced my custom validation code."
+**Core deliverables (12 features from product brief):**
 
-**Rationale:** The market has zero alternatives. We need to prove the concept works, not out-feature competitors.
+1. **278 Pydantic models**: `PriorAuthRequest`, `PriorAuthResponse`, `ServiceLine`, `ServiceLineDecision`, `PriorAuthError` — frozen=True
+2. **Enums and code tables**: `RequestCategoryCode`, `CertificationTypeCode`, `CertificationActionCode` (A1-NA), `ServiceTypeCode`, `PlaceOfServiceCode`, AAA reject reason codes with human-readable descriptions
+3. **Pre-submission rule-based validators**: NPI Luhn, member ID, DOB, ICD-10 dx validity, CPT/HCPCS validity, service date logic, cross-field consistency (dx-supports-procedure, gender/age-procedure)
+4. **PA determination from 271**: `determine_pa_required(eligibility_response) -> PADeterminationResult` — parses `authOrCertIndicator` (Y/N/U) + free-text `additionalInformation.description`
+5. **278 response parsing**: `parse_278_response(raw: dict) -> PriorAuthResponse` — HCR action codes, auth number, effective dates
+6. **AAA error code mapping**: Top 20+ codes (04, 15, 33, 35, 41-58, 60, 71-73, 79, T4) → human-readable messages + suggested fixes
+7. **AI response interpretation**: `PriorAuthInterpreterAI` — decision summary, next-step recommendations for pended/denied cases
+8. **PHI de-identification**: `PriorAuthDeidentifier` — strips all 18 HIPAA identifiers before LLM
+9. **Top-level API**: `submit_prior_auth(request) -> PriorAuthResult`
+10. **Pipeline**: `PriorAuthPipeline` — three-phase orchestration (rule-based → clearinghouse → AI)
+11. **Abstract clearinghouse**: `BaseClearinghouseClient.submit_prior_auth()` — no concrete provider in MVP
+12. **Finding code prefixes**: `PA_` (rule-based), `AI_PA_` (AI), `AAA_PA_REJECTION` (AAA errors)
 
-**Resource Requirements:** 1 senior Python developer with healthcare domain knowledge. Existing Django codebase provides extraction source for ~70% of validator logic. Estimated 6-8 weeks.
+**MVP clearinghouse strategy**: Abstract interface only. Rule-based validation + response parsing work fully offline. Developers implement their own clearinghouse client by subclassing `BaseClearinghouseClient`.
 
-**Core User Journeys Supported:** J1 (Priya — first validation), J2 (Marcus — custom validators), J3 (David — compliance evaluation).
+### Post-MVP Roadmap
 
-### MVP Feature Set (Phase 1: Months 1-2)
+See **Project Scoping & Phased Development** for detailed phased roadmap with drivers and dependencies. Summary:
 
-| # | Capability | Justification |
-|---|---|---|
-| M1 | `validate(claim_dict) -> PipelineResult` | Without this, the product doesn't exist |
-| M2 | 8 rule-based validators (Completeness, NPI, SubscriberID, Demographics, Coding, Monetary, Duplicate, TimelyFiling) | Catch 60-75% of preventable denials offline |
-| M3 | `BaseValidator` ABC + custom validator API | Power users need extensibility from day 1 |
-| M4 | `ValidationPipeline` + `ValidatorRegistry` | Configurable pipeline is the architecture |
-| M5 | Pydantic `ClaimData` / `ClaimLineData` models | Framework-agnostic data layer |
-| M6 | `Finding` with code, message, severity, field, suggestion | Actionable output is the core value proposition |
-| M7 | LLM-agnostic AI validation — 3 AI validators (CodeValidation, CoverageCheck, PriorAuth), 3 providers (Anthropic, OpenAI, OpenAI-compatible) | Key differentiator; de-risks vendor lock-in |
-| M8 | `ClaimDeidentifier` stripping all 18 HIPAA identifiers | Without this, AI validation is a HIPAA violation |
-| M9 | Bundled ICD-10-CM, HCPCS, taxonomy, POS code tables | Offline-first is a core differentiator |
-| M10 | `pyproject.toml` + PyPI distribution | Must be pip-installable |
-| M11 | `py.typed` + full type annotations | Developer tool without types won't be taken seriously |
-| M12 | README + quickstart + API reference | Developers evaluate libraries by docs quality first |
-
-**Dependencies:** Pydantic only (core). httpx + provider SDKs (AI extras).
-
-### Explicitly NOT in MVP
-
-| Feature | Why Deferred | Earliest Phase |
-|---|---|---|
-| Django/FastAPI/Flask integrations | Core must prove value framework-agnostic first | Phase 2 |
-| CLI tool | Nice-to-have DX, not required for library adoption | Phase 2 |
-| Payer plugin architecture | Need community first; custom validators cover the use case | Phase 2 |
-| NCCI edits / MUE limits | Large data sets, complex quarterly updates | Phase 2 |
-| Batch validation + analytics | Requires persistence layer design | Phase 2 |
-| Hosted API / premium tier | Validate library adoption before infrastructure | Phase 3 |
-| Clearinghouse submission | Separate concern from validation | Phase 3 |
-| FHIR support | Future interoperability, not immediate need | Phase 3 |
-
-### Phase 2: Ecosystem (Months 3-6)
-
-| Feature | Dependency | User Journey |
-|---|---|---|
-| Django integration (`[django]`) | Stable core API | J1, J4 |
-| FastAPI / Flask integrations | Stable core API | J4 |
-| CLI tool | Core validation working | J2 |
-| Payer rule plugin spec + 5 payer packages | Custom validator API proven | J2, J5 |
-| NCCI edit checking | CMS data ingestion pipeline | J2 |
-| MUE limit checking | CMS data ingestion pipeline | J2 |
-| Gemini + AWS Bedrock providers | BaseLLMClient stable | All AI users |
-| `claim-validator update-codes` CLI | Bundled tables infrastructure | All users |
-| Celery async task definitions | Framework integration layer | J4 |
-| Documentation site (mkdocs) | API reference stable | All users |
-
-### Phase 3: Platform (Months 6-12)
-
-| Feature | Dependency | Business Impact |
-|---|---|---|
-| Hosted Validation API | Proven library adoption | Premium revenue stream |
-| Clearinghouse integrations | Validation pipeline mature | Full submit workflow |
-| Eligibility checking (270/271) | External API framework | Expand beyond validation |
-| Batch validation + analytics | Persistence layer design | Enterprise use case |
-| Enterprise support tier | Community + adoption | $5K-$25K/year contracts |
-| FHIR R4 input support | CMS interoperability push | Future-proofing |
-| Community payer rule marketplace | Plugin ecosystem mature | Network effects |
-
-### Phase 4: Intelligence (Months 12-24)
-
-- Denial prediction ML model (requires training data from community)
-- Prior auth automation via FHIR Da Vinci PAS
-- Real-time payer rule updates from companion guide parsing
-- Multi-language SDK generation (TypeScript, Go, Java)
-- ICD-11 readiness (when CMS mandates)
+- **v2.1 (Growth):** Concrete clearinghouse provider, FHIR PAS models, Da Vinci CRD, status polling, 278 update/revision
+- **v2.2+ (Expansion):** 275 attachments, batch 278, auth lifecycle state machine, payer-specific PA lists, framework helpers
+- **v3.0 (Intelligence):** AI medical necessity pre-screening, predictive approval probability, multi-payer analytics
 
 ## User Journeys
 
-### Journey 1: Priya's First Validation — "From Googling to Green" (Primary User, Success Path)
+### Journey 1: Raj — Closing the Gap After Eligibility (Primary, Happy Path)
 
-*Opening Scene:* It's 11pm on a Tuesday. Priya has been debugging a claims rejection from ClaimMD for the third time this week. The CARC code says "N362" — she Googles it, gets a CMS PDF from 2019, and still doesn't understand why the claim was rejected. Her startup's denial rate is 18% and the CTO told her today: "We can't afford the $75K Change Healthcare contract. Find something open-source."
+**Opening Scene:** Raj is a senior Python dev at MedFlow, a mid-size health-tech company. His platform already uses `claim-validator` — `validate()` for claims and `check_eligibility()` for 270/271. Every day, their eligibility checks return `authOrCertIndicator=Y` for imaging and surgical procedures. That flag shows up in their UI as a yellow warning: "Prior auth may be required." But nothing happens next. The front-desk staff prints the warning, picks up the phone, and calls the payer. Sometimes they forget. Last month, three MRI claims were denied because PA wasn't obtained — $4,500 in lost revenue.
 
-*Rising Action:* Priya searches PyPI for "healthcare claim validation" and finds `claim-validator`. The README shows a 3-line quickstart. She runs `pip install claim-validator` in her Django project's virtualenv. In under 5 minutes, she writes:
+**Rising Action:** Raj sees `prior_auth` in the `claim-validator` v2.0 changelog. He runs `pip install --upgrade claim-validator`. He adds two lines after his existing eligibility check:
 
 ```python
-from claim_validator import validate
-
-result = validate({
-    "billing_provider_npi": "1234567890",
-    "diagnosis_codes": [{"code": "J06.9"}],
-    "lines": [{"procedure_code": "99213", "charge_amount": 150.00}],
-})
+pa_needed = determine_pa_required(eligibility_result.response)
+if pa_needed.required:
+    pa_result = submit_prior_auth({"requester_npi": "1234567893", ...})
 ```
 
-The result comes back immediately: `result.passed = False`. One finding: `INVALID_NPI — NPI fails Luhn check digit validation. Verify NPI at https://npiregistry.cms.hhs.gov`. She fixes the NPI to the correct one. Runs again — passes. She starts feeding in real claims from their staging database.
+The rule-based validators immediately catch a missing diagnosis code in his test data — something that would have caused an AAA rejection 3 days later via fax.
 
-*Climax:* She adds AI validation with their existing Anthropic key. The AI validator flags: "CPT 59400 (obstetric care package) billed for a male patient — likely coding error." Their rule-based checks had passed it because the codes were valid formats. This exact claim type was responsible for 6 denials last month.
+**Climax:** Raj connects his clearinghouse client (his company already has an Optum contract). He subclasses `BaseClearinghouseClient`, implements `submit_prior_auth()`, and submits his first real 278 request. The response comes back: `pa_result.approved` is `True`, `pa_result.authorization_number` is `AUTH2026030100001`. The AI interpretation says: "All requested services approved. Include authorization number AUTH2026030100001 on the 837 claim. Authorization valid through 2026-04-01."
 
-*Resolution:* Two weeks later, their denial rate drops from 18% to 6%. The CTO asks "what changed?" Priya shows `pip install claim-validator` and 15 lines of integration code. The CTO approves purchasing the premium tier for managed AI validation.
-
-**Requirements revealed:** PyPI installation, zero-config rule-based validation, dict-based input, AI config injection, structured findings with human-readable suggestions, Anthropic provider support.
+**Resolution:** Raj's platform now runs the full chain automatically: eligibility → PA determination → PA submission → auth number stored for claim. The front desk no longer makes phone calls for PA. MRI denial rate drops from 12% to 2% in the first quarter. He spent one afternoon integrating — not a sprint.
 
 ---
 
-### Journey 2: Marcus Migrates 12,000 Lines — "From Spaghetti to Structured" (Primary User, Power User)
+### Journey 2: Priya — First PA Submission in 30 Minutes (Primary, Onboarding)
 
-*Opening Scene:* Marcus stares at `validators/custom_rules.py` — 12,000 lines of if/else spaghetti he wrote over 4 years. Every payer quirk is hardcoded. He's the only person who knows where anything is. His vacation request was denied because "nobody else can fix validation bugs."
+**Opening Scene:** Priya is building a telehealth scheduling app. Her users — small clinics — keep complaining that patients show up for appointments only to be told "your insurance requires prior authorization for this procedure." The clinic staff didn't know. Priya has no X12 expertise. She Googled "python prior authorization" and found `claim-validator`.
 
-*Rising Action:* Marcus discovers claim-validator and tests it against his curated set of 500 "known outcome" claims. The 8 built-in validators catch 73% of the same issues his custom code catches. He starts migrating — encoding each payer rule as a structured `BaseValidator` subclass: testable, documented, version-controlled.
+**Rising Action:** Priya follows the quickstart guide. She installs the library, copies the example dict, and calls `submit_prior_auth()` without a clearinghouse configured. The rule-based phase runs and catches three issues in her test data: invalid NPI format (`PA_INVALID_NPI`), service date in the past (`PA_SERVICE_DATE_PAST`), and missing subscriber member ID (`PA_MISSING_MEMBER_ID`). She fixes them.
 
-*Climax:* Marcus runs the AI validator on a batch of 3,000 claims queued for submission. It flags 47 claims with age-inappropriate procedure codes — pediatric vaccines billed for patients over 18, a pattern he never wrote a rule for. Estimated savings: $11,000 in avoided denials for that single batch.
+She then tries `determine_pa_required()` with a sample eligibility response containing `authOrCertIndicator: "Y"`. It returns `PADeterminationResult(required=True, confidence="high", reason="authOrCertIndicator=Y for service type MRI/CAT Scan")`. She doesn't need to know what `authOrCertIndicator` means — the library tells her.
 
-*Resolution:* Over 2 sprints, Marcus replaces his 12,000-line file with 23 structured validator classes. He contributes his UHC and BCBS-FL rule sets back to the community. His team can now maintain the validation pipeline without him. He finally takes vacation.
+**Climax:** Priya feeds a sample 278 response JSON (from the docs) into `parse_278_response()`. She gets back a `PriorAuthResponse` with `is_approved = True` and `authorization_number = "AUTH123"`. She realizes she can build her entire PA workflow without ever reading the X12 278 specification.
 
-**Requirements revealed:** Custom validator API (BaseValidator subclassing), payer-specific rule encoding, batch validation, CLI for ad-hoc testing, community contribution path, validator testing against known outcomes.
-
----
-
-### Journey 3: David Evaluates — "The Build vs Buy vs Adopt Decision" (Decision Maker)
-
-*Opening Scene:* David, CTO of a 40-person health-tech company, receives two proposals: adopt claim-validator (free, open-source) vs Change Healthcare ($75K/year, 3-month onboarding). His board wants to know: "Is open-source safe for HIPAA-regulated claim processing?"
-
-*Rising Action:* David reviews claim-validator's documentation — MIT license, PHI never leaves the library, de-identification strips all 18 identifiers before LLM calls, no cloud dependency for rule-based validation. His compliance officer confirms: "The library handles PHI better than most commercial tools — it never transmits PHI at all in rule-based mode."
-
-*Climax:* David runs the numbers: $75K/year vs free core + $10K/year enterprise support. He presents to the board: "We adopt the open-source library, purchase enterprise support for SLA guarantees, and redirect the $65K savings to engineering headcount."
-
-*Resolution:* Board approves. Six months later, claim-validator processes 50,000 claims/month in production. The compliance audit passes without findings on the validation component.
-
-**Requirements revealed:** MIT license, HIPAA compliance documentation, de-identification guarantees, enterprise support tier, no mandatory cloud dependency, offline-capable architecture.
+**Resolution:** Priya builds a `/api/prior-auth/check` FastAPI endpoint that her clinic users can hit. The response is a clean JSON Pydantic model. She went from zero PA knowledge to a working endpoint in under an hour.
 
 ---
 
-### Journey 4: Raj Builds a Custom Pipeline — "Integration at Scale" (API/Integration Developer)
+### Journey 3: Raj — Handling a Denied PA (Primary, Edge Case / Error Recovery)
 
-*Opening Scene:* Raj is a senior engineer at a health-tech platform processing claims for 50 small practices using FastAPI + PostgreSQL. His architecture is async workers with a custom claim format from their own database.
+**Opening Scene:** Raj's system submits a PA request for a spinal fusion procedure. The payer returns `HCR01=A3` (Not Certified / Denied) with decision reason code indicating "medical necessity not established."
 
-*Rising Action:* Raj discovers claim-validator works with plain Python dicts — no framework coupling. He constructs a custom pipeline with selective validators and his own practice-specific validator, maps his database objects to dicts, and feeds them through the pipeline.
+**Rising Action:** The `PriorAuthResponse` model parses the response: `pa_result.response.is_denied` is `True`. The AAA error mapping returns: "Authorization denied: Medical necessity not established for the requested procedure. The submitted diagnosis codes do not support the clinical indication for spinal fusion."
 
-*Climax:* The async worker processes 500 claims/minute with the rule-based pipeline. AI validation adds 2-3 seconds per claim but only runs on claims that pass rule-based checks first. His team builds a dashboard showing top denial reasons across all 50 practices.
+Raj's system passes the de-identified response to the AI interpreter. The AI generates: "**Denial Summary:** Spinal fusion (CPT 22612) denied for medical necessity. The primary diagnosis (M54.5 — Low back pain) is considered conservative-treatment-first by most payers. **Recommended Next Steps:** (1) Submit additional documentation showing failed conservative treatment (6+ weeks PT, imaging showing structural pathology). (2) Consider adding secondary diagnosis if applicable (e.g., M43.16 — Spondylolisthesis). (3) File peer-to-peer review request within 30 days."
 
-*Resolution:* Average denial rates across practices drop from 14% to 5%. Three practices upgrade to paid tiers. Raj opens a PR adding a FastAPI middleware example to the docs.
+**Climax:** The front desk staff sees actionable guidance instead of a cryptic "A3" code. They gather the additional clinical documentation and know exactly what to submit for appeal.
 
-**Requirements revealed:** Dict-based input (no framework coupling), configurable pipeline construction, selective validator loading, settings object API, PipelineResult serialization, async-friendly architecture, performance at scale.
+**Resolution:** The appeal succeeds. Without the AI interpretation, the staff would have called the payer, waited 45 minutes on hold, and asked "why was it denied?" — getting the same information 3 days later.
+
+---
+
+### Journey 4: Karen — Revenue Cycle Impact (Secondary, Business User)
+
+**Opening Scene:** Karen manages revenue cycle at a 50-provider orthopedic group. Her team processes ~200 PA requests per week. Currently, 3 FTEs spend their entire day on phone-based PA: calling payers, faxing clinical notes, tracking pending auths in a spreadsheet. Their PA denial rate is 28%.
+
+**Rising Action:** After Raj's team deploys the PA module, Karen starts seeing the impact in her weekly metrics dashboard. Pre-submission validation catches bad data before it reaches the payer — the "rejected at submission" category drops to near-zero. Electronic submission replaces 80% of phone calls. The team can process the same 200 PAs with 1 FTE instead of 3.
+
+**Climax:** At the quarterly review, Karen presents: PA denial rate dropped from 28% to 11%. Average turnaround went from 3.2 days to same-day for auto-adjudicable requests. The two reassigned FTEs now focus on complex appeals and peer-to-peer reviews — higher-value work.
+
+**Resolution:** Karen's CFO approves expanding electronic PA to all service lines. She becomes an internal champion for the platform.
 
 ---
 
-### Journey 5: Angela Sees Fewer Denials — "Error Messages I Understand" (End User/Indirect Beneficiary)
+### Journey 5: DevOps / Compliance Review (Secondary, Gatekeeper)
 
-*Opening Scene:* Angela has processed medical claims for 15 years. Every morning, she opens a spreadsheet of yesterday's rejected claims and starts the rework cycle: look up the CARC code, figure out what went wrong, call the payer, resubmit. Today she has 23 rejections. It takes her until 2pm.
+**Opening Scene:** The compliance officer at MedFlow receives a request to deploy the PA module to production. PA data contains diagnosis codes, procedure codes, clinical justification, and patient demographics — more sensitive than eligibility data. She needs to verify HIPAA compliance before sign-off.
 
-*Rising Action:* Her company integrates claim-validator into their billing system. Now, before Angela clicks "Submit," the system shows a validation panel with plain-English messages: "Missing modifier 25 on E/M code 99213 when billed with procedure 20610 for payer UnitedHealthcare — Add modifier 25 to the E/M service line."
+**Rising Action:** She reviews the library documentation and finds:
+- `PriorAuthDeidentifier` strips all 18 HIPAA identifiers before any LLM call
+- Automated tests verify de-identification completeness
+- Clearinghouse request/response bodies are never logged (PHI)
+- Ages 90+ capped to 90 per HIPAA Safe Harbor
+- Dates reduced to year-only before LLM
+- PHI does not persist in memory beyond a single `submit_prior_auth()` call
 
-*Climax:* Angela fixes the modifier, checks prior auth (already approved), and submits. Clean first-submission. She processes all 45 of today's claims by 11am — with zero rejections. For the first time in 15 years, she finishes her queue before lunch.
+**Climax:** She runs the HIPAA test suite (`tests/test_prior_auth/test_hipaa/`) — all pass. She traces a sample PA request through the pipeline and confirms PHI never leaves the clearinghouse path unprotected.
 
-*Resolution:* Daily rejection rework drops from 23 claims/day to 3. She uses freed-up time for patient follow-ups and collections.
-
-**Requirements revealed:** Human-readable finding messages, payer-specific context in suggestions, severity levels (ERROR vs WARNING), field-level specificity, actionable fix suggestions.
-
----
+**Resolution:** Compliance sign-off granted. She adds the PA module to the approved software inventory with a note: "PHI handling follows same verified pattern as eligibility module."
 
 ### Journey Requirements Summary
 
-| Capability | Revealed By | Priority |
-|---|---|---|
-| **Zero-config pip install + validate()** | J1 (Priya) | MVP |
-| **Structured findings with suggestions** | J1 (Priya), J5 (Angela) | MVP |
-| **AI validation with provider config** | J1 (Priya), J2 (Marcus) | MVP |
-| **Custom validator API (BaseValidator)** | J2 (Marcus), J4 (Raj) | MVP |
-| **Dict-based input (no framework coupling)** | J1 (Priya), J4 (Raj) | MVP |
-| **HIPAA de-identification** | J1 (Priya), J3 (David) | MVP |
-| **Configurable pipeline construction** | J4 (Raj) | MVP |
-| **Payer-specific rule encoding** | J2 (Marcus), J5 (Angela) | Growth |
-| **Batch validation** | J2 (Marcus), J4 (Raj) | Growth |
-| **CLI tool** | J2 (Marcus) | Growth |
-| **Enterprise support tier** | J3 (David) | Growth |
-| **Community contribution path** | J2 (Marcus) | Growth |
-| **Analytics/reporting** | J4 (Raj) | Vision |
+| Journey | Key Capabilities Revealed |
+|---|---|
+| **Raj — Happy Path** | `determine_pa_required()` from 271, `submit_prior_auth()` API, clearinghouse client interface, auth number extraction, full-chain workflow |
+| **Priya — Onboarding** | Zero-config rule-based validation, dict input support, `parse_278_response()` standalone use, quickstart documentation, Pydantic model ergonomics |
+| **Raj — Denial** | HCR action code mapping, AAA error messages, AI denial interpretation, appeal guidance, `PriorAuthDeidentifier`, `is_denied` property |
+| **Karen — Business** | Pre-submission validation impact, electronic submission throughput, denial rate metrics, turnaround time improvement |
+| **DevOps — Compliance** | `PriorAuthDeidentifier`, HIPAA test suite, PHI logging prevention, memory lifecycle, Safe Harbor compliance |
 
 ## Domain-Specific Requirements
 
 ### Compliance & Regulatory
 
-| Requirement | Specification | Impact on Library |
-|---|---|---|
-| **HIPAA Privacy Rule** | No PHI transmitted to external services without de-identification | `ClaimDeidentifier` strips all 18 HIPAA identifiers before any LLM call. Rule-based validation never transmits data externally |
-| **HIPAA Security Rule** | PHI at rest must be encrypted; access must be auditable | Library never persists PHI — validates in-memory. Persistence is the consumer's responsibility |
-| **HIPAA Minimum Necessary** | Only minimum PHI required for purpose | De-identification sends only: codes, charges, payer ID, NPI, taxonomy, facility, patient age, gender, state, service year |
-| **CMS-1500 / 837P Standards** | Claims conform to NUCC CMS-1500 field definitions | Pydantic models enforce CMS-1500 structure. Validators check CMS specifications |
-| **ICD-10-CM Annual Updates** | Code sets updated October 1 by CMS | Bundled tables with annual update mechanism. Grace period logic for transitions |
-| **HCPCS/CPT Updates** | HCPCS quarterly; CPT annually by AMA | Bundled tables. CPT is AMA-copyrighted — library validates format only |
-| **State Timely Filing Rules** | Deadlines vary by payer/state (90 days to 1 year) | Configurable per-payer limits with sensible defaults |
-| **NPI Validation** | Valid per CMS NPI Final Rule | Luhn check-digit + format validation. NPPES live lookup deferred to Growth |
+**HIPAA (Health Insurance Portability and Accountability Act):**
+- All 18 HIPAA identifiers MUST be stripped before any LLM/AI call via `PriorAuthDeidentifier`
+- PHI dual-path: clearinghouse receives raw PHI (covered entity with BAA), AI path strips PHI
+- Ages 90+ capped to 90 per HIPAA Safe Harbor
+- Dates reduced to year-only before LLM
+- PHI must not persist in memory beyond a single `submit_prior_auth()` call
+- Clearinghouse request/response bodies MUST NOT be logged (contain PHI)
+- Automated test coverage for all 18 identifiers (same pattern as eligibility module)
+
+**X12 278 HIPAA Standard (005010X217):**
+- 278 Request/Response must conform to ASC X12N 005010X217 implementation guide
+- BHT segment: BHT02="13" (Request) or "11" (Response)
+- UM segment: Request category codes (AR/HS/SC/IN), certification types (I/R/S/E)
+- HCR segment (response only): Action codes A1/A2/A3/A4/A6/CT/NA
+- AAA segment: Standard X12 reject reason codes at each loop level
+- SNIP levels 1-4 syntax validation expected at clearinghouse layer
+
+**CMS-0057-F (Interoperability and Prior Authorization Final Rule):**
+- Turnaround requirements effective Jan 1, 2026: 72 hours (expedited), 7 calendar days (standard)
+- FHIR Prior Authorization API mandate: January 1, 2027
+- CMS enforcement discretion: FHIR can satisfy HIPAA X12 278 mandate
+- Architecture must support FHIR PAS addition without breaking changes (v2.1 target)
+- Denial responses must include specific clinical rationale (not just administrative codes)
+
+**CAQH CORE Operating Rules:**
+- 2 business day response requirement for 278 transactions (90% compliance target)
+- Standardized UM segment codes across all payers
+- AAA error codes must use standard X12 reject reason codes
+- HCR03 decision reason codes from WPC External Code Source 886
 
 ### Technical Constraints
 
-| Constraint | Rationale | Implementation |
-|---|---|---|
-| **Zero PHI in logs** | PHI in logs = HIPAA breach | Finding messages reference field names, not values |
-| **No mandatory external calls** | Healthcare orgs in restricted networks | Rule-based is 100% offline. AI is opt-in. No telemetry |
-| **Deterministic before probabilistic** | Clinical systems need predictable behavior | Two-phase pipeline: rules first, AI second. Configurable via `skip_ai_on_rule_failure` |
-| **Stateless validation** | Validators must not modify claim data | `validate(claim) -> ValidatorOutput` is read-only. No side effects |
-| **No PHI in error messages** | Exceptions may be logged by consumers | PHI patterns never in exception messages or suggestions |
-| **Thread safety** | Billing systems process claims in parallel | Stateless validators. Reusable pipeline instances. No shared mutable state |
+**Security:**
+- All clearinghouse communication over TLS 1.2+ (HIPAA Security Rule)
+- API keys stored in environment variables, never in code or logs
+- `BaseClearinghouseClient` implementations must use `httpx.Client` with TLS verification
+- No PHI in exception messages, stack traces, or error responses
+
+**Privacy:**
+- `PriorAuthDeidentifier` MUST be called before any AI/LLM path — no exceptions
+- De-identification is a pipeline gate: if it fails, AI phase must not execute
+- Raw 278 request/response preserved in `PriorAuthResult.raw_response` for advanced users (not sent to LLM)
+- PHI fields: patient name, DOB, member ID, SSN, address, phone, email, subscriber ID, provider NPI (when combined with patient data), diagnosis codes (when combined with demographics)
+
+**Performance:**
+- Rule-based validation: < 100ms (offline, no network calls)
+- Clearinghouse round-trip: dependent on provider (Stedi ~2-5s, payer response may be async)
+- AI interpretation: dependent on LLM provider (typically 2-10s)
+- 278 response may be asynchronous (HCR01=A4 pended) — MVP returns pended status, polling deferred to v2.1
+
+**Data Integrity:**
+- All Pydantic models frozen=True (immutable after creation)
+- Response parser must handle missing fields gracefully (None, not exception)
+- Unmapped/unexpected fields generate WARNING finding, never exception
+- `parse_278_response()` must NOT modify the raw input dict
 
 ### Integration Requirements
 
-| Integration Point | Specification | Phase |
-|---|---|---|
-| **Python dict input** | Raw dicts with CMS-1500 field mapping | MVP |
-| **Pydantic model input** | `ClaimData` instances | MVP |
-| **LLM provider abstraction** | `BaseLLMClient` ABC with factory (Anthropic, OpenAI, OpenAI-compatible) | MVP |
-| **Custom validator registration** | Dotted path loading via `ValidatorRegistry` | MVP |
-| **Framework integrations** | Django, FastAPI, Flask adapters | Growth |
-| **Clearinghouse submission** | ClaimMD and other APIs | Vision |
-| **FHIR R4 input** | FHIR Claim resources mapped to internal model | Vision |
+**Clearinghouse Integration:**
+- `BaseClearinghouseClient.submit_prior_auth(request: PriorAuthRequest) -> dict` — abstract interface
+- Must raise `ClearinghouseError` for HTTP/network failures
+- Must NOT raise for business rejections (AAA segments returned in response)
+- Must NOT log request/response bodies (PHI)
+- Context manager support: `__enter__`, `__exit__`, `close()`
+- 30s default timeout (consistent with eligibility module NFR12)
+
+**Eligibility Module Integration:**
+- `determine_pa_required()` accepts `EligibilityResponse` from existing eligibility module
+- Parses `authOrCertIndicator` field from 271 benefit information
+- Parses free-text `additionalInformation.description` for PA indicators
+- Critical rule: If free-text says PA required, trust it even if `authOrCertIndicator` contradicts
+
+**LLM Integration:**
+- Reuses existing `BaseLLMClient` and `LLMFactory` from claim-validator core
+- Same provider support: Anthropic Claude, OpenAI GPT
+- Same configuration pattern: `CLAIM_VALIDATOR_AI_CONFIG` environment variable
+- `PriorAuthInterpreterAI` follows `EligibilityInterpreterAI` pattern
+
+**Code Table Integration:**
+- ICD-10-CM validation: reuses existing `claim_validator/data/` code tables
+- CPT/HCPCS validation: reuses existing `claim_validator/data/` code tables
+- New: AAA reject reason code table (`prior_auth/data/aaa_reject_codes.json`)
+- New: HCR action code descriptions (`prior_auth/data/hcr_action_codes.json`)
+- New: Service type codes for PA (`prior_auth/data/service_type_codes.json`)
+- Lazy singleton loading with `threading.Lock` (existing pattern)
 
 ### Risk Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **PHI leakage through LLM calls** | HIPAA breach, legal liability | De-identification automatic in pipeline. Test suite verifies no PHI in payloads |
-| **Stale code tables** | False negatives/positives after CMS updates | Version metadata. CLI update command. Warnings when tables >12 months old |
-| **Incorrect validation logic** | Financial harm to users | 95%+ accuracy target. Community-reported errors as high-priority bugs |
-| **AI hallucination** | Incorrect clinical advice | AI findings supplementary, never sole basis for rejection. Rules authoritative, AI advisory |
-| **CPT copyright** | AMA copyright on descriptions | Format validation only. No bundled descriptions |
-| **Liability for missed denials** | User relies on library, claim denied | MIT license + disclaimer. Documentation states no guarantee of acceptance |
-| **Breaking CMS rule changes** | Annual invalidation of validator logic | Semantic versioning. Annual review aligned with CMS October 1 updates |
+| PHI leaked to LLM provider | HIPAA violation, legal liability | `PriorAuthDeidentifier` as mandatory pipeline gate; automated HIPAA test suite |
+| Incorrect HCR action code mapping | Wrong authorization decision communicated to provider | 100% coverage of all 7 HCR codes; automated tests for each code path |
+| AAA error misinterpretation | Provider takes wrong corrective action | Human-readable error messages reviewed against X12 specification; include raw code alongside interpretation |
+| Stale ICD-10/CPT code tables | Valid codes rejected as invalid | Version code tables with release dates; document update cadence |
+| Clearinghouse API changes | Submission failures | Abstract `BaseClearinghouseClient` isolates provider-specific changes; no concrete provider in MVP |
+| CMS-0057-F FHIR mandate (Jan 2027) | Architecture not extensible for FHIR PAS | Abstract clearinghouse interface designed to support both X12 278 and FHIR PAS providers |
+| Pended PA (A4) with no status polling | Provider doesn't know when decision is made | MVP returns pended status clearly; AI recommends manual follow-up; polling deferred to v2.1 |
+| Cross-field validation false positives | Valid PA requests rejected by rule-based validators | Conservative validation (WARNING not ERROR for uncertain cross-field checks); allow override via `skip_rule_validators` config |
 
 ## Innovation & Novel Patterns
 
 ### Detected Innovation Areas
 
-| Innovation | What's Novel | Why It Matters |
-|---|---|---|
-| **First-of-kind on PyPI** | Zero open-source Python claim validation libraries. pyx12/python-hl7 handle EDI parsing only | New category. No competition — only a vacuum to fill |
-| **LLM-Agnostic Healthcare AI** | No tool offers pluggable LLM providers with automatic HIPAA de-identification | No vendor lock-in. Claude today, self-hosted Llama tomorrow |
-| **Two-Phase Pipeline** | Deterministic rules (60-75%) + AI clinical edge cases | Immediate value with rules-only; AI is force multiplier, not dependency |
-| **Offline-First Healthcare Tool** | Zero network calls, zero API keys, zero database for rule-based | Air-gap compliance. Restricted networks can adopt immediately |
-| **Community-Driven Payer Rules** | Open-source payer rule repository | "Every payer is a snowflake" → collective intelligence |
+1. **Pre-Claim Workflow Chain Completion (New Paradigm)**
+   - First open-source Python library to connect eligibility (270/271) → PA determination → PA submission (278) → claim (837) in a single package
+   - `determine_pa_required()` bridges the gap between eligibility response and PA request — this function does not exist in any comparable library
+   - The chain enables "one `pip install`, three workflows" developer experience
 
-### Competitive Landscape
+2. **AI-Powered 278 Response Interpretation (Novel Combination)**
+   - No existing library uses LLMs to interpret X12 278 responses (HCR action codes, AAA reject reasons)
+   - AI generates actionable appeal strategies for denials (A3) and documentation guidance for pended cases (A4)
+   - PHI de-identification makes this possible within HIPAA constraints — first library to solve the PHI-safe AI interpretation for PA responses
 
-| Competitor | What They Do | Gap |
-|---|---|---|
-| **Change Healthcare / Optum** | Full RCM platform | Not embeddable, not open-source, UHG conflict-of-interest |
-| **Stedi** | EDI format translation | No content validation — doesn't check if claim will pay |
-| **Candid Health** | API-first RCM | Full SaaS, not a library |
-| **pyx12 / python-hl7** | EDI parsing | Zero business rule validation |
-| **claim-validator** | Embeddable rules + AI | **Only open-source, pip-installable, LLM-agnostic, HIPAA-safe option** |
+3. **Pre-Submission Validation as Rejection Prevention (Paradigm Shift)**
+   - Industry approach: submit → get rejected → fix → resubmit (2+ day cycle per iteration)
+   - Our approach: validate offline → catch 80%+ of rejections before clearinghouse → submit clean requests
+   - Cross-field consistency checks (diagnosis-supports-procedure, gender/age-procedure) go beyond basic field validation
+   - This "shift left" pattern mirrors software testing best practices applied to healthcare transactions
 
-### Innovation Validation
+4. **Abstract-First Clearinghouse Architecture (Strategic Design)**
+   - MVP ships without a concrete clearinghouse provider — unusual but deliberate
+   - Developers get full offline validation + response parsing value immediately
+   - Abstract interface (`BaseClearinghouseClient`) designed to support both X12 278 and future FHIR PAS providers
+   - When Stedi adds 278 API or CMS-0057-F FHIR mandate activates, concrete providers plug in without breaking changes
 
-| Aspect | Validation Method | Success Signal |
-|---|---|---|
-| **Market need** | PyPI downloads, GitHub stars | 500+ downloads/month, 200+ stars |
-| **Rules catch denials** | Curated 500+ claim test corpus | 95%+ accuracy |
-| **AI adds value** | Rules-only vs rules+AI comparison | 5+ cases where AI caught what rules missed |
-| **LLM-agnostic works** | Integration tests across 3+ providers | Same findings regardless of provider |
-| **Community contributes** | Track PRs, external packages | 3+ community payer rule sets in 6 months |
+### Market Context & Competitive Landscape
+
+- **No direct competitor**: Zero open-source Python libraries combine 278 Pydantic models + rule-based validation + AI interpretation
+- **PA automation market**: $2.18B (2024) → $5.99B (2032), CAGR 10-18% — growing due to CMS mandates and provider demand
+- **Regulatory tailwind**: CMS-0057-F turnaround requirements (effective Jan 2026) and FHIR PA API mandate (Jan 2027) drive electronic PA adoption
+- **Electronic PA adoption gap**: Only ~35% of PA requests are fully electronic (vs 94%+ for eligibility) — massive room for growth
+- **AMA advocacy**: 2024 AMA survey shows 94% of physicians report PA-related care delays; organized medicine pushing for reform
+
+### Validation Approach
+
+| Innovation | Validation Method |
+|---|---|
+| Pre-claim workflow chain | Integration test: eligibility result → `determine_pa_required()` → `submit_prior_auth()` → auth number extracted → embedded in claim |
+| AI 278 interpretation | Benchmark against manual review of 50+ real 278 responses across all 7 HCR action codes |
+| Pre-submission validation | Compare rejection rates: with validators (target <5%) vs without (baseline ~30%) using clearinghouse sandbox |
+| Abstract clearinghouse | Verify concrete provider can be added without modifying existing tests or public API surface |
+
+### Innovation Risk Mitigation
+
+See **Domain-Specific Requirements > Risk Mitigations** for the consolidated risk table. Key innovation-specific risks: AI interpretation accuracy (mitigated by raw code inclusion), abstract clearinghouse perception (mitigated by offline value + v2.1 roadmap), workflow chain coupling (mitigated by duck typing on `determine_pa_required()`).
 
 ## Developer Tool Specific Requirements
 
 ### Project-Type Overview
 
-`claim-validator` is a pip-installable Python library targeting Python 3.11+ developers building healthcare billing systems. "Batteries-included, zero-config" philosophy — `pip install` and call `validate()`. Small public API surface with deep customization through validator registry and LLM provider system.
+The Prior Authorization module is a **Python library extension** (brownfield, adding to existing `claim-validator` package) targeting healthcare platform developers. It follows established patterns from the existing claim validation and eligibility modules — same pipeline architecture, same Pydantic model conventions, same testing and quality standards. The module is distributed via PyPI as part of the `claim-validator` package.
 
 ### Language & Platform Matrix
 
-| Dimension | Specification |
+| Dimension | Requirement |
 |---|---|
-| **Primary Language** | Python 3.11+ (modern typing, `|` union syntax, `StrEnum`) |
-| **Target Platforms** | Linux, macOS, Windows |
-| **Type Annotations** | Full type hints. `py.typed` marker for mypy/pyright |
-| **Python Version Policy** | CPython 3.11, 3.12, 3.13. Drop per NEP 29 convention |
+| **Language** | Python 3.10+ (match existing library requirement) |
+| **Type checking** | mypy strict mode — all public APIs fully typed |
+| **Linting** | ruff (line-length=100, rules E,F,I,N,W,UP) |
+| **Runtime** | CPython (primary), no PyPy-specific optimizations |
+| **OS support** | Linux, macOS, Windows — no OS-specific dependencies |
+| **Dependencies** | Pydantic v2 (core), httpx (clearinghouse HTTP), existing `claim-validator` dependencies |
 
 ### Installation Methods
 
-| Method | Command | What You Get |
+| Method | Command | Use Case |
 |---|---|---|
-| **Core** | `pip install claim-validator` | 8 validators, Pydantic models, pipeline, bundled code tables |
-| **With AI** | `pip install claim-validator[ai]` | + httpx, Anthropic SDK, OpenAI SDK |
-| **Anthropic only** | `pip install claim-validator[anthropic]` | + anthropic SDK |
-| **OpenAI only** | `pip install claim-validator[openai]` | + openai SDK |
-| **Django** | `pip install claim-validator[django]` | + Django adapter (Growth) |
-| **FastAPI** | `pip install claim-validator[fastapi]` | + FastAPI dependency injection (Growth) |
-| **All** | `pip install claim-validator[all]` | Everything |
-| **Dev** | `pip install claim-validator[dev]` | + pytest, ruff, mypy, factory-boy |
+| **Base install** | `pip install claim-validator` | Rule-based PA validation only (zero external dependencies beyond Pydantic) |
+| **AI extras** | `pip install claim-validator[ai]` | Adds LLM provider SDKs (anthropic, openai) for AI interpretation |
+| **Clearinghouse extras** | `pip install claim-validator[stedi]` | Adds Stedi SDK when concrete provider available (v2.1) |
+| **Full install** | `pip install claim-validator[ai,stedi]` | Complete PA pipeline with AI + clearinghouse |
+| **Development** | `pip install -e ".[dev,ai]"` | Local development with test dependencies |
 
-Build system: `pyproject.toml`. Distribution: PyPI.
+### API Surface
 
-### Public API Surface
+**Top-level public API (3 new entry points):**
 
 ```python
-# Core validation
-from claim_validator import validate, ValidationPipeline, ValidatorRegistry
+# PA determination from eligibility response
+determine_pa_required(eligibility_response: dict | EligibilityResponse) -> PADeterminationResult
 
-# Data models
-from claim_validator import ClaimData, ClaimLineData, Finding, ValidatorOutput, PipelineResult
+# Full PA submission pipeline
+submit_prior_auth(request: dict | PriorAuthRequest, config: PipelineConfig | None = None) -> PriorAuthResult
 
-# Extension base classes
-from claim_validator import BaseValidator, BaseLLMClient
-
-# Enums
-from claim_validator import Severity, ClaimType
-
-# Configuration
-from claim_validator import ClaimValidatorSettings
-
-# De-identification
-from claim_validator import ClaimDeidentifier
-
-# Exceptions
-from claim_validator import ClaimValidatorError, ValidationError, ConfigurationError
+# Standalone 278 response parsing
+parse_278_response(raw_response: dict) -> PriorAuthResponse
 ```
 
-Design: Small top-level API (most users need only `validate()` + `Finding`). No global state. Explicit configuration. Stateless validators. Thread-safe pipeline instances.
+**Public Pydantic models:**
+
+| Model | Purpose |
+|---|---|
+| `PriorAuthRequest` | 278 request data (subscriber, patient, requester, service lines) |
+| `PriorAuthResponse` | Parsed 278 response (HCR action code, authorization number, dates) |
+| `PriorAuthResult` | Pipeline output (approved, response, findings, ai_summary) |
+| `PADeterminationResult` | PA required/not-required determination from 271 |
+| `ServiceLine` | Individual service within a PA request |
+| `ServiceLineDecision` | Per-service authorization decision from response |
+| `PriorAuthError` | AAA error segment parsed |
+
+**Public enums:**
+
+| Enum | Values |
+|---|---|
+| `CertificationActionCode` | A1, A2, A3, A4, A6, CT, NA |
+| `RequestCategoryCode` | AR (Admission Review), HS (Health Services Review), SC (Specialty Care Review), IN (Individual) |
+| `CertificationTypeCode` | I (Initial), R (Renewal/Revision), S (Revised), E (Extension) |
+
+**Abstract base classes (for extension):**
+
+| Class | Purpose |
+|---|---|
+| `BaseClearinghouseClient` | Abstract interface for 278 clearinghouse submission |
+| `PriorAuthDeidentifier` | PHI de-identification for AI path |
+| `PriorAuthInterpreterAI` | AI-powered response interpretation |
 
 ### Code Examples
 
-**Minimal:**
+**Example 1 — PA determination from eligibility response:**
+
 ```python
-from claim_validator import validate
-result = validate({"billing_provider_npi": "1234567893", "diagnosis_codes": [{"code": "J06.9"}], "lines": [{"procedure_code": "99213", "charge_amount": 150.00}]})
-print(result.passed, result.findings)
+from claim_validator import check_eligibility, determine_pa_required
+
+eligibility_result = check_eligibility({"subscriber_id": "XYZ123", ...})
+pa_determination = determine_pa_required(eligibility_result.response)
+
+if pa_determination.required:
+    print(f"PA required (confidence: {pa_determination.confidence})")
+    print(f"Reason: {pa_determination.reason}")
 ```
 
-**With AI:**
+**Example 2 — Full PA submission pipeline (rule-based only, no clearinghouse):**
+
 ```python
-result = validate(claim_data, ai_config={"provider": "anthropic", "api_key": "sk-...", "model": "claude-sonnet-4-5-20241022"})
+from claim_validator import submit_prior_auth
+
+result = submit_prior_auth({
+    "requester_npi": "1234567893",
+    "subscriber": {"member_id": "MBR001", "first_name": "J", "last_name": "D", "dob": "1980-01-15"},
+    "diagnosis_codes": ["M54.5"],
+    "service_lines": [{"cpt_code": "72148", "quantity": 1, "from_date": "2026-04-01"}],
+})
+
+if not result.passed:
+    for finding in result.findings:
+        print(f"[{finding.code}] {finding.message}")
 ```
 
-**Custom validator:**
-```python
-from claim_validator import BaseValidator, Finding, Severity
+**Example 3 — Parse 278 response from clearinghouse:**
 
-class MyValidator(BaseValidator):
-    name = "MyValidator"
-    def validate(self, claim):
-        findings = []
-        # custom logic
-        return self._make_output(findings)
+```python
+from claim_validator import parse_278_response
+
+response = parse_278_response(raw_278_json_from_clearinghouse)
+if response.is_approved:
+    print(f"Approved! Auth#: {response.authorization_number}")
+elif response.is_denied:
+    print(f"Denied: {response.decision_reason_description}")
+elif response.is_pended:
+    print(f"Pended — follow up after {response.follow_up_date}")
 ```
 
-**Custom pipeline:**
-```python
-from claim_validator import ValidationPipeline, ClaimValidatorSettings
+### Migration Guide
 
-settings = ClaimValidatorSettings(
-    rule_validators=["claim_validator.validators.NPIValidator", "my_app.validators.CustomValidator"],
-    skip_ai_on_rule_failure=True,
-)
-pipeline = ValidationPipeline.from_settings(settings)
-result = pipeline.run(claim_dict)
-```
+**For existing `claim-validator` users (v1.x → v2.0):**
 
-### Migration Guide (Django → Library)
-
-| Current (Django) | New (Library) | Change |
-|---|---|---|
-| `Claim` model | `ClaimData` Pydantic | ORM → Pydantic or dicts |
-| `ClaimStatus` TextChoices | `ClaimStatus` StrEnum | Same values, standard enum |
-| `ClaimAnalyzerSettings` | `ClaimValidatorSettings` | Django settings → Pydantic config |
-| `ValidationService.validate()` | `validate(claim_dict)` | Service layer → direct function |
-| `CLAIM_ANALYZER_VALIDATION_PIPELINE` | `settings.rule_validators` | Same dotted paths, different config |
-| `integrations/claude/` | `claim_validator.llm.AnthropicClient` | Provider-agnostic interface |
-| `ClaimDeidentifier` | `ClaimDeidentifier` | Same API, accepts dicts |
-
-### Documentation Strategy
-
-| Doc Type | Priority |
+| Aspect | Impact |
 |---|---|
-| README.md (quickstart, 3-line example) | MVP |
-| API Reference (auto-generated) | MVP |
-| Quickstart Guide (install → validate → AI → custom) | MVP |
-| Healthcare Context Guide (CMS-1500, denial reasons) | Growth |
-| Migration Guide (Django, custom code, commercial) | Growth |
-| Validator Cookbook (payer-specific recipes) | Growth |
-| Contributing Guide (validators, payer packages) | Growth |
+| **Existing `validate()` API** | Zero breaking changes — untouched |
+| **Existing `check_eligibility()` API** | Zero breaking changes — untouched |
+| **New imports** | `from claim_validator import submit_prior_auth, determine_pa_required, parse_278_response` |
+| **New optional dependency** | None for rule-based only; `[ai]` extra for AI interpretation (same as eligibility) |
+| **Configuration** | Same `CLAIM_VALIDATOR_AI_CONFIG` env var; same `PipelineConfig` pattern |
+| **Finding codes** | New prefixes (`PA_`, `AI_PA_`, `AAA_PA_REJECTION`) — no conflicts with existing `CLM_`, `AI_`, `ELIG_` prefixes |
+| **Pydantic model pattern** | Same `frozen=True` convention; same field naming (snake_case) |
+
+**Upgrade path:**
+```bash
+pip install --upgrade claim-validator  # v2.0 — adds prior_auth module
+# Existing code continues to work unchanged
+# New PA features available via new imports
+```
 
 ### Implementation Considerations
 
-- **Dependency minimalism:** Core = Pydantic only. AI extras add httpx + provider SDKs
-- **Backward compatibility:** Semver. Public API stable within major versions. 2 minor versions deprecation warning
-- **Error messages:** Designed for copy-paste into search engines. Error codes, field names, fix suggestions
-- **Testing contract:** Public test suite consumers can run against their claim data
+- **Module structure**: `claim_validator/prior_auth/` sub-package mirroring `claim_validator/eligibility/` layout
+- **Code table loading**: Lazy singleton with `threading.Lock` (same pattern as existing `claim_validator/data/` loaders)
+- **Finding severity levels**: Reuse existing `FindingSeverity` enum (ERROR, WARNING, INFO)
+- **Pipeline configuration**: Extend existing `PipelineConfig` with `prior_auth_settings` section (optional, backward-compatible)
+- **Test structure**: `tests/test_prior_auth/` mirroring `tests/test_eligibility/` — include `test_hipaa/` subdirectory for PHI verification
+- **Documentation**: Inline docstrings on all public APIs; README section for PA quickstart; separate PA tutorial in docs/
 
-## Risk Mitigation Strategy
+## Project Scoping & Phased Development
 
-### Technical Risks
+### MVP Strategy & Philosophy
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Django extraction harder than expected | Medium | Delays MVP 2-4 weeks | Start with validators (least coupled). Iterative extraction |
-| AI quality varies across LLM providers | Medium | Inconsistent experience | Standardized test suite. Anthropic as reference implementation |
-| Bundled code tables bloat package size | Low | Slower pip install | Compress tables. Lazy-load. ICD-10 ≈ 2MB compressed |
-| Pydantic v2 breaking changes | Low | Maintenance burden | Pin `pydantic>=2.0,<3.0`. CI tests against latest |
+**MVP Approach:** Problem-Solving MVP — Deliver the minimum set of capabilities that solve the core developer pain point: "I verified eligibility and it says PA is required — now what?" The MVP answers this question with offline validation, response parsing, and AI interpretation, without requiring a concrete clearinghouse provider.
 
-### Market Risks
+**Resource Requirements:** Solo developer or 2-person team with Python + healthcare domain familiarity. Estimated 4-6 weeks for a developer familiar with the existing `claim-validator` codebase patterns. No external dependencies (clearinghouse contracts, payer onboarding) needed for MVP — abstract interface only.
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Healthcare orgs won't adopt open-source | Medium | Low adoption | Enterprise support with HIPAA BAA. Security audit docs. Case studies |
-| Discoverability problem | Medium | Low downloads | SEO README. Blog posts. r/healthIT outreach. PyCon talk |
-| Commercial vendors release free tiers | Low | Reduced differentiation | Open-source moat: community, no vendor lock-in, offline capability |
+**MVP Philosophy Rationale:**
+- The product brief identifies that 65% of PA is still phone/fax — the biggest value unlock is pre-submission validation + response parsing, not end-to-end clearinghouse submission
+- Developers using `claim-validator` already have clearinghouse relationships for eligibility; they need a library that handles the PA-specific data models and validation, not a new clearinghouse connector
+- Abstract interface + offline validation = zero-cost experimentation for developers (no API keys, no sandbox accounts)
 
-### Resource Risks
+### MVP Feature Set (Phase 1 — v2.0)
 
-| Risk | Mitigation |
-|---|---|
-| Solo developer (bus factor = 1) | Prioritize docs and tests. Recruit 2-3 core contributors by month 3 |
-| Scope creep from community | Strict MVP boundaries. No non-MVP PRs until v1.0 |
-| Fewer resources than planned | Minimum: rule-based validators + PyPI (no AI). Still fills market gap |
+**Core User Journeys Supported:**
+- Journey 1 (Raj — Happy Path): Full chain from `determine_pa_required()` through `submit_prior_auth()` with custom clearinghouse client
+- Journey 2 (Priya — Onboarding): Zero-config rule-based validation + `parse_278_response()` standalone
+- Journey 3 (Raj — Denial): HCR/AAA code mapping + AI denial interpretation
+- Journey 5 (DevOps — Compliance): `PriorAuthDeidentifier` + HIPAA test suite
+
+**Must-Have Capabilities:**
+
+| # | Capability | Justification |
+|---|---|---|
+| 1 | `PriorAuthRequest` / `PriorAuthResponse` Pydantic models | Without typed models, the library has no structured data layer — product fails |
+| 2 | Enums: `CertificationActionCode`, `RequestCategoryCode`, `CertificationTypeCode` | HCR/UM codes are the language of 278 — without them, responses are uninterpretable |
+| 3 | Pre-submission rule-based validators (NPI, ICD-10, CPT, dates, cross-field) | Core differentiator: catch 80%+ of rejections offline before clearinghouse — this is the "aha moment" |
+| 4 | `determine_pa_required()` from 271 response | Bridge function that connects eligibility to PA — unique to this library, no alternative exists |
+| 5 | `parse_278_response()` with HCR action code mapping | Without response parsing, developers still need to manually decode 278 responses |
+| 6 | AAA error code mapping (top 20+ codes) | Rejection errors are cryptic — human-readable messages are a deal-breaker for Priya persona |
+| 7 | `PriorAuthDeidentifier` | HIPAA compliance gate — without this, AI phase cannot execute and compliance officer blocks deployment |
+| 8 | `PriorAuthInterpreterAI` | AI interpretation is the second differentiator — turns "A3" into actionable appeal strategy |
+| 9 | `submit_prior_auth()` top-level API | Single entry point mirrors `validate()` and `check_eligibility()` — API consistency is a must-have |
+| 10 | `BaseClearinghouseClient` abstract interface | Extension point — without it, no path to concrete clearinghouse providers |
+| 11 | `PriorAuthResult` pipeline output | Consistent result model — developers expect same shape as `ValidationResult` and `EligibilityResult` |
+| 12 | Finding code prefixes (`PA_`, `AI_PA_`, `AAA_PA_REJECTION`) | Namespace consistency with existing library — required for finding filtering/routing |
+
+**Can Be Manual/Deferred:**
+- Concrete clearinghouse provider — developers bring their own (subclass `BaseClearinghouseClient`)
+- Status polling for pended PAs — MVP returns pended status; manual follow-up via phone
+- Payer-specific PA requirement lists — too large a data maintenance burden for MVP
+
+### Post-MVP Features
+
+**Phase 2 — Growth (v2.1):**
+
+| Feature | Driver | Dependency |
+|---|---|---|
+| Concrete clearinghouse provider (Stedi 278 / Optum) | Removes "bring your own client" barrier for Priya persona | Stedi 278 API availability or Optum contract |
+| FHIR PAS Claim/ClaimResponse models | CMS-0057-F mandate (Jan 2027) | FHIR R4 + Da Vinci PAS IG |
+| Da Vinci CRD integration | Real-time PA determination via CDS Hooks | SMART on FHIR auth infrastructure |
+| Status polling for pended PAs (HCR01=A4) | Karen persona: same-day resolution tracking | Clearinghouse webhook/polling API |
+| 278 update/revision/extension (UM02=S/E) | Complete PA lifecycle for Raj persona | MVP 278 models as foundation |
+
+**Phase 3 — Expansion (v2.2+):**
+
+| Feature | Driver | Dependency |
+|---|---|---|
+| 275 attachment submission | Pended cases need additional clinical documentation | Clearinghouse 275 support |
+| Batch 278 submissions | Karen persona: 200 PAs/week efficiency | Async infrastructure |
+| Auth lifecycle state machine | Enterprise PA tracking | Persistence layer (application-level) |
+| Payer-specific PA requirement lists | Proactive PA determination by CPT/payer | Large data curation effort |
+| Django/FastAPI view helpers | Framework convenience | Stable core API |
+
+**Phase 4 — Intelligence (v3.0):**
+
+| Feature | Driver | Dependency |
+|---|---|---|
+| AI medical necessity pre-screening | Predict PA likelihood before submission | Training data from real PA outcomes |
+| Automated clinical documentation assembly | Reduce documentation burden | Clinical note parsing capability |
+| Predictive PA approval probability | Risk-stratify PA submissions | Historical PA decision data |
+| Multi-payer PA analytics | Revenue cycle optimization for Karen persona | Data aggregation infrastructure |
+
+### Risk Mitigation Strategy
+
+See **Domain-Specific Requirements > Risk Mitigations** for the comprehensive risk table. Additional scoping-specific risks:
+
+| Risk | Severity | Mitigation |
+|---|---|---|
+| 278 data model complexity (6-level hierarchical loops) | High | Flatten to Pydantic models that hide loop structure; expose only developer-relevant fields |
+| Developers wait for concrete clearinghouse provider | Medium | Ship offline validation value immediately; mock clearinghouse for testing; v2.1 concrete provider |
+| Fewer resources than planned | Medium | MVP scoped for solo developer (4-6 weeks); features independent — can ship subset |
+| Absolute minimum viable scope | — | `determine_pa_required()` + validators + `parse_278_response()` + HCR/AAA mapping = useful without AI or clearinghouse |
 
 ## Functional Requirements
 
-### Claim Validation
+### PA Determination from Eligibility
 
-- **FR1:** Developer can validate a healthcare claim by passing a Python dict or Pydantic model and receiving a structured result indicating pass/fail with detailed findings
-- **FR2:** Developer can run rule-based validation with zero configuration, zero API keys, and zero network calls
-- **FR3:** Developer can run AI-powered validation by providing an LLM provider configuration (provider name, API key, model)
-- **FR4:** Developer can configure the validation pipeline to skip AI validation when rule-based validation fails
-- **FR5:** Developer can receive findings that include error code, human-readable message, severity level, field name, line number, and actionable fix suggestion for every issue detected
-- **FR6:** Developer can distinguish between ERROR severity (claim will be denied) and WARNING severity (claim may be denied or has quality issues)
+- FR1: Developer can determine if prior authorization is required by passing an eligibility response (dict or `EligibilityResponse`) to `determine_pa_required()`
+- FR2: System can parse `authOrCertIndicator` field (Y/N/U) from 271 benefit information to determine PA requirement
+- FR3: System can parse free-text `additionalInformation.description` from 271 responses for PA indicators
+- FR4: System can resolve conflicts between `authOrCertIndicator` and free-text indicators (free-text takes precedence when it indicates PA required)
+- FR5: Developer can access the determination result as a `PADeterminationResult` with `required` (bool), `confidence` (high/medium/low), and `reason` (human-readable string)
 
-### Rule-Based Validators
+### PA Request Data Modeling
 
-- **FR7:** System can validate all required CMS-1500 fields are present and non-empty
-- **FR8:** System can validate NPI numbers using the Luhn check-digit algorithm
-- **FR9:** System can validate subscriber/insurance ID presence and format
-- **FR10:** System can validate patient demographics consistency (DOB, gender, relationship)
-- **FR11:** System can validate ICD-10-CM diagnosis code format and existence against bundled code tables
-- **FR12:** System can validate CPT/HCPCS procedure code format and modifier validity
-- **FR13:** System can validate diagnosis pointer consistency between lines and diagnosis codes
-- **FR14:** System can validate charge amounts are positive and line totals consistent
-- **FR15:** System can validate date consistency (service dates, DOB, filing date)
-- **FR16:** System can detect duplicate claim lines within a single claim
-- **FR17:** System can check service dates against configurable payer-specific timely filing deadlines
+- FR6: Developer can construct a `PriorAuthRequest` from a Python dict with subscriber, patient, requester, diagnosis, and service line data
+- FR7: Developer can construct a `PriorAuthRequest` directly using typed Pydantic model with field validation
+- FR8: System can validate that all Pydantic models are immutable (`frozen=True`) after creation
+- FR9: Developer can represent individual services within a PA request as `ServiceLine` objects with CPT/HCPCS code, quantity, and date range
+- FR10: Developer can specify request category (AR/HS/SC/IN) and certification type (I/R/S/E) via typed enums
 
-### AI Validation
+### Pre-Submission Rule-Based Validation
 
-- **FR18:** System can assess clinical plausibility of diagnosis-procedure combinations using an LLM
-- **FR19:** System can assess likely coverage and medical necessity concerns using an LLM
-- **FR20:** System can identify services likely requiring prior authorization using an LLM
-- **FR21:** System can automatically de-identify claims before sending to any LLM, stripping all 18 HIPAA identifiers
-- **FR22:** System can send only clinically relevant, non-PHI data to LLMs (codes, charges, payer ID, NPI, age, gender, state, service year)
+- FR11: System can validate requester NPI using Luhn check algorithm and return `PA_INVALID_NPI` finding on failure
+- FR12: System can validate that subscriber member ID is present and non-empty
+- FR13: System can validate patient date of birth is present and is a valid date
+- FR14: System can validate ICD-10 diagnosis codes against bundled code tables and return `PA_INVALID_DIAGNOSIS` for unknown codes
+- FR15: System can validate CPT/HCPCS procedure codes against bundled code tables and return `PA_INVALID_PROCEDURE` for unknown codes
+- FR16: System can validate service dates are not in the past and are within a reasonable future range
+- FR17: System can perform cross-field consistency checks (diagnosis-supports-procedure, gender/age-procedure compatibility) and return WARNING-level findings
+- FR18: Developer can run rule-based validation with zero API keys and zero external network calls (fully offline)
+- FR19: Developer can skip specific rule-based validators via `skip_rule_validators` configuration option
 
-### LLM Provider Support
+### Clearinghouse Integration
 
-- **FR23:** Developer can use Anthropic Claude models for AI validation
-- **FR24:** Developer can use OpenAI GPT models for AI validation
-- **FR25:** Developer can use any OpenAI-compatible endpoint (Ollama, vLLM, LiteLLM) for AI validation
-- **FR26:** Developer can switch LLM providers by changing configuration without modifying code
-- **FR27:** Developer can create custom LLM provider adapters by subclassing a base client interface
+- FR20: Developer can implement a custom clearinghouse client by subclassing `BaseClearinghouseClient` and implementing `submit_prior_auth()`
+- FR21: System can submit a validated `PriorAuthRequest` to a clearinghouse via the abstract client interface and receive a raw dict response
+- FR22: System can raise `ClearinghouseError` for HTTP/network failures while returning business rejections (AAA segments) as normal responses
+- FR23: System can enforce a configurable timeout on clearinghouse calls (default 30 seconds)
+- FR24: Clearinghouse client can be used as a context manager with `__enter__`, `__exit__`, and `close()` methods
 
-### Pipeline & Extensibility
+### 278 Response Parsing
 
-- **FR28:** Developer can create custom validators by subclassing a base class and implementing a validate method
-- **FR29:** Developer can register custom validators into the pipeline via configuration (dotted path strings)
-- **FR30:** Developer can construct custom pipelines with a specific subset of validators
-- **FR31:** Developer can configure pipeline behavior via a settings object
-- **FR32:** System can execute validators in two phases: rule-based first, AI second
-- **FR33:** System can aggregate results from all validators into a single pipeline result
+- FR25: Developer can parse a raw 278 JSON dict into a structured `PriorAuthResponse` model via `parse_278_response()`
+- FR26: System can map all 7 HCR action codes to structured decisions: A1 (approved), A2 (partial approval), A3 (denied), A4 (pended), A6 (modified), CT (contact payer), NA (not required)
+- FR27: System can extract authorization number from approved/partial/modified responses
+- FR28: System can extract effective date range (start/end) from authorization decisions
+- FR29: System can parse per-service-line decisions into `ServiceLineDecision` objects
+- FR30: Developer can access convenience properties on `PriorAuthResponse`: `is_approved`, `is_denied`, `is_pended`, `authorization_number`, `decision_reason_description`
+- FR31: System can handle missing or unexpected fields in 278 response gracefully (return None, not exception)
 
-### Data Models & Input
+### AAA Error Handling
 
-- **FR34:** Developer can provide claim data as a plain Python dictionary
-- **FR35:** Developer can provide claim data as a typed Pydantic model with validation
-- **FR36:** System can represent claims with multiple lines (procedure codes, modifiers, diagnosis pointers, charges)
-- **FR37:** System can represent diagnosis codes with code value, pointer position, and type
+- FR32: System can parse AAA reject segments from 278 responses into `PriorAuthError` objects
+- FR33: System can map top 20+ AAA reject reason codes (04, 15, 33, 35, 41-58, 60, 71-73, 79, T4) to human-readable error messages
+- FR34: System can provide suggested fixes alongside each AAA error message
+- FR35: System can generate `AAA_PA_REJECTION` finding codes for each AAA error encountered
 
-### Code Tables & Reference Data
+### PHI De-Identification
 
-- **FR38:** System can validate ICD-10-CM codes against bundled CMS tables without network calls
-- **FR39:** System can validate HCPCS Level II codes against bundled tables without network calls
-- **FR40:** System can validate Place of Service codes against bundled reference data
-- **FR41:** System can validate provider taxonomy codes against bundled NUCC data
-- **FR42:** System can provide timely filing deadline defaults for common payers
+- FR36: System can strip all 18 HIPAA identifiers from PA request/response data before any LLM call via `PriorAuthDeidentifier`
+- FR37: System can cap ages 90+ to 90 per HIPAA Safe Harbor
+- FR38: System can reduce dates to year-only before sending to LLM
+- FR39: System can enforce de-identification as a mandatory pipeline gate — if de-identification fails, AI phase must not execute
+- FR40: System can ensure PHI does not persist in memory beyond a single `submit_prior_auth()` call
 
-### Configuration & Distribution
+### AI-Powered Interpretation
 
-- **FR43:** Developer can configure the library using a Pydantic settings object with env var support
-- **FR44:** Developer can override default validator lists, AI settings, and pipeline behavior via configuration
-- **FR45:** Developer can use the library with zero configuration for basic rule-based validation
-- **FR46:** Developer can install the core library via `pip install claim-validator` with no optional dependencies
-- **FR47:** Developer can install AI support via `pip install claim-validator[ai]`
-- **FR48:** Developer can install provider-specific extras (`[anthropic]`, `[openai]`)
-- **FR49:** Library exposes type stubs (`py.typed`) for static type checking
+- FR41: Developer can enable AI-powered response interpretation via `PriorAuthInterpreterAI` using existing LLM configuration (`CLAIM_VALIDATOR_AI_CONFIG`)
+- FR42: System can generate a human-readable decision summary from HCR action codes and decision reason codes
+- FR43: System can generate next-step recommendations for pended cases (A4) including likely documentation needed
+- FR44: System can generate appeal strategy suggestions for denied cases (A3) based on decision reason codes
+- FR45: System can produce AI findings with `AI_PA_` prefix codes at WARNING severity level
+- FR46: System can include raw HCR/AAA codes alongside AI interpretation for verification
+
+### Pipeline Orchestration
+
+- FR47: Developer can submit a prior authorization through the complete three-phase pipeline via `submit_prior_auth()`
+- FR48: System can orchestrate rule-based validation → clearinghouse submission → AI interpretation as sequential pipeline phases
+- FR49: System can skip clearinghouse and AI phases when no clearinghouse client is configured (rule-based-only mode)
+- FR50: System can skip AI phase when no LLM provider is configured (clearinghouse-only mode)
+- FR51: Developer can access the pipeline result as `PriorAuthResult` with `approved`, `response`, `findings`, `ai_summary`, `passed`, `authorization_number`, `raw_response`, `execution_time`
+
+### Finding Code System
+
+- FR52: System can generate findings with `PA_` prefix for rule-based validation issues
+- FR53: System can generate findings with `AI_PA_` prefix for AI interpretation results
+- FR54: System can generate findings with `AAA_PA_REJECTION` prefix for AAA business rejections
+- FR55: System can generate findings with `CLEARINGHOUSE_` prefix for infrastructure errors
+- FR56: System can assign severity levels (ERROR, WARNING, INFO) to all findings using existing `FindingSeverity` enum
 
 ## Non-Functional Requirements
 
 ### Performance
 
-| NFR | Metric | Target |
-|---|---|---|
-| **NFR1:** Rule-based latency | `validate()` with all 8 validators, no AI | < 50ms per claim |
-| **NFR2:** AI latency | Full pipeline with one LLM round-trip | < 5 seconds per claim |
-| **NFR3:** Pipeline startup | First pipeline construction | < 100ms; near-zero subsequent |
-| **NFR4:** Code table lookup | Single code validation | < 1ms (in-memory after first load) |
-| **NFR5:** Memory footprint | Library with code tables loaded | < 100MB |
-| **NFR6:** Batch throughput | Rule-based, single thread | 500+ claims/second |
-| **NFR7:** Import time | `import claim_validator` | < 500ms (lazy-load tables) |
+- NFR1: Rule-based validation phase must complete in < 100ms for a single PA request (offline, no network calls)
+- NFR2: Code table loading (ICD-10, CPT, AAA codes) must use lazy singleton pattern — first load < 500ms, subsequent lookups < 1ms
+- NFR3: `parse_278_response()` must complete in < 50ms for a single 278 response dict
+- NFR4: `determine_pa_required()` must complete in < 10ms for a single eligibility response
+- NFR5: Pipeline overhead (orchestration, finding aggregation) must add < 20ms beyond individual phase execution times
+- NFR6: Memory footprint of loaded code tables must not exceed 50MB
 
-### Security
+### Security & Privacy
 
-| NFR | Requirement | Verification |
-|---|---|---|
-| **NFR8:** Zero PHI transmission (rule-based) | No network calls ever | Static analysis + integration test |
-| **NFR9:** PHI de-identification (AI) | All 18 HIPAA identifiers stripped before LLM | Unit tests per identifier type |
-| **NFR10:** No PHI in outputs | No PHI in logs, exceptions, or findings | Grep-based output scanning test |
-| **NFR11:** No telemetry | No phone-home or undisclosed network calls | Code audit + network monitoring |
-| **NFR12:** Secrets handling | API keys never in logs or outputs | Unit test on all output paths |
-| **NFR13:** Dependency security | No known CVEs at release | `pip-audit` in CI. Dependabot |
+- NFR7: All 18 HIPAA identifiers must be stripped by `PriorAuthDeidentifier` before any data reaches an LLM provider — verified by automated tests
+- NFR8: De-identification must be a mandatory pipeline gate: if `PriorAuthDeidentifier` raises an exception, the AI phase must not execute under any circumstance
+- NFR9: Clearinghouse communication must use TLS 1.2+ — `BaseClearinghouseClient` implementations must enforce TLS verification (no `verify=False`)
+- NFR10: API keys and credentials must be sourced from environment variables only — never hardcoded, never in logs, never in exception messages
+- NFR11: PHI must not appear in log output — clearinghouse request/response bodies must never be logged at any log level
+- NFR12: PHI must not appear in exception messages or stack traces — error messages must reference field names, not field values
+- NFR13: PHI must not persist in memory beyond a single `submit_prior_auth()` call — no module-level caching of patient data
+- NFR14: Ages 90+ must be capped to 90 per HIPAA Safe Harbor before LLM path
+- NFR15: Dates must be reduced to year-only before LLM path
 
-### Scalability
+### Reliability & Error Handling
 
-| NFR | Requirement | Target |
-|---|---|---|
-| **NFR14:** Thread safety | Safe concurrent use | Zero shared mutable state. Concurrent test (100 threads) |
-| **NFR15:** Stateless validation | No state between calls | Each `validate()` independent |
-| **NFR16:** Linear scaling | O(n) with claim lines | No exponential patterns |
+- NFR16: Missing or unexpected fields in 278 response must return `None` or generate a WARNING finding — never raise an unhandled exception
+- NFR17: Unmapped HCR action codes must generate a WARNING finding with the raw code value — never raise an exception
+- NFR18: Unmapped AAA reject reason codes must generate a WARNING finding with the raw code value and a generic "Contact payer for details" message
+- NFR19: Clearinghouse HTTP errors (timeout, connection refused, 5xx) must raise `ClearinghouseError` with a descriptive message — never expose raw HTTP response bodies
+- NFR20: LLM provider errors (timeout, rate limit, API error) must be caught and result in AI phase skipping gracefully — rule-based and clearinghouse results must still be returned
+- NFR21: Invalid input to `submit_prior_auth()` (wrong type, missing required fields) must raise `ValueError` with a clear message before any pipeline phase executes
 
-### Reliability
+### Integration Compatibility
 
-| NFR | Requirement | Verification |
-|---|---|---|
-| **NFR17:** Deterministic results | Identical output per input (rule-based) | 1000 runs, assert identical |
-| **NFR18:** Graceful AI failure | Returns rule-based results + warning if LLM down | Test with unreachable endpoint |
-| **NFR19:** Invalid input handling | Clear errors, no unhandled exceptions | Fuzz testing |
-| **NFR20:** Code table integrity | Match CMS official releases | Checksums + code count verification |
+- NFR22: PA module must not introduce any breaking changes to existing `validate()` or `check_eligibility()` public APIs
+- NFR23: PA module must reuse existing `BaseLLMClient`, `LLMFactory`, and `CLAIM_VALIDATOR_AI_CONFIG` configuration — no parallel LLM configuration system
+- NFR24: PA module must reuse existing `FindingSeverity` enum and finding model — no parallel finding system
+- NFR25: PA module must reuse existing code table loading infrastructure (`claim_validator/data/`) with lazy singleton + `threading.Lock` pattern
+- NFR26: New finding code prefixes (`PA_`, `AI_PA_`, `AAA_PA_REJECTION`, `CLEARINGHOUSE_`) must not conflict with existing prefixes (`CLM_`, `AI_`, `ELIG_`)
+- NFR27: `PriorAuthRequest` must accept both dict and Pydantic model input (same as `validate()` and `check_eligibility()` patterns)
+- NFR28: Default clearinghouse timeout must be 30 seconds (consistent with eligibility module)
 
-### Compatibility
+### Code Quality & Maintainability
 
-| NFR | Requirement | Verification |
-|---|---|---|
-| **NFR21:** Python versions | 3.11, 3.12, 3.13 | CI matrix |
-| **NFR22:** OS support | Linux, macOS, Windows | CI matrix |
-| **NFR23:** Dependency minimalism | Core = Pydantic only | Clean venv import test |
-| **NFR24:** Framework independence | Zero Django/Flask/FastAPI in core | Minimal environment test |
-| **NFR25:** Type checker compatibility | `py.typed` for mypy + pyright | CI type checking |
-
-### Code Quality
-
-| NFR | Requirement | Target |
-|---|---|---|
-| **NFR26:** Test coverage | All public API paths | 90%+ lines, 100% validators + de-identifier |
-| **NFR27:** Linting | ruff (E, F, I, N, W, UP) | Zero warnings |
-| **NFR28:** Documentation | All public API docstrings | interrogate > 95% |
-| **NFR29:** Package size | Published wheel | < 15MB with compressed tables |
+- NFR29: All `prior_auth/` module code must achieve > 90% test coverage
+- NFR30: All code must pass mypy strict mode with zero errors
+- NFR31: All code must pass ruff linting (line-length=100, rules E,F,I,N,W,UP) with zero warnings
+- NFR32: All public classes and functions must have docstrings
+- NFR33: All Pydantic models must use `frozen=True` (immutable after creation)
+- NFR34: `parse_278_response()` must not modify the input dict (no side effects)
+- NFR35: Module structure must mirror existing `claim_validator/eligibility/` layout for developer familiarity
+- NFR36: Test structure must include dedicated `test_hipaa/` subdirectory verifying all 18 HIPAA identifier de-identification
