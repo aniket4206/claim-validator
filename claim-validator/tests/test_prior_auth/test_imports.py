@@ -36,11 +36,17 @@ class TestPriorAuthModuleImports:
 
         assert callable(submit_prior_auth)
 
+    def test_import_parse_278_response(self) -> None:
+        from claim_validator.prior_auth import parse_278_response
+
+        assert callable(parse_278_response)
+
     def test_import_from_top_level(self) -> None:
         from claim_validator import (
             CertificationActionCode,
             PriorAuthPipeline,
             PriorAuthRequest,
+            parse_278_response,
             submit_prior_auth,
         )
 
@@ -48,6 +54,7 @@ class TestPriorAuthModuleImports:
         assert PriorAuthPipeline is not None
         assert CertificationActionCode.CERTIFIED_IN_TOTAL == "A1"
         assert callable(submit_prior_auth)
+        assert callable(parse_278_response)
 
     def test_all_pa_symbols_in_top_level_all(self) -> None:
         import claim_validator
@@ -57,6 +64,7 @@ class TestPriorAuthModuleImports:
             "CertificationTypeCode",
             "DeidentifiedPriorAuthResponse",
             "PADeterminationResult",
+            "parse_278_response",
             "PatientInfo",
             "PriorAuthError",
             "PriorAuthPipeline",
@@ -79,7 +87,9 @@ class TestPriorAuthModuleImports:
             "CertificationActionCode",
             "CertificationTypeCode",
             "DeidentifiedPriorAuthResponse",
+            "determine_pa_required",
             "PADeterminationResult",
+            "parse_278_response",
             "PatientInfo",
             "PriorAuthError",
             "PriorAuthPipeline",

@@ -22,6 +22,7 @@ from claim_validator.prior_auth.models import (
     SubscriberInfo,
 )
 from claim_validator.prior_auth.pipeline import PriorAuthPipeline
+from claim_validator.prior_auth.response_parser import parse_278_response
 
 __all__ = [
     "CertificationActionCode",
@@ -29,6 +30,7 @@ __all__ = [
     "DeidentifiedPriorAuthResponse",
     "determine_pa_required",
     "PADeterminationResult",
+    "parse_278_response",
     "PatientInfo",
     "PriorAuthError",
     "PriorAuthPipeline",
