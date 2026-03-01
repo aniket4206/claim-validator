@@ -87,7 +87,7 @@ development_status:
   elig-epic-1: in-progress
   elig-1-1-eligibility-data-models-package-configuration: done
   elig-1-2-payer-directory-service-type-code-tables: done
-  elig-1-3-npi-utility-extraction-first-validators: backlog
+  elig-1-3-npi-utility-extraction-first-validators: done
   elig-1-4-service-type-date-member-id-validators: backlog
   elig-1-5-eligibility-pipeline-check-eligibility-api: backlog
   elig-epic-1-retrospective: optional

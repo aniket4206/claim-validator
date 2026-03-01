@@ -6,25 +6,10 @@ from claim_validator.constants import Severity
 from claim_validator.models.claim import ClaimData
 from claim_validator.models.results import Finding, ValidatorOutput
 from claim_validator.validators.base import BaseValidator
-
-_NPI_REGISTRY_URL = "https://npiregistry.cms.hhs.gov"
-
-
-def _check_luhn_npi(npi: str) -> bool:
-    """Validate NPI using Luhn algorithm with '80840' healthcare prefix."""
-    try:
-        prefixed = "80840" + npi
-        total = 0
-        for i, ch in enumerate(reversed(prefixed)):
-            digit = int(ch)
-            if i % 2 == 1:
-                digit *= 2
-                if digit > 9:
-                    digit -= 9
-            total += digit
-        return total % 10 == 0
-    except (ValueError, TypeError):
-        return False
+from claim_validator.validators.rule_based._npi_utils import (
+    NPI_REGISTRY_URL,
+    _check_luhn_npi,
+)
 
 
 class NPIValidator(BaseValidator):
@@ -71,7 +56,7 @@ class NPIValidator(BaseValidator):
                     severity=Severity.ERROR,
                     field_name=field_name,
                     line_number=line_number,
-                    suggestion=f"Verify the NPI format at {_NPI_REGISTRY_URL}",
+                    suggestion=f"Verify the NPI format at {NPI_REGISTRY_URL}",
                 )
             )
             return  # Skip Luhn check if format is wrong
@@ -85,6 +70,6 @@ class NPIValidator(BaseValidator):
                     severity=Severity.ERROR,
                     field_name=field_name,
                     line_number=line_number,
-                    suggestion=f"Verify the NPI at {_NPI_REGISTRY_URL}",
+                    suggestion=f"Verify the NPI at {NPI_REGISTRY_URL}",
                 )
             )
