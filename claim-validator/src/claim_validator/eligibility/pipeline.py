@@ -1,4 +1,4 @@
-"""PriorAuthPipeline — two-phase PA validation orchestrator."""
+"""EligibilityPipeline — two-phase eligibility validation orchestrator."""
 
 from __future__ import annotations
 
@@ -7,17 +7,20 @@ from typing import TYPE_CHECKING
 
 from claim_validator.conf import ClaimValidatorSettings
 from claim_validator.constants import Severity
+from claim_validator.eligibility.models.result import EligibilityResult
 from claim_validator.models.results import Finding
-from claim_validator.prior_auth.models.result import PriorAuthResult
 from claim_validator.validators.registry import ValidatorRegistry
 
 if TYPE_CHECKING:
-    from claim_validator.prior_auth.models.request import PriorAuthRequest
+    from claim_validator.eligibility.models.request import EligibilityRequest
     from claim_validator.validators.base import BaseValidator
 
 
-class PriorAuthPipeline:
-    """Two-phase PA validation pipeline.
+_SEVERITY_ORDER: dict[Severity, int] = {Severity.ERROR: 0, Severity.WARNING: 1}
+
+
+class EligibilityPipeline:
+    """Two-phase eligibility validation pipeline.
 
     Phase 1: Rule-based validators (offline, synchronous)
     Phase 2: AI interpretation (future)
@@ -34,16 +37,18 @@ class PriorAuthPipeline:
     def from_settings(
         cls,
         settings: ClaimValidatorSettings | None = None,
-    ) -> PriorAuthPipeline:
+    ) -> EligibilityPipeline:
         """Create a pipeline from settings."""
         if settings is None:
             settings = ClaimValidatorSettings()
         registry = ValidatorRegistry()
-        rule_vals = registry.create_validators(settings.pa_rule_validators)
+        rule_vals = registry.create_validators(
+            settings.eligibility_rule_validators,
+        )
         return cls(rule_validators=rule_vals)
 
-    def run(self, request: PriorAuthRequest) -> PriorAuthResult:
-        """Execute the PA validation pipeline.
+    def run(self, request: EligibilityRequest) -> EligibilityResult:
+        """Execute the eligibility validation pipeline.
 
         Currently implements Phase 1 (rule-based) only.
         Phase 2 (AI) will be added in a future epic.
@@ -64,12 +69,17 @@ class PriorAuthPipeline:
                         severity=Severity.ERROR,
                         field_name="",
                         suggestion="Check validator implementation",
-                        context={"error": str(exc)},
+                        context={
+                            "validator": type(validator).__name__,
+                            "error": str(exc),
+                        },
                     )
                 )
 
+        findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.severity, 99))
+
         elapsed = time.perf_counter() - start
-        return PriorAuthResult(
+        return EligibilityResult(
             findings=findings,
             execution_time=elapsed,
         )

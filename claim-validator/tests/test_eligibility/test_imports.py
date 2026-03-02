@@ -41,11 +41,6 @@ class TestTopLevelImports:
 
         assert CoverageStatus is not None
 
-    def test_clearinghouse_error(self) -> None:
-        from claim_validator import ClearinghouseError
-
-        assert ClearinghouseError is not None
-
 
 class TestEligibilityModuleImports:
     """All symbols importable from claim_validator.eligibility."""
@@ -84,36 +79,6 @@ class TestEligibilityModuleImports:
         from claim_validator.eligibility import CoverageStatus
 
         assert CoverageStatus is not None
-
-
-class TestClearinghouseErrorHierarchy:
-    """AC 6: ClearinghouseError is a subclass of ClaimValidatorError."""
-
-    def test_subclass(self) -> None:
-        from claim_validator import ClaimValidatorError, ClearinghouseError
-
-        assert issubclass(ClearinghouseError, ClaimValidatorError)
-
-    def test_instantiation(self) -> None:
-        from claim_validator import ClearinghouseError
-
-        err = ClearinghouseError("Connection timeout")
-        assert str(err) == "Connection timeout"
-
-    def test_catchable_as_base(self) -> None:
-        from claim_validator import ClearinghouseError
-
-        with self._raises_clearinghouse():
-            raise ClearinghouseError("test")
-
-    @staticmethod
-    def _raises_clearinghouse():
-        """Context manager that catches ClaimValidatorError."""
-        import contextlib
-
-        from claim_validator import ClaimValidatorError
-
-        return contextlib.suppress(ClaimValidatorError)
 
 
 class TestExistingImportsUnchanged:

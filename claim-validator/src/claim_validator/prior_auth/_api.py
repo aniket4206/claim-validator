@@ -20,7 +20,7 @@ def submit_prior_auth(
     Args:
         request: PA request as a dict or PriorAuthRequest instance.
         settings: Optional settings. Uses defaults if None
-            (all 7 rule-based validators, no clearinghouse, no AI).
+            (all 7 rule-based validators, no AI).
 
     Returns:
         PriorAuthResult with findings from all validators.

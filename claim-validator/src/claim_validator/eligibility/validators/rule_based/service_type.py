@@ -24,7 +24,7 @@ class ServiceTypeValidator(BaseValidator):
                     severity=Severity.ERROR,
                     field_name="service_type_code",
                     suggestion=(
-                        "Use a valid X12 271 service type code"
+                        "Use a valid X12 service type code"
                         " (e.g., '30' for health benefit plan coverage)"
                     ),
                     context={"submitted_code": claim.service_type_code.strip()},

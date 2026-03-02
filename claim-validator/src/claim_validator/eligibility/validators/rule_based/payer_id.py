@@ -24,7 +24,7 @@ class PayerIDValidator(BaseValidator):
                     message="Payer ID not found in known payer directory",
                     severity=Severity.ERROR,
                     field_name="payer_id",
-                    suggestion="Verify payer ID at https://www.stedi.com/app/payers",
+                    suggestion="Verify payer ID against your payer directory",
                     context={"payer_id_length": len(claim.payer_id.strip())},
                 )
             )

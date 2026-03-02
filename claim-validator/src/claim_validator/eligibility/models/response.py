@@ -1,4 +1,4 @@
-"""Eligibility response models — nested, frozen Pydantic models for 271 data."""
+"""Eligibility response models — nested, frozen Pydantic models."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from claim_validator.eligibility.constants import CoverageStatus
 
 
 class CoverageInfo(BaseModel):
-    """Coverage details from 271 response."""
+    """Coverage details from eligibility response."""
 
     model_config = ConfigDict(frozen=True, strict=False)
 
@@ -23,7 +23,7 @@ class CoverageInfo(BaseModel):
 
 
 class BenefitInfo(BaseModel):
-    """Individual benefit from 271 EB segment."""
+    """Individual benefit detail."""
 
     model_config = ConfigDict(frozen=True, strict=False)
 
@@ -37,7 +37,7 @@ class BenefitInfo(BaseModel):
 
 
 class AAAError(BaseModel):
-    """AAA rejection from 271 response."""
+    """AAA rejection error."""
 
     model_config = ConfigDict(frozen=True, strict=False)
 
@@ -47,7 +47,7 @@ class AAAError(BaseModel):
 
 
 class EligibilityResponse(BaseModel):
-    """Structured 271 eligibility response."""
+    """Structured eligibility response."""
 
     model_config = ConfigDict(frozen=True, strict=False)
 

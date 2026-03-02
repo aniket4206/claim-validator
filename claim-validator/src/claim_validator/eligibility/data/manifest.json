@@ -2,7 +2,7 @@
   "payer_directory": {
     "code_count": 3400,
     "effective_date": "2026-03-01",
-    "source": "Stedi Payer Network Directory (representative seed)",
+    "source": "Payer Network Directory (representative seed)",
     "version": "2026-Q1-seed"
   },
   "service_types": {

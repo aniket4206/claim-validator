@@ -1,4 +1,4 @@
-"""Eligibility request model — flat, frozen Pydantic model for 270 transactions."""
+"""Eligibility request model — flat, frozen Pydantic model."""
 
 from __future__ import annotations
 
@@ -10,9 +10,8 @@ from pydantic import BaseModel, ConfigDict
 class EligibilityRequest(BaseModel):
     """Eligibility verification request.
 
-    Flat structure for the X12 270 eligibility inquiry.  All fields map
-    directly to 270 transaction segments.  ``strict=False`` allows string
-    coercion (e.g. ``"1985-03-15"`` → ``date``).
+    Flat structure for eligibility inquiries.  ``strict=False`` allows
+    string coercion (e.g. ``"1985-03-15"`` → ``date``).
     """
 
     model_config = ConfigDict(frozen=True, strict=False)

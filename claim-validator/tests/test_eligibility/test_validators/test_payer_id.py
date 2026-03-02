@@ -76,7 +76,7 @@ class TestPayerIDValidatorInvalid:
         output = validator.validate(request)
         assert output.findings[0].field_name == "payer_id"
 
-    def test_finding_has_stedi_suggestion(self) -> None:
+    def test_finding_has_suggestion(self) -> None:
         request = EligibilityRequest(
             provider_npi="1234567893",
             payer_id="ZZZZZ",
@@ -87,7 +87,7 @@ class TestPayerIDValidatorInvalid:
         )
         validator = PayerIDValidator()
         output = validator.validate(request)
-        assert "stedi" in output.findings[0].suggestion.lower()
+        assert "payer" in output.findings[0].suggestion.lower()
 
     def test_finding_has_context_with_length(self) -> None:
         request = EligibilityRequest(

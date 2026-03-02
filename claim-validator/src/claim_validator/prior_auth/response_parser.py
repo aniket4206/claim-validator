@@ -27,7 +27,7 @@ def parse_278_response(raw: dict[str, Any]) -> ParsedResponse:
     Pure function — no network calls, no side effects, no mutation of raw dict.
 
     Args:
-        raw: Raw 278 JSON dict from a clearinghouse.
+        raw: Raw 278 JSON dict.
 
     Returns:
         Tuple of (PriorAuthResponse, list[Finding]) where findings contain

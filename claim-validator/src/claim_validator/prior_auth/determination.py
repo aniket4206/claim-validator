@@ -73,9 +73,9 @@ def _scan_free_text(benefits: list[Any]) -> list[str]:
 
 
 def determine_pa_required(response: Any) -> PADeterminationResult:
-    """Determine whether prior authorization is required from a 271 response.
+    """Determine whether prior authorization is required from an eligibility response.
 
-    Accepts a dict (Stedi JSON) or any object with a ``benefitsInformation``
+    Accepts a dict or any object with a ``benefitsInformation``
     attribute.  No eligibility module imports are required.
 
     Logic (architecture decision D28):

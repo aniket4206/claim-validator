@@ -18,7 +18,14 @@
       "Bash(claim-validator/.venv/bin/pytest:*)",
       "Bash(PYTHONPATH=src .venv/bin/pytest:*)",
       "Bash(.venv/bin/ruff check:*)",
-      "Bash(PYTHONPATH=src .venv/bin/python:*)"
+      "Bash(PYTHONPATH=src .venv/bin/python:*)",
+      "Bash(mkdir:*)",
+      "Bash(.venv/bin/python3:*)",
+      "Bash(claim-validator/.venv/bin/python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(/home/lnv-20/Documents/claim-validator/claim-validator/.venv/bin/pytest:*)",
+      "Bash(grep:*)"
     ]
   }
 }

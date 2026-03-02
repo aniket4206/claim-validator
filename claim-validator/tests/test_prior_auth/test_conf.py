@@ -19,21 +19,12 @@ class TestPASettingsDefaults:
         settings = ClaimValidatorSettings()
         assert settings.pa_ai_validators == []
 
-    def test_default_skip_clearinghouse_on_pa_failure(self) -> None:
-        settings = ClaimValidatorSettings()
-        assert settings.skip_clearinghouse_on_pa_failure is True
-
     def test_default_pa_skip_ai(self) -> None:
         settings = ClaimValidatorSettings()
         assert settings.pa_skip_ai is False
 
 
 class TestPASettingsEnvVars:
-    def test_env_override_skip_clearinghouse(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CLAIM_VALIDATOR_SKIP_CLEARINGHOUSE_ON_PA_FAILURE", "false")
-        settings = ClaimValidatorSettings()
-        assert settings.skip_clearinghouse_on_pa_failure is False
-
     def test_env_override_pa_skip_ai(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CLAIM_VALIDATOR_PA_SKIP_AI", "true")
         settings = ClaimValidatorSettings()
@@ -65,10 +56,6 @@ class TestPASettingsExplicit:
         settings = ClaimValidatorSettings(pa_ai_validators=["my.PAAIValidator"])
         assert settings.pa_ai_validators == ["my.PAAIValidator"]
 
-    def test_explicit_skip_clearinghouse_false(self) -> None:
-        settings = ClaimValidatorSettings(skip_clearinghouse_on_pa_failure=False)
-        assert settings.skip_clearinghouse_on_pa_failure is False
-
     def test_explicit_pa_skip_ai_true(self) -> None:
         settings = ClaimValidatorSettings(pa_skip_ai=True)
         assert settings.pa_skip_ai is True
@@ -79,8 +66,3 @@ class TestPASettingsFrozen:
         settings = ClaimValidatorSettings()
         with pytest.raises(pydantic.ValidationError):
             settings.pa_skip_ai = True  # type: ignore[misc]
-
-    def test_frozen_skip_clearinghouse(self) -> None:
-        settings = ClaimValidatorSettings()
-        with pytest.raises(pydantic.ValidationError):
-            settings.skip_clearinghouse_on_pa_failure = False  # type: ignore[misc]

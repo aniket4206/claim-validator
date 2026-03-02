@@ -6,7 +6,7 @@ from enum import StrEnum
 
 
 class CoverageStatus(StrEnum):
-    """Coverage status from 271 eligibility response."""
+    """Coverage status from eligibility response."""
 
     ACTIVE = "active"
     INACTIVE = "inactive"
