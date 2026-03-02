@@ -44,12 +44,17 @@ from claim_validator.models import (
     PipelineResult,
     ValidatorOutput,
 )
+from claim_validator.models.workflow import PreClaimResult
+from claim_validator.orchestrator import pre_claim_check
 from claim_validator.prior_auth import (
     CertificationActionCode,
     CertificationTypeCode,
+    DeidentifiedPriorAuthError,
     DeidentifiedPriorAuthResponse,
+    DeidentifiedServiceLineDecision,
     PADeterminationResult,
     PatientInfo,
+    PriorAuthDeidentifier,
     PriorAuthError,
     PriorAuthPipeline,
     PriorAuthRequest,
@@ -95,7 +100,9 @@ __all__ = [
     "DeidentifiedCoverageInfo",
     "DeidentifiedEligibilityResponse",
     "DeidentifiedLineData",
+    "DeidentifiedPriorAuthError",
     "DeidentifiedPriorAuthResponse",
+    "DeidentifiedServiceLineDecision",
     "EligibilityDeidentifier",
     "determine_pa_required",
     "DiagnosisCode",
@@ -111,6 +118,9 @@ __all__ = [
     "parse_278_response",
     "PatientInfo",
     "PipelineResult",
+    "pre_claim_check",
+    "PreClaimResult",
+    "PriorAuthDeidentifier",
     "PriorAuthError",
     "PriorAuthPipeline",
     "PriorAuthRequest",
