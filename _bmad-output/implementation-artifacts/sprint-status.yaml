@@ -95,7 +95,7 @@ development_status:
   # Epic 2: AI-Powered Eligibility Interpretation
   elig-epic-2: in-progress
   elig-2-1-eligibility-de-identification-engine: done
-  elig-2-2-ai-eligibility-interpreter-full-pipeline: backlog
+  elig-2-2-ai-eligibility-interpreter-full-pipeline: review
   elig-epic-2-retrospective: optional
 
   # ============================================================
@@ -118,7 +118,16 @@ development_status:
   pa-epic-2-retrospective: optional
 
   # Epic 3: AI-Powered PA Interpretation
-  pa-epic-3: backlog
-  pa-3-1-pa-de-identification-engine: backlog
-  pa-3-2-ai-pa-interpreter-full-pipeline: backlog
+  pa-epic-3: in-progress
+  pa-3-1-pa-de-identification-engine: done
+  pa-3-2-ai-pa-interpreter-full-pipeline: ready-for-dev
   pa-epic-3-retrospective: optional
+
+  # ============================================================
+  # CROSS-MODULE: Unified Pre-Claim Orchestrator
+  # ============================================================
+
+  # Epic 1: Pre-Claim Orchestrator
+  xmod-epic-1: done
+  xmod-1-1-pre-claim-check-orchestrator: done
+  xmod-epic-1-retrospective: optional
