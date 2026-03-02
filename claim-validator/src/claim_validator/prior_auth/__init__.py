@@ -8,9 +8,12 @@ from claim_validator.prior_auth.constants import (
     CertificationTypeCode,
     RequestCategoryCode,
 )
+from claim_validator.prior_auth.deidentifier import PriorAuthDeidentifier
 from claim_validator.prior_auth.determination import determine_pa_required
 from claim_validator.prior_auth.models import (
+    DeidentifiedPriorAuthError,
     DeidentifiedPriorAuthResponse,
+    DeidentifiedServiceLineDecision,
     PADeterminationResult,
     PatientInfo,
     PriorAuthError,
@@ -27,11 +30,14 @@ from claim_validator.prior_auth.response_parser import parse_278_response
 __all__ = [
     "CertificationActionCode",
     "CertificationTypeCode",
+    "DeidentifiedPriorAuthError",
     "DeidentifiedPriorAuthResponse",
+    "DeidentifiedServiceLineDecision",
     "determine_pa_required",
     "PADeterminationResult",
     "parse_278_response",
     "PatientInfo",
+    "PriorAuthDeidentifier",
     "PriorAuthError",
     "PriorAuthPipeline",
     "PriorAuthRequest",
