@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from claim_validator.eligibility._api import check_eligibility
 from claim_validator.eligibility.constants import CoverageStatus
+from claim_validator.eligibility.deidentifier import EligibilityDeidentifier
 from claim_validator.eligibility.models import (
     AAAError,
     BenefitInfo,
     CoverageInfo,
+    DeidentifiedAAAError,
+    DeidentifiedCoverageInfo,
+    DeidentifiedEligibilityResponse,
     EligibilityRequest,
     EligibilityResponse,
     EligibilityResult,
@@ -20,6 +24,10 @@ __all__ = [
     "check_eligibility",
     "CoverageInfo",
     "CoverageStatus",
+    "DeidentifiedAAAError",
+    "DeidentifiedCoverageInfo",
+    "DeidentifiedEligibilityResponse",
+    "EligibilityDeidentifier",
     "EligibilityPipeline",
     "EligibilityRequest",
     "EligibilityResponse",
