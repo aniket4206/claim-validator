@@ -84,7 +84,7 @@ development_status:
   # ============================================================
 
   # Epic 1: Eligibility Request Validation (Offline)
-  elig-epic-1: in-progress
+  elig-epic-1: done
   elig-1-1-eligibility-data-models-package-configuration: done
   elig-1-2-payer-directory-service-type-code-tables: done
   elig-1-3-npi-utility-extraction-first-validators: done
@@ -93,8 +93,8 @@ development_status:
   elig-epic-1-retrospective: optional
 
   # Epic 2: AI-Powered Eligibility Interpretation
-  elig-epic-2: backlog
-  elig-2-1-eligibility-de-identification-engine: backlog
+  elig-epic-2: in-progress
+  elig-2-1-eligibility-de-identification-engine: ready-for-dev
   elig-2-2-ai-eligibility-interpreter-full-pipeline: backlog
   elig-epic-2-retrospective: optional
 
