@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from claim_validator.prior_auth.validators.ai.interpreter import (
+    PriorAuthInterpreterAI,
+)
 from claim_validator.prior_auth.validators.rule_based import (
     PACrossFieldValidator,
     PADateOfBirthValidator,
@@ -20,4 +23,5 @@ __all__ = [
     "PANPIValidator",
     "PAProcedureValidator",
     "PAServiceDateValidator",
+    "PriorAuthInterpreterAI",
 ]
