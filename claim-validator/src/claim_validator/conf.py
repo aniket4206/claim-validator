@@ -30,6 +30,12 @@ DEFAULT_RULE_VALIDATORS: list[str] = [
 ]
 
 
+# Default eligibility AI validators
+DEFAULT_ELIG_AI_VALIDATORS: list[str] = [
+    "claim_validator.eligibility.validators.ai.interpreter.EligibilityInterpreterAI",
+]
+
+
 # Default eligibility rule-based validators
 DEFAULT_ELIG_RULE_VALIDATORS: list[str] = [
     "claim_validator.eligibility.validators.rule_based.date.EligibilityDateValidator",
@@ -65,5 +71,6 @@ class ClaimValidatorSettings(BaseSettings):
 
     # Eligibility settings
     eligibility_rule_validators: list[str] = DEFAULT_ELIG_RULE_VALIDATORS
-    eligibility_ai_validators: list[str] = []
+    eligibility_ai_validators: list[str] = DEFAULT_ELIG_AI_VALIDATORS
     eligibility_skip_ai: bool = False
+    eligibility_skip_ai_on_rule_failure: bool = True

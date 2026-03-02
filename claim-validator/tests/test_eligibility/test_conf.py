@@ -12,9 +12,10 @@ class TestEligibilitySettings:
         settings = ClaimValidatorSettings()
         assert len(settings.eligibility_rule_validators) == 6
 
-    def test_eligibility_ai_validators_default_empty(self) -> None:
+    def test_eligibility_ai_validators_default_one(self) -> None:
         settings = ClaimValidatorSettings()
-        assert settings.eligibility_ai_validators == []
+        assert len(settings.eligibility_ai_validators) == 1
+        assert "EligibilityInterpreterAI" in settings.eligibility_ai_validators[0]
 
     def test_eligibility_skip_ai_default_false(self) -> None:
         settings = ClaimValidatorSettings()
