@@ -1,0 +1,72 @@
+{
+  "icd10_cm": {
+    "code_count": 126,
+    "effective_date": "2025-10-01",
+    "source": "CMS/CDC ICD-10-CM (representative subset)",
+    "version": "FY2026-seed",
+    "format": "compressed"
+  },
+  "hcpcs": {
+    "code_count": 111,
+    "effective_date": "2026-01-01",
+    "source": "CMS HCPCS (representative subset)",
+    "version": "2026-Q1-seed",
+    "format": "compressed"
+  },
+  "taxonomy": {
+    "code_count": 58,
+    "effective_date": "2026-01-01",
+    "source": "NUCC (representative subset)",
+    "version": "26.0-seed",
+    "format": "compressed"
+  },
+  "pos_codes": {
+    "code_count": 51,
+    "effective_date": "2026-01-01",
+    "source": "CMS Place of Service",
+    "version": "2026",
+    "format": "compressed"
+  },
+  "timely_filing": {
+    "code_count": 11,
+    "effective_date": "2026-01-01",
+    "source": "Custom payer filing deadlines",
+    "version": "2026-Q1",
+    "format": "plain"
+  },
+  "payer_directory": {
+    "code_count": 3400,
+    "effective_date": "2026-03-01",
+    "source": "Payer Network Directory (representative seed)",
+    "version": "2026-Q1-seed",
+    "format": "plain"
+  },
+  "service_types": {
+    "code_count": 184,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X279A1 Service Type Codes",
+    "version": "005010",
+    "format": "plain"
+  },
+  "pa_service_types": {
+    "code_count": 22,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 UM04 Service Type Codes (PA-relevant subset)",
+    "version": "005010",
+    "format": "plain"
+  },
+  "hcr_action_codes": {
+    "code_count": 7,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 HCR01 Certification Action Codes",
+    "version": "005010",
+    "format": "plain"
+  },
+  "aaa_reject_codes": {
+    "code_count": 23,
+    "effective_date": "2026-03-01",
+    "source": "X12 005010X217 AAA03 Reject Reason Codes",
+    "version": "005010",
+    "format": "plain"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "AETNA": 90,
+  "BCBS": 180,
+  "CHAMPVA": 365,
+  "CIGNA": 90,
+  "HUMANA": 365,
+  "MEDICAID": 365,
+  "MEDICARE": 365,
+  "TRICARE": 365,
+  "UHC": 180,
+  "UNITED": 180,
+  "_default": 365
+}

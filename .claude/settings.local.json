@@ -25,7 +25,14 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(/home/lnv-20/Documents/claim-validator/claim-validator/.venv/bin/pytest:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(.venv/bin/pip3 install:*)",
+      "Bash(.venv/bin/pip list:*)",
+      "Bash(../.venv/bin/pytest:*)",
+      "Bash(/home/lnv-20/Documents/claim-validator/.venv/bin/pytest:*)",
+      "Bash(uv run:*)",
+      "Bash(git:*)",
+      "Bash(do echo:*)"
     ]
   }
 }
