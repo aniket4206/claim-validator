@@ -82,11 +82,11 @@ development_status:
   # Epic 4: Unified Workflow Pipeline (FR21-FR30, FR35-FR37)
   # ============================================================
 
-  epic-4: backlog
-  4-1-validationcontext-and-pipeline-passthrough: backlog
-  4-2-workflowresult-model-and-stage-protocol: backlog
-  4-3-workfloworchestrator-and-process-claim-api: backlog
-  4-4-pa-determination-and-validation-passthrough-integration: backlog
+  epic-4: done
+  4-1-validationcontext-and-pipeline-passthrough: done
+  4-2-workflowresult-model-and-stage-protocol: done
+  4-3-workfloworchestrator-and-process-claim-api: done
+  4-4-pa-determination-and-validation-passthrough-integration: done
   epic-4-retrospective: optional
 
   # ============================================================

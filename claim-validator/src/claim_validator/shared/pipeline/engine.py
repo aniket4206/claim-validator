@@ -25,6 +25,10 @@ from claim_validator.models.results import (
     ValidatorOutput,
 )
 from claim_validator.shared.pipeline.config import PipelineConfig
+from claim_validator.shared.pipeline.context import (
+    VALIDATOR_CATEGORY_MAP,
+    ValidationContext,
+)
 
 
 class BasePipeline:
@@ -46,11 +50,19 @@ class BasePipeline:
         """The pipeline configuration."""
         return self._config
 
-    def run(self, input_data: Any) -> PipelineResult:
+    def run(
+        self,
+        input_data: Any,
+        *,
+        validation_context: ValidationContext | None = None,
+    ) -> PipelineResult:
         """Execute the full multi-phase pipeline.
 
         Args:
             input_data: Domain-specific input (e.g. ClaimData, dict).
+            validation_context: Optional cross-stage passthrough tracker.
+                When provided, validators whose category has already
+                passed will be skipped and prior findings reused.
 
         Returns:
             PipelineResult with per-phase results, timing, and findings.
@@ -59,7 +71,9 @@ class BasePipeline:
         phase_results: list[PhaseResult] = []
 
         # Phase 1: Rule-based validators
-        rule_phase = self._run_rule_phase(input_data)
+        rule_phase = self._run_rule_phase(
+            input_data, validation_context=validation_context,
+        )
         phase_results.append(rule_phase)
 
         rule_has_errors = any(
@@ -91,20 +105,54 @@ class BasePipeline:
             execution_time=elapsed,
         )
 
-    def _run_rule_phase(self, input_data: Any) -> PhaseResult:
-        """Execute all rule-based validators and collect results."""
+    def _run_rule_phase(
+        self,
+        input_data: Any,
+        *,
+        validation_context: ValidationContext | None = None,
+    ) -> PhaseResult:
+        """Execute all rule-based validators and collect results.
+
+        When *validation_context* is provided, validators whose category
+        has already passed are skipped and their prior findings reused
+        (marked with a ``(passthrough)`` suffix on the validator name).
+        """
         start = time.perf_counter()
         outputs: list[ValidatorOutput] = []
         for validator in self._config.validators:
+            vname = getattr(validator, "name", type(validator).__name__)
+            category = VALIDATOR_CATEGORY_MAP.get(vname)
+
+            # Passthrough: skip if category already passed
+            if (
+                validation_context is not None
+                and category is not None
+                and validation_context.has_passed(category)
+            ):
+                prior = validation_context.get_prior_findings(category)
+                outputs.append(
+                    ValidatorOutput(
+                        validator_name=f"{vname}(passthrough)",
+                        findings=prior,
+                    )
+                )
+                continue
+
             try:
                 output = validator.validate(input_data)
                 outputs.append(output)
+                # Record result in context for downstream stages
+                if validation_context is not None and category is not None:
+                    passed = not any(
+                        f.severity == Severity.ERROR for f in output.findings
+                    )
+                    validation_context.record(
+                        vname, category, passed, output.findings,
+                    )
             except Exception as exc:
                 outputs.append(
                     ValidatorOutput(
-                        validator_name=getattr(
-                            validator, "name", type(validator).__name__
-                        ),
+                        validator_name=vname,
                         findings=[
                             Finding(
                                 code=f"{self._config.code_prefix}VALIDATOR_ERROR",

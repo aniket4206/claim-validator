@@ -75,11 +75,19 @@ from claim_validator.prior_auth import (
     parse_278_response,
     submit_prior_auth,
 )
+from claim_validator.shared.pipeline.context import ValidationContext
 from claim_validator.validators import (
     BaseAIValidator,
     BaseValidator,
     ValidationPipeline,
     ValidatorRegistry,
+)
+from claim_validator.workflow import (
+    ClaimRequest,
+    Stage,
+    StageResult,
+    WorkflowResult,
+    process_claim,
 )
 
 __all__ = [
@@ -144,9 +152,15 @@ __all__ = [
     "Severity",
     "submit_prior_auth",
     "SubscriberInfo",
+    "ClaimRequest",
+    "process_claim",
+    "Stage",
+    "StageResult",
     "validate",
+    "ValidationContext",
     "ValidationError",
     "ValidationPipeline",
     "ValidatorOutput",
     "ValidatorRegistry",
+    "WorkflowResult",
 ]

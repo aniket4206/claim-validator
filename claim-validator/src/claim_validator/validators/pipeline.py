@@ -22,6 +22,7 @@ from claim_validator.models.results import (
     ValidatorOutput,
 )
 from claim_validator.shared.pipeline import BasePipeline, PipelineConfig
+from claim_validator.shared.pipeline.context import ValidationContext
 from claim_validator.validators.registry import ValidatorRegistry
 
 if TYPE_CHECKING:
@@ -124,13 +125,26 @@ class ValidationPipeline:
         """Return a fluent builder for custom pipelines."""
         return _PipelineBuilder()
 
-    def run(self, claim: ClaimData) -> PipelineResult:
-        """Execute the full validation pipeline."""
+    def run(
+        self,
+        claim: ClaimData,
+        *,
+        validation_context: ValidationContext | None = None,
+    ) -> PipelineResult:
+        """Execute the full validation pipeline.
+
+        Args:
+            claim: Claim data to validate.
+            validation_context: Optional cross-stage validation context
+                for passthrough optimization.
+        """
         start = time.perf_counter()
         phase_results: list[PhaseResult] = []
 
         # Phase 1: Rule-based (delegated to BasePipeline)
-        rule_result = self._base_pipeline.run(claim)
+        rule_result = self._base_pipeline.run(
+            claim, validation_context=validation_context,
+        )
         rule_phase = rule_result.phase_results[0]
         phase_results.append(rule_phase)
 

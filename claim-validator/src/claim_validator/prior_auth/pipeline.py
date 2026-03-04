@@ -15,6 +15,7 @@ from claim_validator.exceptions import LLMError
 from claim_validator.models.results import Finding
 from claim_validator.prior_auth.models.result import PriorAuthResult
 from claim_validator.shared.pipeline.config import PipelineConfig
+from claim_validator.shared.pipeline.context import ValidationContext
 from claim_validator.shared.pipeline.engine import BasePipeline
 from claim_validator.validators.registry import ValidatorRegistry
 
@@ -100,6 +101,7 @@ class PriorAuthPipeline:
         request: PriorAuthRequest,
         *,
         response: PriorAuthResponse | None = None,
+        validation_context: ValidationContext | None = None,
     ) -> PriorAuthResult:
         """Execute the PA validation pipeline.
 
@@ -107,12 +109,16 @@ class PriorAuthPipeline:
             request: PA request to validate.
             response: Optional pre-fetched PA response
                 for AI interpretation.
+            validation_context: Optional cross-stage validation context
+                for passthrough optimization.
         """
         start = time.perf_counter()
         ai_summary: str | None = None
 
         # Phase 1: Delegate rule-based validation to BasePipeline
-        rule_result = self._base_pipeline.run(request)
+        rule_result = self._base_pipeline.run(
+            request, validation_context=validation_context,
+        )
         rule_phase = rule_result.phase_results[0]
         findings: list[Finding] = list(rule_phase.findings)
 
