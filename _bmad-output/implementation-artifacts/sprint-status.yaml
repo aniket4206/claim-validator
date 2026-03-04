@@ -95,7 +95,7 @@ development_status:
 
   epic-5: in-progress
   5-1-base-client-abc-factory-config-exceptions-models: done
-  5-2-stedi-client: ready-for-dev
+  5-2-stedi-client: review
   5-3-claimmd-client: ready-for-dev
   5-4-waystar-client: ready-for-dev
   5-5-pipeline-integration-orchestrator-wiring: ready-for-dev

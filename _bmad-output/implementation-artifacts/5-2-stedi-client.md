@@ -1,6 +1,6 @@
 # Story 5.2: StediClient — JSON REST Integration
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -72,38 +72,38 @@ so that I can submit claims, verify eligibility, check claim status, and retriev
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create StediClient (AC: #1, #5)
-  - [ ] 1.1: Create `src/claim_validator/clearinghouse/providers/stedi.py`
-  - [ ] 1.2: Implement constructor: `__init__(*, api_key, base_url=DEFAULT_BASE_URL, **kwargs)`
-  - [ ] 1.3: Set default base_url to `https://healthcare.us.stedi.com/2024-04-01`
-  - [ ] 1.4: Configure httpx.Client with API key auth header
-- [ ] Task 2: Implement check_eligibility (AC: #2)
-  - [ ] 2.1: Implement `_to_stedi_eligibility(request: dict) -> dict` — field mapping
-  - [ ] 2.2: Implement `check_eligibility()` — POST, parse response to ClearinghouseEligibilityResponse
-- [ ] Task 3: Implement submit_claim (AC: #3)
-  - [ ] 3.1: Implement `_to_stedi_claim(claim_data: dict) -> dict` — field mapping for 837P
-  - [ ] 3.2: Implement `submit_claim()` — POST with Idempotency-Key, parse response to SubmissionResult
-- [ ] Task 4: Implement check_claim_status (AC: #4)
-  - [ ] 4.1: Implement `_to_stedi_status_request(claim_ref: str) -> dict` — field mapping
-  - [ ] 4.2: Implement `check_claim_status()` — POST, parse response to ClaimStatusResponse
-- [ ] Task 5: Implement error handling (AC: #6)
-  - [ ] 5.1: Create `_handle_response()` method — maps HTTP status codes to exceptions
-  - [ ] 5.2: Implement retry logic for 5xx (one retry, 1s backoff)
-  - [ ] 5.3: PHI scrubbing from error messages
-- [ ] Task 6: Register in factory (AC: #1)
-  - [ ] 6.1: Update `clearinghouse/factory.py` — add "stedi" case with lazy import
-- [ ] Task 7: Tests (AC: #7, #8)
-  - [ ] 7.1: Create `tests/test_clearinghouse/test_stedi.py`
-  - [ ] 7.2: Test eligibility request mapping and response parsing
-  - [ ] 7.3: Test claim submission mapping, idempotency key, response parsing
-  - [ ] 7.4: Test claim status mapping and response parsing
-  - [ ] 7.5: Test error handling — 401, 422, 500, timeout
-  - [ ] 7.6: Test retry on 5xx
-  - [ ] 7.7: Test no PHI in error messages
-- [ ] Task 8: Quality verification (AC: #8)
-  - [ ] 8.1: Run ruff check on all new files
-  - [ ] 8.2: Run pytest on new tests — all pass
-  - [ ] 8.3: Run full pytest — zero regressions
+- [x] Task 1: Create StediClient (AC: #1, #5)
+  - [x] 1.1: Create `src/claim_validator/clearinghouse/providers/stedi.py`
+  - [x] 1.2: Implement constructor: `__init__(*, api_key, base_url=DEFAULT_BASE_URL, **kwargs)`
+  - [x] 1.3: Set default base_url to `https://healthcare.us.stedi.com/2024-04-01`
+  - [x] 1.4: Configure httpx.Client with API key auth header
+- [x] Task 2: Implement check_eligibility (AC: #2)
+  - [x] 2.1: Implement `_to_stedi_eligibility(request: dict) -> dict` — field mapping
+  - [x] 2.2: Implement `check_eligibility()` — POST, parse response to ClearinghouseEligibilityResponse
+- [x] Task 3: Implement submit_claim (AC: #3)
+  - [x] 3.1: Implement `_to_stedi_claim(claim_data: dict) -> dict` — field mapping for 837P
+  - [x] 3.2: Implement `submit_claim()` — POST with Idempotency-Key, parse response to SubmissionResult
+- [x] Task 4: Implement check_claim_status (AC: #4)
+  - [x] 4.1: Implement `_to_stedi_status_request(claim_ref: str) -> dict` — field mapping
+  - [x] 4.2: Implement `check_claim_status()` — POST, parse response to ClaimStatusResponse
+- [x] Task 5: Implement error handling (AC: #6)
+  - [x] 5.1: Create `_handle_response()` method — maps HTTP status codes to exceptions
+  - [x] 5.2: Implement retry logic for 5xx (one retry, 1s backoff)
+  - [x] 5.3: PHI scrubbing from error messages
+- [x] Task 6: Register in factory (AC: #1)
+  - [x] 6.1: Factory already has "stedi" lazy import from Story 5.1 — verified working
+- [x] Task 7: Tests (AC: #7, #8)
+  - [x] 7.1: Create `tests/test_clearinghouse/test_stedi.py`
+  - [x] 7.2: Test eligibility request mapping and response parsing (4 tests)
+  - [x] 7.3: Test claim submission mapping, idempotency key, response parsing (6 tests)
+  - [x] 7.4: Test claim status mapping and response parsing (3 tests)
+  - [x] 7.5: Test error handling — 401, 403, 422, 500, timeout, non-JSON body (8 tests)
+  - [x] 7.6: Test retry on 5xx (2 tests — retry fails and retry succeeds)
+  - [x] 7.7: Test no PHI in error messages (1 test)
+- [x] Task 8: Quality verification (AC: #8)
+  - [x] 8.1: Run ruff check on all new files — clean
+  - [x] 8.2: Run pytest on new tests — 28 passed
+  - [x] 8.3: Run full pytest — 2121 passed, zero regressions
 
 ## Dev Notes
 
@@ -242,10 +242,29 @@ def make_mock_client(handler):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6
 
 ### Debug Log References
 
+- Fixed ruff N817 (CamelCase imported as acronym) in test import alias
+
 ### Completion Notes List
 
+- All 8 tasks complete, all ACs satisfied
+- StediClient with full Stedi API coverage: eligibility (270/271), claims (837P), status (276/277)
+- Field mapping: library dict → Stedi JSON for all 3 transactions, date format conversion (YYYY-MM-DD → YYYYMMDD)
+- Error handling: auth (401/403), validation (422), server (5xx with retry), timeout — no PHI in errors
+- Idempotency-Key UUID header on claim submissions
+- 28 tests using httpx.MockTransport — zero network calls
+- 2121 total tests pass (zero regressions)
+
 ### File List
+
+**New source files (1):**
+- `src/claim_validator/clearinghouse/providers/stedi.py` — StediClient implementation
+
+**New test files (1):**
+- `tests/test_clearinghouse/test_stedi.py` — 28 tests
+
+**Existing files unchanged:**
+- `clearinghouse/factory.py` — already had stedi lazy import from Story 5.1
