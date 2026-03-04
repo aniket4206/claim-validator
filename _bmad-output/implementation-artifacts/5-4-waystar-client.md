@@ -1,6 +1,6 @@
 # Story 5.4: WaystarClient — HMAC-SHA256 Auth Integration
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -60,30 +60,30 @@ so that I can submit claims, verify eligibility, and check claim status through 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create WaystarClient (AC: #1, #2)
-  - [ ] 1.1: Create `src/claim_validator/clearinghouse/providers/waystar.py`
-  - [ ] 1.2: Implement constructor: `__init__(*, api_key, secret, base_url=DEFAULT_BASE_URL, **kwargs)`
-  - [ ] 1.3: Configure httpx.Client with `HMACAuth(api_key, secret)` as auth
-- [ ] Task 2: Implement check_eligibility (AC: #3)
-  - [ ] 2.1: Implement `_to_waystar_eligibility(request: dict) -> dict`
-  - [ ] 2.2: Implement `check_eligibility()` — POST, parse response
-- [ ] Task 3: Implement submit_claim (AC: #4)
-  - [ ] 3.1: Implement `_to_waystar_claim(claim_data: dict) -> dict`
-  - [ ] 3.2: Implement `submit_claim()` — POST, parse response
-- [ ] Task 4: Implement check_claim_status (AC: #5)
-  - [ ] 4.1: Implement `check_claim_status()` — POST, parse response
-- [ ] Task 5: Error handling (AC: #6)
-  - [ ] 5.1: Reuse same `_handle_response()` + retry pattern from Stedi/ClaimMD
-- [ ] Task 6: Register in factory (AC: #1)
-  - [ ] 6.1: Update factory.py — add "waystar" case
-- [ ] Task 7: Tests (AC: #7, #8)
-  - [ ] 7.1: Create `tests/test_clearinghouse/test_waystar.py`
-  - [ ] 7.2: Test HMAC signing determinism (known input → known signature)
-  - [ ] 7.3: Test eligibility/claims/status request mapping
-  - [ ] 7.4: Test error handling
-  - [ ] 7.5: Test HMACAuth integration with httpx.MockTransport
-- [ ] Task 8: Quality verification (AC: #8)
-  - [ ] 8.1: Run ruff + full pytest
+- [x] Task 1: Create WaystarClient (AC: #1, #2)
+  - [x] 1.1: Create `src/claim_validator/clearinghouse/providers/waystar.py`
+  - [x] 1.2: Implement constructor: `__init__(*, api_key, secret, base_url=DEFAULT_BASE_URL, **kwargs)`
+  - [x] 1.3: Configure httpx.Client with `HMACAuth(api_key, secret)` as auth
+- [x] Task 2: Implement check_eligibility (AC: #3)
+  - [x] 2.1: Implement `_to_waystar_eligibility(request: dict) -> dict`
+  - [x] 2.2: Implement `check_eligibility()` — POST, parse response
+- [x] Task 3: Implement submit_claim (AC: #4)
+  - [x] 3.1: Implement `_to_waystar_claim(claim_data: dict) -> dict`
+  - [x] 3.2: Implement `submit_claim()` — POST, parse response
+- [x] Task 4: Implement check_claim_status (AC: #5)
+  - [x] 4.1: Implement `check_claim_status()` — POST, parse response
+- [x] Task 5: Error handling (AC: #6)
+  - [x] 5.1: Reuse same `_handle_response()` + retry pattern from Stedi/ClaimMD
+- [x] Task 6: Register in factory (AC: #1)
+  - [x] 6.1: Factory already has "waystar" lazy import from Story 5.1 — verified working
+- [x] Task 7: Tests (AC: #7, #8)
+  - [x] 7.1: Create `tests/test_clearinghouse/test_waystar.py`
+  - [x] 7.2: Test HMAC signing determinism (known input → known signature) — 2 tests
+  - [x] 7.3: Test eligibility/claims/status request mapping — 12 tests
+  - [x] 7.4: Test error handling — 7 tests
+  - [x] 7.5: Test HMACAuth integration with httpx.MockTransport — 1 test
+- [x] Task 8: Quality verification (AC: #8)
+  - [x] 8.1: Ruff clean, 28 new tests pass, 2177 total pass (zero regressions)
 
 ## Dev Notes
 
@@ -170,10 +170,27 @@ WaystarClient is production-ready in structure but endpoint paths are provisiona
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6
 
 ### Debug Log References
 
+- pytest shebang pointed to wrong venv — used `.venv/bin/python -m pytest` to resolve
+
 ### Completion Notes List
 
+- All 8 tasks complete, all ACs satisfied
+- WaystarClient with HMAC-SHA256 auth via HMACAuth from Story 5.1
+- Provisional endpoint paths with clear NOTE comments for production verification
+- JSON POST format matching Waystar enterprise API patterns
+- Same error handling + retry pattern as Stedi/ClaimMD
+- HMAC signing determinism verified with fixed timestamp mock
+- 28 tests using httpx.MockTransport — zero network calls
+- 2177 total tests pass (zero regressions)
+
 ### File List
+
+**New source files (1):**
+- `src/claim_validator/clearinghouse/providers/waystar.py` — WaystarClient implementation
+
+**New test files (1):**
+- `tests/test_clearinghouse/test_waystar.py` — 28 tests
