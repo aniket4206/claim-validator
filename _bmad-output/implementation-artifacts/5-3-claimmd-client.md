@@ -1,6 +1,6 @@
 # Story 5.3: ClaimMDClient — REST with AccountKey Auth
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -66,34 +66,34 @@ so that I can verify eligibility, upload claims, retrieve responses, and downloa
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create ClaimMDClient (AC: #1, #5)
-  - [ ] 1.1: Create `src/claim_validator/clearinghouse/providers/claimmd.py`
-  - [ ] 1.2: Implement constructor: `__init__(*, account_key, base_url=DEFAULT_BASE_URL, **kwargs)`
-  - [ ] 1.3: Set default base_url to `https://svc.claim.md`
-  - [ ] 1.4: Store account_key for inclusion in every request
-- [ ] Task 2: Implement check_eligibility (AC: #2)
-  - [ ] 2.1: Implement `_to_claimmd_eligibility(request: dict) -> dict` — field mapping
-  - [ ] 2.2: Implement `check_eligibility()` — POST form data, parse JSON response
-- [ ] Task 3: Implement submit_claim (AC: #3)
-  - [ ] 3.1: Implement `_to_claimmd_upload(claim_data: dict) -> dict` — field mapping
-  - [ ] 3.2: Implement `submit_claim()` — POST, parse response to SubmissionResult
-- [ ] Task 4: Implement check_claim_status (AC: #4)
-  - [ ] 4.1: Implement `check_claim_status()` — POST to /services/response/, parse response
-- [ ] Task 5: Error handling (AC: #6)
-  - [ ] 5.1: Create `_handle_response()` — map HTTP status to exceptions
-  - [ ] 5.2: Retry logic for 5xx
-  - [ ] 5.3: PHI scrubbing from error messages
-- [ ] Task 6: Register in factory (AC: #1)
-  - [ ] 6.1: Update factory.py — add "claimmd" case
-- [ ] Task 7: Tests (AC: #7, #8)
-  - [ ] 7.1: Create `tests/test_clearinghouse/test_claimmd.py`
-  - [ ] 7.2: Test eligibility request mapping (AccountKey included, date format MM/DD/YYYY)
-  - [ ] 7.3: Test claim upload and response parsing
-  - [ ] 7.4: Test claim status and response parsing
-  - [ ] 7.5: Test error handling — auth error, server error, timeout
-  - [ ] 7.6: Test no PHI in error messages
-- [ ] Task 8: Quality verification (AC: #8)
-  - [ ] 8.1: Run ruff + full pytest
+- [x] Task 1: Create ClaimMDClient (AC: #1, #5)
+  - [x] 1.1: Create `src/claim_validator/clearinghouse/providers/claimmd.py`
+  - [x] 1.2: Implement constructor: `__init__(*, account_key, base_url=DEFAULT_BASE_URL, **kwargs)`
+  - [x] 1.3: Set default base_url to `https://svc.claim.md`
+  - [x] 1.4: Store account_key for inclusion in every request
+- [x] Task 2: Implement check_eligibility (AC: #2)
+  - [x] 2.1: Implement `_to_claimmd_eligibility(request: dict) -> dict` — field mapping
+  - [x] 2.2: Implement `check_eligibility()` — POST form data, parse JSON response
+- [x] Task 3: Implement submit_claim (AC: #3)
+  - [x] 3.1: Implement `_to_claimmd_upload(claim_data: dict) -> dict` — field mapping
+  - [x] 3.2: Implement `submit_claim()` — POST, parse response to SubmissionResult
+- [x] Task 4: Implement check_claim_status (AC: #4)
+  - [x] 4.1: Implement `check_claim_status()` — POST to /services/response/, parse response
+- [x] Task 5: Error handling (AC: #6)
+  - [x] 5.1: Create `_handle_response()` — map HTTP status AND body-level errors to exceptions
+  - [x] 5.2: Retry logic for 5xx (one retry, 1s backoff)
+  - [x] 5.3: PHI scrubbing from error messages
+- [x] Task 6: Register in factory (AC: #1)
+  - [x] 6.1: Factory already has "claimmd" lazy import from Story 5.1 — verified working
+- [x] Task 7: Tests (AC: #7, #8)
+  - [x] 7.1: Create `tests/test_clearinghouse/test_claimmd.py`
+  - [x] 7.2: Test eligibility request mapping (AccountKey, MM/DD/YYYY dates) — 4 tests
+  - [x] 7.3: Test claim upload and response parsing — 5 tests
+  - [x] 7.4: Test claim status and response parsing — 3 tests
+  - [x] 7.5: Test error handling — auth, server, body-level, timeout, retry — 7 tests
+  - [x] 7.6: Test no PHI in error messages — 1 test
+- [x] Task 8: Quality verification (AC: #8)
+  - [x] 8.1: Ruff clean, 28 new tests pass, 2149 total pass (zero regressions)
 
 ## Dev Notes
 
@@ -177,10 +177,27 @@ Same as StediClient — `httpx.MockTransport` for all tests. Verify AccountKey i
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.6
 
 ### Debug Log References
 
+- No issues encountered during implementation
+
 ### Completion Notes List
 
+- All 8 tasks complete, all ACs satisfied
+- ClaimMDClient with form-data POST API: eligibility, claims upload, status retrieval
+- AccountKey included in every request body, ResponseType=json always set
+- Date conversion: YYYY-MM-DD → MM/DD/YYYY for Claim.MD format
+- Dual auth: accepts both account_key and api_key (factory compatibility)
+- Body-level error detection: HTTP 200 with status=error handled correctly
+- 28 tests using httpx.MockTransport — zero network calls
+- 2149 total tests pass (zero regressions)
+
 ### File List
+
+**New source files (1):**
+- `src/claim_validator/clearinghouse/providers/claimmd.py` — ClaimMDClient implementation
+
+**New test files (1):**
+- `tests/test_clearinghouse/test_claimmd.py` — 28 tests
