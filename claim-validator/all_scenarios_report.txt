@@ -18,7 +18,7 @@ Request:
   "first_name": "Alice",
   "last_name": "Williams",
   "dob": "1980-07-22",
-  "service_type": "30"
+  "service_type": "02"
 }
 
 Response:
@@ -109,7 +109,7 @@ Response:
         "IsActive": true,
         "PlanBinDed": "1500",
         "PlanBinDedRem": "500",
-        "PlanBinOopRem": "1000",
+        "PlaoncenBinOopRem": "1000",
         "PlanBonDed": "2000",
         "PlanBonDedRem": "2000"
       },
@@ -292,7 +292,7 @@ Request:
   "first_name": "Alice",
   "last_name": "Williams",
   "dob": "1980-07-22",
-  "service_type": "30"
+  "service_type": "02"
 }
 
 Response:
@@ -352,7 +352,7 @@ Request:
   "first_name": "Nonexistent",
   "last_name": "Person",
   "dob": "2099-12-31",
-  "service_type": "30"
+  "service_type": "02"
 }
 
 Response:

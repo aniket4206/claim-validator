@@ -211,7 +211,7 @@ class TestEligibility:
                 "first_name": "Alice",
                 "last_name": "Williams",
                 "dob": "1980-07-22",
-                "service_type": "30",
+                "service_type": "02",
             }
         )
 

@@ -359,7 +359,13 @@ class WaystarClient(BaseClearinghouseClient):
         subscriber_id = request.get("subscriber_id", "")
         first_name = request.get("first_name", "").upper()
         last_name = request.get("last_name", "").upper()
-        service_type = request.get("service_type", "30")
+
+        # Support multiple service types via list or comma-separated string
+        raw_st = request.get("service_types", request.get("service_type", "30"))
+        if isinstance(raw_st, str):
+            svc_types = [s.strip() for s in raw_st.split(",")]
+        else:
+            svc_types = list(raw_st)
 
         # Normalise DOB to YYYYMMDD
         dob_raw = request.get("dob", "")
@@ -385,12 +391,18 @@ class WaystarClient(BaseClearinghouseClient):
             f"NM1*IL*1*{last_name}*{first_name}****MI*{subscriber_id}",
             f"DMG*D8*{dob}",
             f"DTP*291*D8*{date8}",
-            f"EQ*{service_type}",
-            "SE*13*0001",
+        ]
+        for st in svc_types:
+            segments.append(f"EQ*{st}")
+
+        # SE count: ST through SE inclusive (exclude ISA/GS envelope)
+        se_count = len(segments) - 2 + 1  # -2 for ISA/GS, +1 for SE itself
+        segments.extend([
+            f"SE*{se_count}*0001",
             "GE*1*1",
             "IEA*1*000000001",
             "",
-        ]
+        ])
         return "~".join(segments)
 
     def _build_claim_history_params(
