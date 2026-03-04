@@ -17,30 +17,28 @@ Usage::
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from claim_validator.conf import ClaimValidatorSettings
 from claim_validator.constants import Severity
+from claim_validator.eligibility.models.request import EligibilityRequest
+from claim_validator.eligibility.models.response import EligibilityResponse
 from claim_validator.eligibility.pipeline import EligibilityPipeline
 from claim_validator.models.results import Finding
 from claim_validator.models.workflow import PreClaimResult
 from claim_validator.prior_auth.determination import determine_pa_required
+from claim_validator.prior_auth.models.request import PriorAuthRequest
 from claim_validator.prior_auth.pipeline import PriorAuthPipeline
-
-if TYPE_CHECKING:
-    from claim_validator.eligibility.models.request import EligibilityRequest
-    from claim_validator.eligibility.models.response import EligibilityResponse
-    from claim_validator.prior_auth.models.request import PriorAuthRequest
 
 
 _SEVERITY_ORDER: dict[Severity, int] = {Severity.ERROR: 0, Severity.WARNING: 1}
 
 
 def pre_claim_check(
-    eligibility_request: EligibilityRequest,
+    eligibility_request: dict[str, Any] | EligibilityRequest,
     *,
     eligibility_response: EligibilityResponse | None = None,
-    pa_request: PriorAuthRequest | None = None,
+    pa_request: dict[str, Any] | PriorAuthRequest | None = None,
     settings: ClaimValidatorSettings | None = None,
     ai_config: dict[str, Any] | None = None,
     clearinghouse_config: dict[str, Any] | None = None,
@@ -48,10 +46,12 @@ def pre_claim_check(
     """Run the unified pre-claim check: eligibility -> PA determination -> PA validation.
 
     Args:
-        eligibility_request: Eligibility request to validate.
+        eligibility_request: Eligibility request as a dict or
+            EligibilityRequest instance.
         eligibility_response: Optional 271 response for AI interpretation
             and PA determination.
-        pa_request: Optional prior-auth request. Used only when PA is
+        pa_request: Optional prior-auth request as a dict or
+            PriorAuthRequest instance. Used only when PA is
             determined to be required.
         settings: Optional settings override. Uses defaults if ``None``.
         ai_config: Optional AI provider config dict. Overrides
@@ -63,7 +63,31 @@ def pre_claim_check(
 
     Returns:
         PreClaimResult with combined findings and ``ready_to_submit`` flag.
+
+    Raises:
+        ValueError: If eligibility_request or pa_request is not a
+            dict or the expected Pydantic model.
+        pydantic.ValidationError: If a request dict is malformed.
     """
+    # Coerce dict inputs to Pydantic models
+    if isinstance(eligibility_request, dict):
+        eligibility_request = EligibilityRequest(**eligibility_request)
+    elif not isinstance(eligibility_request, EligibilityRequest):
+        msg = (
+            f"eligibility_request must be a dict or EligibilityRequest, "
+            f"got {type(eligibility_request).__name__}"
+        )
+        raise ValueError(msg)
+
+    if isinstance(pa_request, dict):
+        pa_request = PriorAuthRequest(**pa_request)
+    elif pa_request is not None and not isinstance(pa_request, PriorAuthRequest):
+        msg = (
+            f"pa_request must be a dict, PriorAuthRequest, or None, "
+            f"got {type(pa_request).__name__}"
+        )
+        raise ValueError(msg)
+
     start = time.perf_counter()
 
     # Wire ai_config into settings (same pattern as check_eligibility)

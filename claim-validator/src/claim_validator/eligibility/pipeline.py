@@ -1,4 +1,8 @@
-"""EligibilityPipeline — two-phase eligibility validation orchestrator."""
+"""EligibilityPipeline — two-phase eligibility validation orchestrator.
+
+Delegates rule-based validation to ``BasePipeline``. AI interpretation
+remains domain-specific (uses ``interpret()`` not ``validate_deidentified()``).
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,8 @@ from claim_validator.constants import Severity
 from claim_validator.eligibility.models.result import EligibilityResult
 from claim_validator.exceptions import LLMError
 from claim_validator.models.results import Finding
+from claim_validator.shared.pipeline.config import PipelineConfig
+from claim_validator.shared.pipeline.engine import BasePipeline
 from claim_validator.validators.registry import ValidatorRegistry
 
 if TYPE_CHECKING:
@@ -27,7 +33,7 @@ _SEVERITY_ORDER: dict[Severity, int] = {Severity.ERROR: 0, Severity.WARNING: 1}
 class EligibilityPipeline:
     """Two-phase eligibility validation pipeline.
 
-    Phase 1: Rule-based validators (offline, synchronous)
+    Phase 1: Rule-based validators (delegated to BasePipeline)
     Phase 2: AI interpretation (requires LLM config + eligibility response)
     """
 
@@ -41,6 +47,13 @@ class EligibilityPipeline:
         self._rule_validators = rule_validators
         self._ai_interpreter = ai_interpreter
         self._skip_ai_on_rule_failure = skip_ai_on_rule_failure
+        self._base_pipeline = BasePipeline(
+            PipelineConfig(
+                domain="eligibility",
+                validators=tuple(rule_validators),
+                code_prefix="",  # validators add ELIG_ prefix themselves
+            )
+        )
 
     @classmethod
     def from_settings(
@@ -98,28 +111,12 @@ class EligibilityPipeline:
                 for AI interpretation.
         """
         start = time.perf_counter()
-        findings: list[Finding] = []
         ai_summary: str | None = None
 
-        # Phase 1: Rule-based validators
-        for validator in self._rule_validators:
-            try:
-                output = validator.validate(request)
-                findings.extend(output.findings)
-            except Exception as exc:
-                findings.append(
-                    Finding(
-                        code="VALIDATOR_ERROR",
-                        message="Validator raised an unexpected exception",
-                        severity=Severity.ERROR,
-                        field_name="",
-                        suggestion="Check validator implementation",
-                        context={
-                            "validator": type(validator).__name__,
-                            "error": str(exc),
-                        },
-                    )
-                )
+        # Phase 1: Delegate rule-based validation to BasePipeline
+        rule_result = self._base_pipeline.run(request)
+        rule_phase = rule_result.phase_results[0]
+        findings: list[Finding] = list(rule_phase.findings)
 
         # Phase 2: AI interpretation (if configured + response available)
         if self._ai_interpreter and response is not None:

@@ -1,8 +1,10 @@
-"""PriorAuthDeidentifier — HIPAA Safe Harbor de-identification for prior auth responses."""
+"""PriorAuthDeidentifier — HIPAA Safe Harbor de-identification for prior auth responses.
+
+Delegates year extraction to ``BaseDeidentifier``. Nested service-line and
+error stripping remains domain-specific.
+"""
 
 from __future__ import annotations
-
-from datetime import date
 
 from claim_validator.prior_auth.models.deidentified import (
     DeidentifiedPriorAuthError,
@@ -14,6 +16,12 @@ from claim_validator.prior_auth.models.response import (
     PriorAuthResponse,
     ServiceLineDecision,
 )
+from claim_validator.shared.deidentifier import (
+    PA_DEID_CONFIG,
+    BaseDeidentifier,
+)
+
+_base = BaseDeidentifier(PA_DEID_CONFIG)
 
 
 class PriorAuthDeidentifier:
@@ -43,8 +51,8 @@ class PriorAuthDeidentifier:
         return DeidentifiedPriorAuthResponse(
             action_code=response.action_code,
             decision_reason_code=response.decision_reason_code,
-            effective_year=cls._extract_year(response.effective_date),
-            expiration_year=cls._extract_year(response.expiration_date),
+            effective_year=_base.extract_year(response.effective_date),
+            expiration_year=_base.extract_year(response.expiration_date),
             service_line_decisions=service_lines,
             errors=errors,
         )
@@ -67,8 +75,3 @@ class PriorAuthDeidentifier:
             rejection_code=error.rejection_code,
             follow_up_code=error.follow_up_code,
         )
-
-    @staticmethod
-    def _extract_year(d: date | None) -> int | None:
-        """Extract year from date, or None if date is None."""
-        return d.year if d is not None else None

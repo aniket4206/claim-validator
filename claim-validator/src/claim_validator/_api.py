@@ -39,8 +39,14 @@ def validate(
     """
     if isinstance(claim, dict):
         claim_data = ClaimData(**claim)
-    else:
+    elif isinstance(claim, ClaimData):
         claim_data = claim
+    else:
+        msg = (
+            f"claim must be a dict or ClaimData, "
+            f"got {type(claim).__name__}"
+        )
+        raise ValueError(msg)
 
     if ai_config is not None:
         if settings is not None:
