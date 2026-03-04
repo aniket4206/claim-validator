@@ -182,22 +182,33 @@ class WaystarClient(BaseClearinghouseClient):
             "Use check_claim_status() for claim history queries."
         )
 
-    def check_claim_status(self, claim_ref: str) -> ClaimStatusResponse:
-        """Query claim history via Waystar Claim History API.
+    def check_claim_status(
+        self,
+        claim_ref: str,
+        *,
+        dos: str = "",
+        response_type: str = "XML",
+    ) -> ClaimStatusResponse:
+        """Query claim history via Waystar Claim History API (v2.0).
 
         Uses HMAC-SHA256 signed query string for authentication.
+        The API requires ``DOS`` (date of service) and ``ClaimNum``.
 
         Args:
-            claim_ref: Claim number or date of service to look up.
-                Interpreted as a claim number by default. Pass a date
-                string (``YYYY-MM-DD``) and set ``req_type="DOS"`` in
-                the dict overload to search by date of service.
+            claim_ref: Patient control number (claim number).
+            dos: Date of service in ``MM/DD/YYYY`` format. **Required**
+                by the Waystar v2.0 API.
+            response_type: ``"XML"`` or ``"HTML"`` (default ``"XML"``).
+                Included in the GET request but **excluded** from the
+                HMAC signature calculation per Waystar docs.
 
         Returns:
             Claim status response with raw data.
         """
-        params = self._build_claim_history_params(claim_ref)
-        signed_url = self._sign_claim_history_url(params)
+        params = self._build_claim_history_params(claim_ref, dos=dos)
+        signed_url = self._sign_claim_history_url(
+            params, response_type=response_type
+        )
         response = self._get_with_retry(signed_url)
         self._handle_response(response)
         return self._parse_claim_history_response(response)
@@ -208,15 +219,15 @@ class WaystarClient(BaseClearinghouseClient):
         cust_id: str = "",
         dos: str = "",
         claim_num: str = "",
-        req_type: str = "",
+        response_type: str = "XML",
     ) -> ClaimStatusResponse:
         """Query claim history with explicit parameters.
 
         Args:
             cust_id: Customer ID override (defaults to ``self._cust_id``).
-            dos: Date of service (``YYYY-MM-DD`` or ``MM/DD/YYYY``).
+            dos: Date of service (``MM/DD/YYYY``). **Required** by v2.0.
             claim_num: Claim number to look up.
-            req_type: Request type filter.
+            response_type: ``"XML"`` or ``"HTML"`` (default ``"XML"``).
 
         Returns:
             Claim status response.
@@ -228,10 +239,11 @@ class WaystarClient(BaseClearinghouseClient):
             params["DOS"] = dos
         if claim_num:
             params["ClaimNum"] = claim_num
-        if req_type:
-            params["ReqType"] = req_type
+        params["ReqType"] = "CLMHIST"
 
-        signed_url = self._sign_claim_history_url(params)
+        signed_url = self._sign_claim_history_url(
+            params, response_type=response_type
+        )
         response = self._get_with_retry(signed_url)
         self._handle_response(response)
         return self._parse_claim_history_response(response)
@@ -241,18 +253,61 @@ class WaystarClient(BaseClearinghouseClient):
         payload: str | dict[str, Any],
         payload_type: str = "1952",
     ) -> dict[str, Any]:
-        """Check prior authorization status via Waystar PA API.
+        """Submit a prior authorization status inquiry (step 1 of 2).
+
+        This is an **asynchronous** API. The initial POST returns a
+        ``ReferenceId`` and ``StatusMessage: "Received"``. Use
+        ``get_prior_auth_result(reference_id)`` to poll for the final
+        278 response.
 
         Args:
-            payload: 278 EDI string or JSON dict for the PA request.
+            payload: 278x215 EDI string **or** a dict of fields that
+                will be converted to a 278 EDI transaction.
             payload_type: Waystar payload type (default ``"1952"`` for
                 authorization status).
 
         Returns:
-            Raw response dict from the PA API.
+            Initial acknowledgment dict with ``ReferenceId``,
+            ``StatusMessage``, ``ErrorMessage``, and ``PayloadType``.
         """
         url = f"{self._prior_auth_base_url}{PRIOR_AUTH_SUBMIT_PATH}"
         json_body = self._build_prior_auth_body(payload, payload_type)
+        response = self._post_json_with_retry(url, json_body)
+        self._handle_response(response)
+        try:
+            return response.json()  # type: ignore[no-any-return]
+        except Exception:
+            return {"raw_text": response.text}
+
+    def get_prior_auth_result(
+        self, reference_id: int | str
+    ) -> dict[str, Any]:
+        """Retrieve prior authorization result (step 2 of 2).
+
+        After submitting via ``check_prior_auth_status()``, poll this
+        method with the returned ``ReferenceId`` to get the final
+        278x215 response.
+
+        Possible ``StatusMessage`` values:
+          - ``"Received"`` / ``"Waiting Response"`` — still processing
+          - ``"Certified – in Total"`` — authorization found
+          - ``"Not Found"`` — no authorization record
+          - ``"Failed at Waystar"`` — validation failure
+
+        Args:
+            reference_id: The ``ReferenceId`` from the initial POST.
+
+        Returns:
+            Response dict with ``ReferenceId``, ``StatusMessage``,
+            ``ErrorMessage``, ``Payload`` (278 EDI), ``PayloadType``.
+        """
+        url = f"{self._prior_auth_base_url}{PRIOR_AUTH_STATUS_PATH}"
+        json_body: dict[str, Any] = {
+            "Username": self._user_id,
+            "Password": self._password,
+            "CustID": self._cust_id,
+            "ReferenceID": int(reference_id),
+        }
         response = self._post_json_with_retry(url, json_body)
         self._handle_response(response)
         try:
@@ -266,14 +321,12 @@ class WaystarClient(BaseClearinghouseClient):
         self, request: dict[str, Any]
     ) -> dict[str, str]:
         """Build POST form data for the eligibility endpoint."""
-        data_format = request.get("data_format", "SF1")
         response_type = request.get("response_type", "FullJSON")
 
         form: dict[str, str] = {
             "UserID": self._user_id,
             "Password": self._password,
             "CustID": self._cust_id,
-            "DataFormat": data_format,
             "ResponseType": response_type,
         }
 
@@ -281,56 +334,105 @@ class WaystarClient(BaseClearinghouseClient):
         if "x12_data" in request:
             form["DataFormat"] = "X12"
             form["Data"] = request["x12_data"]
-        elif data_format.upper() == "X12" and "data" in request:
-            form["Data"] = request["data"]
         else:
-            # Build simplified request data from dict fields
-            form["Data"] = self._build_sf1_data(request)
+            # Build X12 270 transaction from dict fields
+            form["DataFormat"] = "X12"
+            form["Data"] = self._build_x12_270(request)
 
         return form
 
     @staticmethod
-    def _build_sf1_data(request: dict[str, Any]) -> str:
-        """Build SF1 simplified eligibility data from dict fields.
+    def _build_x12_270(request: dict[str, Any]) -> str:
+        """Build an X12 270 eligibility inquiry from dict fields.
 
-        SF1 format uses pipe-delimited fields. This builds a minimal
-        request that can be adjusted once exact SF1 spec is confirmed.
+        Generates a minimal but valid ANSI X12 270 transaction that
+        Waystar can process reliably (unlike the SF1 simplified format
+        which has carrier-mapping issues).
         """
-        parts = [
-            request.get("payer_id", ""),
-            request.get("npi", ""),
-            request.get("subscriber_id", ""),
-            request.get("first_name", ""),
-            request.get("last_name", ""),
-            request.get("dob", ""),
-            request.get("service_type", ""),
+        now = datetime.now(UTC)
+        date6 = now.strftime("%y%m%d")
+        date8 = now.strftime("%Y%m%d")
+        time4 = now.strftime("%H%M")
+
+        npi = request.get("npi", "")
+        payer_id = request.get("payer_id", "")
+        subscriber_id = request.get("subscriber_id", "")
+        first_name = request.get("first_name", "").upper()
+        last_name = request.get("last_name", "").upper()
+        service_type = request.get("service_type", "30")
+
+        # Normalise DOB to YYYYMMDD
+        dob_raw = request.get("dob", "")
+        dob = dob_raw.replace("-", "")
+
+        # Pad ISA fields to required widths
+        sender_id = f"{npi:<15}" if npi else "SENDER         "
+
+        segments = [
+            f"ISA*00*          *00*          "
+            f"*ZZ*{sender_id}*ZZ*ZIRMED         "
+            f"*{date6}*{time4}*^*00501*000000001*0*P*:",
+            f"GS*HS*SENDER*ZIRMED*{date8}*{time4}"
+            f"*1*X*005010X279A1",
+            f"ST*270*0001*005010X279A1",
+            f"BHT*0022*13*REQ001*{date8}*{time4}",
+            "HL*1**20*1",
+            f"NM1*PR*2*{payer_id}*****PI*{payer_id}",
+            "HL*2*1*21*1",
+            f"NM1*1P*2******XX*{npi}",
+            "HL*3*2*22*0",
+            "TRN*1*REQ001*9SENDER",
+            f"NM1*IL*1*{last_name}*{first_name}****MI*{subscriber_id}",
+            f"DMG*D8*{dob}",
+            f"DTP*291*D8*{date8}",
+            f"EQ*{service_type}",
+            "SE*13*0001",
+            "GE*1*1",
+            "IEA*1*000000001",
+            "",
         ]
-        return "|".join(parts)
+        return "~".join(segments)
 
     def _build_claim_history_params(
-        self, claim_ref: str
+        self, claim_ref: str, *, dos: str = ""
     ) -> dict[str, str]:
-        """Build query params for Claim History GET request."""
-        return {
+        """Build query params for Claim History GET request (v2.0).
+
+        Per Waystar docs the new URI requires CustID, DOS, ClaimNum,
+        and ReqType=CLMHIST.  Version and TimeStamp are added by the
+        signing method.
+        """
+        params: dict[str, str] = {
             "CustID": self._cust_id,
-            "ClaimNum": claim_ref,
         }
+        if dos:
+            params["DOS"] = dos
+        params["ClaimNum"] = claim_ref
+        params["ReqType"] = "CLMHIST"
+        return params
 
     def _sign_claim_history_url(
-        self, params: dict[str, str]
+        self,
+        params: dict[str, str],
+        *,
+        response_type: str = "XML",
     ) -> str:
-        """Build a signed URL for the Claim History endpoint.
+        """Build a signed URL for the Claim History endpoint (v2.0).
 
         Adds Version, TimeStamp, and HMAC-SHA256 Signature to params.
-        The signature is computed over the full query string (excluding
-        the Signature param itself), case-sensitive.
+        Per Waystar docs:
+          - ``ResponseType`` must be **excluded** from the signature
+            calculation but **included** in the final GET request.
+          - The query string is case-sensitive for both signature
+            calculation and the final request.
+          - The request must be sent within 5 minutes of the TimeStamp.
         """
-        params["Version"] = "2"
+        params["Version"] = "2.0"
         params["TimeStamp"] = _utc_timestamp()
 
-        # Build query string to sign (all params except Signature).
-        # The HMAC is computed over the raw (unencoded) query string
-        # per Waystar docs — case-sensitive.
+        # Build query string to sign (all params except Signature and
+        # ResponseType — per Waystar docs ResponseType is excluded from
+        # signature but required in the final GET).
         query_parts = [f"{k}={v}" for k, v in params.items()]
         query_string = "&".join(query_parts)
 
@@ -342,6 +444,8 @@ class WaystarClient(BaseClearinghouseClient):
         ).hexdigest()
 
         params["Signature"] = signature
+        # Add ResponseType AFTER signing (excluded from signature)
+        params["ResponseType"] = response_type
         # URL-encode the final query string (spaces → %20, etc.)
         encoded_query = urlencode(params)
         return (
@@ -353,18 +457,77 @@ class WaystarClient(BaseClearinghouseClient):
         payload: str | dict[str, Any],
         payload_type: str,
     ) -> dict[str, Any]:
-        """Build JSON body for Prior Auth API."""
+        """Build JSON body for Prior Auth API.
+
+        If *payload* is a string it is assumed to be a raw 278 EDI
+        transaction and sent as-is.  If it is a dict, a minimal X12 278
+        inquiry is generated from its fields.
+
+        Per Waystar docs, ``CustID`` is Integer and ``PayloadType`` is
+        Integer.  ``Relationship`` is an optional alphanumeric field.
+        """
         body: dict[str, Any] = {
             "Username": self._user_id,
             "Password": self._password,
-            "CustID": self._cust_id,
-            "PayloadType": payload_type,
+            "CustID": int(self._cust_id) if self._cust_id.isdigit() else self._cust_id,
+            "Relationship": "",
+            "PayloadType": int(payload_type),
         }
         if isinstance(payload, str):
             body["Payload"] = payload
         else:
-            body["Payload"] = payload
+            body["Payload"] = self._build_x12_278(payload)
         return body
+
+    @staticmethod
+    def _build_x12_278(request: dict[str, Any]) -> str:
+        """Build a minimal X12 278 authorization status inquiry.
+
+        Waystar's PA Status API (PayloadType 1952) accepts a 278 with
+        **only 3 HL levels**: payer (20), provider (21), subscriber (22).
+        No UM/HI/SV1/DTP service-detail segments — Waystar looks up
+        existing authorizations by subscriber identification.
+
+        Adding HL level 4 or service segments causes "Invalid Payload".
+        """
+        now = datetime.now(UTC)
+        date6 = now.strftime("%y%m%d")
+        date8 = now.strftime("%Y%m%d")
+        time4 = now.strftime("%H%M")
+
+        npi = request.get("npi", "")
+        payer_id = request.get("payer_id", "")
+        subscriber_id = request.get("subscriber_id", "")
+        first_name = request.get("first_name", "").upper()
+        last_name = request.get("last_name", "").upper()
+        dob_raw = request.get("dob", "")
+        dob = dob_raw.replace("-", "")
+
+        sender_id = f"{npi:<15}" if npi else "SENDER         "
+
+        segments = [
+            f"ISA*00*          *00*          "
+            f"*ZZ*{sender_id}*ZZ*ZIRMED         "
+            f"*{date6}*{time4}*^*00501*000000001*0*P*:",
+            f"GS*HI*{npi or 'SENDER'}*ZIRMED*{date8}*{time4}"
+            f"*1*X*005010X215",
+            "ST*278*0001*005010X215",
+            f"BHT*0007*13*REQ001*{date8}*{time4}",
+            "HL*1**20*1",
+            f"NM1*PR*2*{payer_id}*****PI*{payer_id}",
+            "HL*2*1*21*1",
+            f"NM1*1P*2******XX*{npi}",
+            "HL*3*2*22*0",
+            f"TRN*1*REQ001*9{npi or 'SENDER'}",
+            f"NM1*IL*1*{last_name}*{first_name}****MI*{subscriber_id}",
+            f"DMG*D8*{dob}",
+            # SE count: ST through SE inclusive = 11 segments
+            "SE*11*0001",
+            "GE*1*1",
+            "IEA*1*000000001",
+            "",
+        ]
+        return "~".join(segments)
 
     # ── Response parsing ───────────────────────────────────────────────
 

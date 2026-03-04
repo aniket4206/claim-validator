@@ -194,8 +194,8 @@ class TestEligibility:
         url = str(captured[0].url)
         assert url.startswith(DEFAULT_ELIGIBILITY_BASE_URL)
 
-    def test_eligibility_sf1_data_format(self) -> None:
-        """Default data format is SF1 with pipe-delimited fields."""
+    def test_eligibility_x12_270_from_fields(self) -> None:
+        """Dict fields are converted to an X12 270 transaction."""
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -216,10 +216,13 @@ class TestEligibility:
         )
 
         body = captured[0].content.decode()
-        assert "DataFormat=SF1" in body
+        assert "DataFormat=X12" in body
         assert "ResponseType=FullJSON" in body
-        # Data field should contain pipe-delimited values
+        # Data field should contain X12 270 segments
         assert "Data=" in body
+        assert "270" in body  # ST*270 segment
+        assert "00520" in body  # payer_id in NM1*PR
+        assert "1245319599" in body  # NPI in NM1*1P
 
     def test_eligibility_x12_raw_data(self) -> None:
         """When x12_data is provided, it is sent as-is with DataFormat=X12."""
@@ -357,23 +360,24 @@ class TestClaimHistory:
             return httpx.Response(200, json={"status": "found"})
 
         client = _make_client(handler)
-        client.check_claim_status("CLM-789")
+        client.check_claim_status("CLM-789", dos="03/04/2026")
 
         url = str(captured[0].url)
         parsed = urlparse(url)
         params = parse_qs(parsed.query)
 
-        assert "CustID" in params
         assert params["CustID"] == ["12345"]
-        assert "ClaimNum" in params
         assert params["ClaimNum"] == ["CLM-789"]
-        assert "Version" in params
-        assert params["Version"] == ["2"]
+        assert params["DOS"] == ["03/04/2026"]
+        assert params["ReqType"] == ["CLMHIST"]
+        assert params["Version"] == ["2.0"]
         assert "TimeStamp" in params
         assert "Signature" in params
+        # ResponseType excluded from signature but present in request
+        assert params["ResponseType"] == ["XML"]
 
     def test_claim_history_hmac_signature(self) -> None:
-        """HMAC signature is computed over query string (excl Signature)."""
+        """HMAC signature is computed over query string (excl Signature and ResponseType)."""
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -386,7 +390,7 @@ class TestClaimHistory:
             "claim_validator.clearinghouse.providers.waystar._utc_timestamp",
             return_value="03/04/2026 10:30:00 AM",
         ):
-            client.check_claim_status("CLM-789")
+            client.check_claim_status("CLM-789", dos="05/01/2019")
 
         url = str(captured[0].url)
         parsed = urlparse(url)
@@ -398,9 +402,11 @@ class TestClaimHistory:
         assert len(sig) == 64  # SHA-256 hex digest
 
         # Verify signature is deterministic: recompute it
+        # ResponseType is EXCLUDED from signature per Waystar docs
         query_to_sign = (
-            "CustID=12345&ClaimNum=CLM-789&"
-            "Version=2&TimeStamp=03/04/2026 10:30:00 AM"
+            "CustID=12345&DOS=05/01/2019&ClaimNum=CLM-789&"
+            "ReqType=CLMHIST&"
+            "Version=2.0&TimeStamp=03/04/2026 10:30:00 AM"
         )
         expected_sig = hmac_mod.new(
             b"test-hmac-secret",
@@ -408,6 +414,9 @@ class TestClaimHistory:
             hashlib.sha256,
         ).hexdigest()
         assert sig == expected_sig
+
+        # Verify ResponseType is in the URL but was not signed
+        assert params["ResponseType"] == ["XML"]
 
     def test_claim_history_hmac_deterministic(self) -> None:
         """Same inputs + same time → same signature."""
@@ -425,9 +434,9 @@ class TestClaimHistory:
             return_value="03/04/2026 10:30:00 AM",
         ):
             client1 = _make_client(handler)
-            client1.check_claim_status("CLM-789")
+            client1.check_claim_status("CLM-789", dos="03/04/2026")
             client2 = _make_client(handler)
-            client2.check_claim_status("CLM-789")
+            client2.check_claim_status("CLM-789", dos="03/04/2026")
 
         assert results[0] == results[1]
 
@@ -441,7 +450,7 @@ class TestClaimHistory:
 
         client = _make_client(handler)
         client.check_claim_status_by_params(
-            dos="03/01/2026", claim_num="CLM-100", req_type="S"
+            dos="03/01/2026", claim_num="CLM-100"
         )
 
         url = str(captured[0].url)
@@ -449,7 +458,8 @@ class TestClaimHistory:
         params = parse_qs(parsed.query)
         assert params["DOS"] == ["03/01/2026"]
         assert params["ClaimNum"] == ["CLM-100"]
-        assert params["ReqType"] == ["S"]
+        assert params["ReqType"] == ["CLMHIST"]
+        assert params["ResponseType"] == ["XML"]
 
     def test_claim_history_json_response(self) -> None:
         client = _make_client(
@@ -526,8 +536,9 @@ class TestPriorAuth:
         body = json.loads(req.content)
         assert body["Username"] == "test-user"
         assert body["Password"] == "test-pass"
-        assert body["CustID"] == "12345"
-        assert body["PayloadType"] == "1952"
+        assert body["CustID"] == 12345
+        assert body["PayloadType"] == 1952
+        assert body["Relationship"] == ""
         assert body["Payload"] == "278*EDI*PAYLOAD*HERE~"
 
     def test_prior_auth_uses_prior_auth_base_url(self) -> None:
@@ -542,6 +553,76 @@ class TestPriorAuth:
 
         url = str(captured[0].url)
         assert url.startswith(DEFAULT_PRIOR_AUTH_BASE_URL)
+
+    def test_prior_auth_dict_builds_278_x215(self) -> None:
+        """Dict payload is converted to 278x215 EDI."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200,
+                json={"ReferenceId": 123, "StatusMessage": "Received"},
+            )
+
+        client = _make_client(handler)
+        client.check_prior_auth_status(
+            {
+                "payer_id": "66666",
+                "npi": "1245319599",
+                "subscriber_id": "SUB123",
+                "first_name": "Alice",
+                "last_name": "Williams",
+                "dob": "1980-07-22",
+                "procedure_code": "27447",
+                "diagnosis_code": "M17.11",
+            }
+        )
+
+        import json
+
+        body = json.loads(captured[0].content)
+        assert body["PayloadType"] == 1952
+        # Payload should be a 278 EDI string with X215 version
+        payload = body["Payload"]
+        assert "ST*278" in payload
+        assert "005010X215" in payload
+        # Minimal 3-level HL: payer, provider, subscriber
+        assert "HL*1**20*1" in payload
+        assert "HL*2*1*21*1" in payload
+        assert "HL*3*2*22*0" in payload
+        assert "NM1*IL*1*WILLIAMS*ALICE" in payload
+
+    def test_get_prior_auth_result(self) -> None:
+        """Step 2: retrieve PA result by ReferenceId."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200,
+                json={
+                    "ReferenceId": 1234567,
+                    "StatusMessage": "Certified – in Total",
+                    "ErrorMessage": "",
+                    "Payload": "278x215 response EDI here",
+                    "PayloadType": 1652,
+                },
+            )
+
+        client = _make_client(handler)
+        result = client.get_prior_auth_result(1234567)
+
+        import json
+
+        body = json.loads(captured[0].content)
+        assert body["Username"] == "test-user"
+        assert body["Password"] == "test-pass"
+        assert body["CustID"] == "12345"
+        assert body["ReferenceID"] == 1234567
+
+        assert result["StatusMessage"] == "Certified – in Total"
+        assert result["PayloadType"] == 1652
 
 
 # ---------------------------------------------------------------------------

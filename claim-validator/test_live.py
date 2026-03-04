@@ -476,7 +476,7 @@ def test_clearinghouse_eligibility():
     client = build_clearinghouse_client(CH_CONFIG)
     try:
         result = client.check_eligibility({
-            "payer_id": "00520",
+            "payer_id": "66666",
             "npi": "1245319599",
             "subscriber_id": "SUB987654321",
             "first_name": "Alice",
