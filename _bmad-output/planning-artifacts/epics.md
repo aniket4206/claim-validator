@@ -1,10 +1,11 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
 status: 'complete'
-completedAt: '2026-03-03'
+completedAt: '2026-03-04'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
   - '_bmad-output/planning-artifacts/architecture.md'
+  - '_bmad-output/planning-artifacts/research/technical-clearinghouse-api-integration-research-2026-03-04.md'
 ---
 
 # healthcare-claim-analyzer - Epic Breakdown
@@ -80,6 +81,20 @@ This document provides the complete epic and story breakdown for healthcare-clai
 - FR42: Developers configure pipeline gating behavior via settings
 - FR43: All existing CLAIM_VALIDATOR_* environment variables continue to work
 
+**Clearinghouse Client Layer (FR44-FR55):**
+- FR44: BaseClearinghouseClient ABC with submit_claim(), check_eligibility(), check_claim_status() abstract methods
+- FR45: Factory function get_clearinghouse_client(provider, **config) for configuration-driven provider selection
+- FR46: ClearinghouseError hierarchy — Auth, Validation, Timeout, Server subtypes under existing ClaimValidatorError
+- FR47: Clearinghouse response models — SubmissionResult, ClearinghouseEligibilityResponse, ClaimStatusResponse as Pydantic models
+- FR48: StediClient — JSON REST, API key auth, supports eligibility (270/271), professional claims (837P), institutional claims (837I), claim status (276/277), ERA (835)
+- FR49: ClaimMDClient — REST with AccountKey auth, supports eligibility, claims upload (1-2000 per call), claim responses, ERA/835 retrieval
+- FR50: WaystarClient — HMAC-SHA256 auth via HMACAuth(httpx.Auth), supports eligibility, claims submission, claim status
+- FR51: Clearinghouse configuration via CLAIM_VALIDATOR_CLEARINGHOUSE_* env vars integrated into ClaimValidatorSettings
+- FR52: Pipeline integration — clearinghouse clients wire into PipelineConfig.clearinghouse_client slot for multi-phase execution
+- FR53: PHI flows to clearinghouse (trusted HIPAA-covered entity) but never to AI without de-identification
+- FR54: Zero new pip dependencies — httpx, pydantic, hmac/hashlib already in project
+- FR55: Data mapping — library Pydantic models (ClaimData, EligibilityRequest) translated to provider-specific JSON per client, responses normalized to shared models
+
 ### NonFunctional Requirements
 
 **Performance (NFR1-NFR6):**
@@ -118,6 +133,12 @@ This document provides the complete epic and story breakdown for healthcare-clai
 - NFR25: ruff clean — zero warnings (line-length=100, rules E/F/I/N/W/UP)
 - NFR26: Wheel size <15MB
 - NFR27: All public classes and functions have docstrings
+
+**Clearinghouse Integration (NFR28-NFR31):**
+- NFR28: Clearinghouse clients thread-safe — stateless per request, httpx.Client connection pooling
+- NFR29: Zero PHI in clearinghouse error messages, logs, or exception traces
+- NFR30: Unit tests use httpx.MockTransport — no network calls, deterministic, fast
+- NFR31: >90% unit test coverage per provider client
 
 ### Additional Requirements
 
@@ -192,6 +213,18 @@ This document provides the complete epic and story breakdown for healthcare-clai
 | FR41 | Epic 3 | Configure validators per stage |
 | FR42 | Epic 3 | Configure gating behavior |
 | FR43 | Epic 3 | Existing env vars work |
+| FR44 | Epic 5 | BaseClearinghouseClient ABC |
+| FR45 | Epic 5 | Factory function get_clearinghouse_client() |
+| FR46 | Epic 5 | ClearinghouseError hierarchy |
+| FR47 | Epic 5 | Clearinghouse response models |
+| FR48 | Epic 5 | StediClient implementation |
+| FR49 | Epic 5 | ClaimMDClient implementation |
+| FR50 | Epic 5 | WaystarClient implementation |
+| FR51 | Epic 5 | Clearinghouse configuration env vars |
+| FR52 | Epic 5 | Pipeline integration with PipelineConfig |
+| FR53 | Epic 5 | PHI security for clearinghouse calls |
+| FR54 | Epic 5 | Zero new pip dependencies |
+| FR55 | Epic 5 | Data mapping library models to provider JSON |
 
 ## Epic List
 
@@ -210,6 +243,10 @@ All 3 existing APIs (validate, check_eligibility, submit_prior_auth) use shared 
 ### Epic 4: Unified Workflow Pipeline
 Developers call process_claim() for the full Eligibility → PA → Claim flow with validation passthrough, early termination, per-stage results, and WorkflowResult reporting.
 **FRs covered:** FR21, FR22, FR23, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR35, FR36, FR37
+
+### Epic 5: Clearinghouse Client Integration
+Developers can submit claims, verify eligibility, check claim status, and retrieve remittance through a unified BaseClearinghouseClient interface with pluggable providers (Stedi, Claim.MD, Waystar) — zero new dependencies, JSON-first, HIPAA-compliant PHI handling.
+**FRs covered:** FR44, FR45, FR46, FR47, FR48, FR49, FR50, FR51, FR52, FR53, FR54, FR55
 
 ---
 
@@ -631,3 +668,177 @@ So that the workflow is intelligent about what to run and what to skip.
 **Then** total validator executions are fewer (no duplicates) while producing equivalent findings
 
 **And** FR24, FR27 are satisfied
+
+---
+
+## Epic 5: Clearinghouse Client Integration
+
+Developers can submit claims, verify eligibility, check claim status, and retrieve remittance through a unified BaseClearinghouseClient interface with pluggable providers (Stedi, Claim.MD, Waystar) — zero new dependencies, JSON-first, HIPAA-compliant PHI handling.
+
+### Story 5.1: BaseClearinghouseClient ABC, Factory, Config, Exceptions, and Models
+
+As a library maintainer,
+I want an abstract clearinghouse client with factory, configuration, exception hierarchy, and shared response models,
+So that all provider implementations follow a consistent contract and new providers can be added without modifying existing code.
+
+**Acceptance Criteria:**
+
+**Given** `BaseClearinghouseClient` is an ABC in `clearinghouse/base.py`
+**When** inspected
+**Then** it declares abstract methods: `submit_claim(claim_data: dict) -> SubmissionResult`, `check_eligibility(request: dict) -> ClearinghouseEligibilityResponse`, `check_claim_status(claim_ref: str) -> ClaimStatusResponse`, and abstract property `provider_name: str`
+
+**Given** `get_clearinghouse_client(provider, **config)` is called with `provider="stedi"`
+**When** the factory resolves the provider
+**Then** it returns a `StediClient` instance configured with the provided credentials
+**And** calling with an unknown provider raises `ClearinghouseError`
+
+**Given** `ClearinghouseError` is defined in `clearinghouse/exceptions.py`
+**When** inspected
+**Then** it is a subclass of existing `ClaimValidatorError` with subtypes: `ClearinghouseAuthError` (401/403), `ClearinghouseValidationError` (4xx), `ClearinghouseTimeoutError`, `ClearinghouseServerError` (5xx)
+
+**Given** response models `SubmissionResult`, `ClearinghouseEligibilityResponse`, `ClaimStatusResponse` exist in `clearinghouse/models/`
+**When** constructed
+**Then** they are frozen Pydantic models with provider-agnostic fields (status, reference_id, raw_response, errors)
+
+**Given** `ClaimValidatorSettings` is extended with `clearinghouse_config: dict | None`
+**When** env vars `CLAIM_VALIDATOR_CLEARINGHOUSE_PROVIDER`, `CLAIM_VALIDATOR_CLEARINGHOUSE_API_KEY`, etc. are set
+**Then** `settings.clearinghouse_config` returns the assembled config dict
+
+**And** zero new pip dependencies — only httpx, pydantic, hmac/hashlib (already available)
+**And** the module structure matches: `clearinghouse/{__init__, base, factory, auth, exceptions}.py` + `models/` + `providers/`
+**And** FR44, FR45, FR46, FR47, FR51, FR54 are satisfied
+
+### Story 5.2: StediClient — JSON REST Integration
+
+As a developer integrating with Stedi,
+I want a `StediClient` implementing `BaseClearinghouseClient` with full Stedi API coverage,
+So that I can submit claims, verify eligibility, check claim status, and retrieve ERA through the unified interface.
+
+**Acceptance Criteria:**
+
+**Given** `StediClient` is instantiated with an API key
+**When** `client.check_eligibility(request)` is called with patient/payer/provider data
+**Then** it translates the library's `EligibilityRequest` fields to Stedi's JSON format and POSTs to `https://healthcare.us.stedi.com/2024-04-01/change/medicalnetwork/eligibility/v3`
+**And** the response is normalized to `ClearinghouseEligibilityResponse`
+
+**Given** `StediClient.submit_claim(claim_data)` is called
+**When** the claim data contains professional claim fields
+**Then** it translates to Stedi's 837P JSON format and POSTs to the professional claims endpoint
+**And** returns a `SubmissionResult` with acknowledgment status and reference ID
+**And** includes `Idempotency-Key` header for safe retries
+
+**Given** `StediClient.check_claim_status(claim_ref)` is called
+**When** a valid claim reference is provided
+**Then** it queries Stedi's claim status endpoint (276/277) and returns a `ClaimStatusResponse`
+
+**Given** a Stedi API call returns HTTP 5xx
+**When** the error is handled
+**Then** one retry with 1s backoff is attempted before raising `ClearinghouseServerError`
+**And** no PHI appears in the error message (NFR29)
+
+**Given** unit tests use `httpx.MockTransport`
+**When** all Stedi client tests run
+**Then** zero network calls are made and all tests are deterministic (NFR30)
+
+**And** auth uses API key in `Authorization` header
+**And** FR48, FR53, FR55 are satisfied
+
+### Story 5.3: ClaimMDClient — REST with AccountKey Auth
+
+As a developer integrating with Claim.MD,
+I want a `ClaimMDClient` implementing `BaseClearinghouseClient` with Claim.MD API coverage,
+So that I can verify eligibility, upload claims, retrieve responses, and download ERA/835 reports.
+
+**Acceptance Criteria:**
+
+**Given** `ClaimMDClient` is instantiated with an AccountKey
+**When** `client.check_eligibility(request)` is called
+**Then** it translates to Claim.MD's form data format (PayerID, ProviderNPI, InsuredFirstName, etc.) and POSTs to `https://svc.claim.md/services/eligdata/`
+**And** `AccountKey` is included in every request
+**And** the response is normalized to `ClearinghouseEligibilityResponse`
+
+**Given** `ClaimMDClient.submit_claim(claim_data)` is called
+**When** the claim data contains one or more claims
+**Then** it translates to Claim.MD's upload format and POSTs to `/services/upload/`
+**And** returns a `SubmissionResult` with batch reference
+
+**Given** `ClaimMDClient.check_claim_status(claim_ref)` is called
+**When** a valid claim reference (ResponseID) is provided
+**Then** it queries `/services/response/` with the reference and returns a `ClaimStatusResponse`
+
+**Given** a Claim.MD API call returns an authentication error
+**When** the error is handled
+**Then** `ClearinghouseAuthError` is raised immediately (no retry)
+**And** the error message contains no PHI
+
+**Given** unit tests use `httpx.MockTransport`
+**When** all Claim.MD client tests run
+**Then** zero network calls are made and all tests are deterministic
+
+**And** FR49, FR53, FR55 are satisfied
+
+### Story 5.4: WaystarClient — HMAC-SHA256 Auth Integration
+
+As a developer integrating with Waystar,
+I want a `WaystarClient` implementing `BaseClearinghouseClient` with HMAC-SHA256 authentication,
+So that I can submit claims, verify eligibility, and check claim status through the enterprise Waystar platform.
+
+**Acceptance Criteria:**
+
+**Given** `WaystarClient` is instantiated with API key and secret
+**When** any API call is made
+**Then** requests are signed using `HMACAuth(httpx.Auth)` — computing HMAC-SHA256 over `method\npath\ntimestamp\nbody_hash` and setting `Authorization: HMAC {api_key}:{signature}` + `X-Timestamp` headers
+
+**Given** `WaystarClient.check_eligibility(request)` is called
+**When** the request contains patient/payer/provider data
+**Then** it translates to Waystar's JSON format and POSTs to the eligibility endpoint
+**And** the response is normalized to `ClearinghouseEligibilityResponse`
+
+**Given** `WaystarClient.submit_claim(claim_data)` is called
+**When** the claim data is valid
+**Then** it translates to Waystar's format, signs with HMAC, and submits
+**And** returns a `SubmissionResult`
+
+**Given** Waystar API documentation becomes available (requires portal access)
+**When** exact endpoint URLs and request schemas are known
+**Then** the client is updated with production-ready endpoint paths and field mappings
+
+**Given** unit tests use `httpx.MockTransport`
+**When** HMAC signing is tested
+**Then** the signature matches expected output for known inputs (deterministic)
+
+**And** `HMACAuth` is implemented in `clearinghouse/auth.py` as `httpx.Auth` subclass
+**And** FR50, FR53, FR55 are satisfied
+**And** NOTE: Full implementation depends on Waystar portal docs from aniket
+
+### Story 5.5: Pipeline Integration and Orchestrator Wiring
+
+As a developer using the unified pipeline,
+I want clearinghouse clients automatically wired into the pipeline's clearinghouse phase,
+So that `PipelineConfig.clearinghouse_client` works with any provider and the workflow orchestrator can invoke clearinghouse calls between rule-based and AI phases.
+
+**Acceptance Criteria:**
+
+**Given** `PipelineConfig` has a `clearinghouse_client: BaseClearinghouseClient | None` field
+**When** a pipeline is constructed with `clearinghouse_client=StediClient(...)`
+**Then** the clearinghouse phase calls `client.check_eligibility()` or `client.submit_claim()` depending on the pipeline domain
+
+**Given** `PipelineConfig.clearinghouse_client` is None (default)
+**When** the pipeline runs
+**Then** the clearinghouse phase is gracefully skipped — rule-based and AI phases execute as before
+
+**Given** the rule-based phase fails and `skip_clearinghouse_on_rule_failure=True`
+**When** the pipeline reaches the clearinghouse phase
+**Then** it is skipped (existing gating behavior preserved)
+
+**Given** `process_claim()` is called with clearinghouse configured
+**When** the workflow orchestrator runs the eligibility stage
+**Then** the clearinghouse client is used for the actual 270/271 transaction
+**And** the response feeds into PA determination and downstream stages
+
+**Given** a clearinghouse call raises `ClearinghouseError`
+**When** the pipeline catches it
+**Then** it records the error as a finding and continues/stops based on gating config
+
+**And** clearinghouse client is constructed from `settings.clearinghouse_config` via the factory
+**And** FR52 is satisfied

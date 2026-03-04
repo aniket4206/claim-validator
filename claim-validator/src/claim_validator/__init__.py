@@ -8,6 +8,11 @@ except ImportError:
     __version__ = "0.0.0.dev0"
 
 from claim_validator._api import validate
+from claim_validator.clearinghouse import (
+    BaseClearinghouseClient,
+    ClearinghouseError,
+    get_clearinghouse_client,
+)
 from claim_validator.conf import ClaimValidatorSettings
 from claim_validator.constants import ClaimType, Severity
 from claim_validator.deidentifier import ClaimDeidentifier
@@ -80,6 +85,7 @@ __all__ = [
     "__version__",
     "AAAError",
     "BaseAIValidator",
+    "BaseClearinghouseClient",
     "BaseLLMClient",
     "BaseValidator",
     "BenefitInfo",
@@ -91,6 +97,7 @@ __all__ = [
     "ClaimType",
     "ClaimValidatorError",
     "ClaimValidatorSettings",
+    "ClearinghouseError",
     "check_eligibility",
     "CodeTableError",
     "ConfigurationError",
@@ -112,6 +119,7 @@ __all__ = [
     "EligibilityResponse",
     "EligibilityResult",
     "Finding",
+    "get_clearinghouse_client",
     "get_llm_client",
     "LLMError",
     "Message",

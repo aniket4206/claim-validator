@@ -80,3 +80,6 @@ class ClaimValidatorSettings(BaseSettings):
     eligibility_ai_validators: list[str] = DEFAULT_ELIG_AI_VALIDATORS
     eligibility_skip_ai: bool = False
     eligibility_skip_ai_on_rule_failure: bool = True
+
+    # Clearinghouse settings
+    clearinghouse_config: dict[str, Any] | None = None
