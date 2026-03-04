@@ -1,18 +1,21 @@
-"""Tests for WaystarClient clearinghouse provider."""
+"""Tests for WaystarClient — real Waystar API integration."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac as hmac_mod
 import sys
 import types
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
 
-from claim_validator.clearinghouse.auth import HMACAuth
 from claim_validator.clearinghouse.exceptions import (
     ClearinghouseAuthError,
+    ClearinghouseError,
     ClearinghouseServerError,
     ClearinghouseTimeoutError,
     ClearinghouseValidationError,
@@ -20,27 +23,44 @@ from claim_validator.clearinghouse.exceptions import (
 from claim_validator.clearinghouse.models import (
     ClaimStatusResponse,
     ClearinghouseEligibilityResponse,
-    SubmissionResult,
 )
 from claim_validator.clearinghouse.providers.waystar import (
+    CLAIM_HISTORY_PATH,
     DEFAULT_BASE_URL,
+    DEFAULT_CLAIMS_BASE_URL,
+    DEFAULT_ELIGIBILITY_BASE_URL,
+    DEFAULT_PRIOR_AUTH_BASE_URL,
+    ELIGIBILITY_PATH,
     WaystarClient,
+    _utc_timestamp,
 )
 
 
-def _make_client(handler: Any) -> WaystarClient:
+def _make_client(
+    handler: Any,
+    *,
+    api_key: str = "test-key",
+    secret: str = "test-secret",
+    user_id: str = "test-user",
+    password: str = "test-pass",
+    cust_id: str = "12345",
+) -> WaystarClient:
     """Create a WaystarClient backed by httpx.MockTransport (zero network)."""
     transport = httpx.MockTransport(handler)
-    client = WaystarClient(api_key="test-key", secret="test-secret")
-    client._client.close()
-    client._client = httpx.Client(
-        transport=transport, base_url=DEFAULT_BASE_URL
+    client = WaystarClient(
+        api_key=api_key,
+        secret=secret,
+        user_id=user_id,
+        password=password,
+        cust_id=cust_id,
     )
+    client._client.close()
+    client._client = httpx.Client(transport=transport)
     return client
 
 
-def _ok_handler(data: dict[str, Any]) -> Any:
-    """Return a handler that responds 200 with the given JSON data."""
+def _ok_json_handler(data: dict[str, Any]) -> Any:
+    """Return a handler that responds 200 with JSON."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=data)
@@ -48,7 +68,9 @@ def _ok_handler(data: dict[str, Any]) -> Any:
     return handler
 
 
-def _error_handler(status_code: int, body: dict[str, Any] | None = None) -> Any:
+def _error_handler(
+    status_code: int, body: dict[str, Any] | None = None
+) -> Any:
     """Return a handler that responds with the given error status."""
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -60,7 +82,7 @@ def _error_handler(status_code: int, body: dict[str, Any] | None = None) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# AC-1: WaystarClient implements BaseClearinghouseClient
+# AC-1: WaystarClient basics
 # ---------------------------------------------------------------------------
 
 
@@ -68,7 +90,7 @@ class TestWaystarClientBasics:
     """Verify WaystarClient structure and ABC compliance."""
 
     def test_provider_name(self) -> None:
-        client = _make_client(_ok_handler({}))
+        client = _make_client(_ok_json_handler({}))
         assert client.provider_name == "waystar"
 
     def test_is_subclass(self) -> None:
@@ -76,95 +98,104 @@ class TestWaystarClientBasics:
 
         assert issubclass(WaystarClient, BaseClearinghouseClient)
 
-    def test_importable_from_providers(self) -> None:
-        from claim_validator.clearinghouse.providers.waystar import (
-            WaystarClient as WaystarImport,
+    def test_default_base_urls(self) -> None:
+        assert DEFAULT_CLAIMS_BASE_URL == "https://claimsapi.zirmed.com"
+        assert (
+            DEFAULT_ELIGIBILITY_BASE_URL
+            == "https://eligibilityapi.zirmed.com"
         )
+        assert (
+            DEFAULT_PRIOR_AUTH_BASE_URL
+            == "https://priorauthorizationapi.waystar.com"
+        )
+        assert DEFAULT_BASE_URL == DEFAULT_CLAIMS_BASE_URL
 
-        assert WaystarImport is WaystarClient
-
-    def test_default_base_url(self) -> None:
-        assert DEFAULT_BASE_URL == "https://api.waystar.com"
-
-    def test_secret_stored(self) -> None:
-        client = WaystarClient(api_key="k", secret="s")
+    def test_credentials_stored(self) -> None:
+        client = WaystarClient(
+            api_key="k",
+            secret="s",
+            user_id="u",
+            password="p",
+            cust_id="999",
+        )
         assert client._secret == "s"
+        assert client._user_id == "u"
+        assert client._password == "p"
+        assert client._cust_id == "999"
+        client.close()
+
+    def test_secret_defaults_to_api_key(self) -> None:
+        client = WaystarClient(api_key="my-key")
+        assert client._secret == "my-key"
+        client.close()
+
+    def test_custom_base_urls(self) -> None:
+        client = WaystarClient(
+            api_key="k",
+            base_url="https://custom-claims.example.com",
+            eligibility_base_url="https://custom-elig.example.com",
+            prior_auth_base_url="https://custom-pa.example.com",
+        )
+        assert client._claims_base_url == "https://custom-claims.example.com"
+        assert (
+            client._eligibility_base_url
+            == "https://custom-elig.example.com"
+        )
+        assert (
+            client._prior_auth_base_url == "https://custom-pa.example.com"
+        )
         client.close()
 
 
 # ---------------------------------------------------------------------------
-# AC-2: HMAC-SHA256 authentication
-# ---------------------------------------------------------------------------
-
-
-class TestHMACAuthentication:
-    """Verify HMAC signing is wired into the client."""
-
-    def test_client_uses_hmac_auth(self) -> None:
-        """Fresh WaystarClient should have HMACAuth on its httpx client."""
-        client = WaystarClient(api_key="test-key", secret="test-secret")
-        assert isinstance(client._client._transport, httpx.HTTPTransport)
-        assert client._client.auth is not None
-        client.close()
-
-    def test_hmac_signing_deterministic(self) -> None:
-        """Given known inputs and fixed time, HMAC produces consistent signature."""
-        auth = HMACAuth(api_key="test-key", secret="test-secret")
-        request = httpx.Request(
-            "POST",
-            "https://api.waystar.com/api/v1/eligibility",
-            content=b'{"payerId": "12345"}',
-        )
-        with patch("claim_validator.clearinghouse.auth.time") as mock_time:
-            mock_time.time.return_value = 1709500000
-            flow = auth.auth_flow(request)
-            signed = next(flow)
-            assert signed.headers["Authorization"].startswith("HMAC test-key:")
-            assert signed.headers["X-Timestamp"] == "1709500000"
-
-        # Run again with same inputs → same signature
-        with patch("claim_validator.clearinghouse.auth.time") as mock_time:
-            mock_time.time.return_value = 1709500000
-            flow = auth.auth_flow(request)
-            signed2 = next(flow)
-            assert (
-                signed2.headers["Authorization"]
-                == signed.headers["Authorization"]
-            )
-
-    def test_hmac_headers_present_in_request(self) -> None:
-        """Verify Authorization and X-Timestamp headers reach the server."""
-        captured: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured.append(request)
-            return httpx.Response(200, json={"status": "active"})
-
-        # Use real HMAC auth (not mocked transport override)
-        client = WaystarClient(api_key="test-key", secret="test-secret")
-        client._client.close()
-        client._client = httpx.Client(
-            transport=httpx.MockTransport(handler),
-            base_url=DEFAULT_BASE_URL,
-            auth=HMACAuth(api_key="test-key", secret="test-secret"),
-        )
-        client.check_eligibility({"payer_id": "12345", "npi": "9876543210"})
-
-        assert len(captured) == 1
-        assert "Authorization" in captured[0].headers
-        assert captured[0].headers["Authorization"].startswith("HMAC test-key:")
-        assert "X-Timestamp" in captured[0].headers
-
-
-# ---------------------------------------------------------------------------
-# AC-3: Eligibility check
+# AC-2: Eligibility (POST with UserID/Password form data)
 # ---------------------------------------------------------------------------
 
 
 class TestEligibility:
     """Verify eligibility request mapping and response parsing."""
 
-    def test_eligibility_request_mapping(self) -> None:
+    def test_eligibility_posts_form_data(self) -> None:
+        """Eligibility sends POST with form-encoded UserID/Password."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "active", "Status": "active"}
+            )
+
+        client = _make_client(handler)
+        client.check_eligibility(
+            {"payer_id": "00520", "npi": "1245319599"}
+        )
+
+        assert len(captured) == 1
+        req = captured[0]
+        assert req.method == "POST"
+        assert ELIGIBILITY_PATH in str(req.url)
+
+        # Verify form data includes auth fields
+        body = req.content.decode()
+        assert "UserID=test-user" in body
+        assert "Password=test-pass" in body
+        assert "CustID=12345" in body
+
+    def test_eligibility_uses_eligibility_base_url(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+        url = str(captured[0].url)
+        assert url.startswith(DEFAULT_ELIGIBILITY_BASE_URL)
+
+    def test_eligibility_sf1_data_format(self) -> None:
+        """Default data format is SF1 with pipe-delimited fields."""
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -184,18 +215,14 @@ class TestEligibility:
             }
         )
 
-        import json
+        body = captured[0].content.decode()
+        assert "DataFormat=SF1" in body
+        assert "ResponseType=FullJSON" in body
+        # Data field should contain pipe-delimited values
+        assert "Data=" in body
 
-        body = json.loads(captured[0].content)
-        assert body["payerId"] == "00520"
-        assert body["providerNpi"] == "1245319599"
-        assert body["subscriber"]["memberId"] == "SUB123"
-        assert body["subscriber"]["firstName"] == "Alice"
-        assert body["subscriber"]["lastName"] == "Williams"
-        assert body["subscriber"]["dateOfBirth"] == "1980-07-22"
-        assert body["serviceTypeCode"] == "30"
-
-    def test_eligibility_posts_to_correct_path(self) -> None:
+    def test_eligibility_x12_raw_data(self) -> None:
+        """When x12_data is provided, it is sent as-is with DataFormat=X12."""
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -203,12 +230,15 @@ class TestEligibility:
             return httpx.Response(200, json={"status": "active"})
 
         client = _make_client(handler)
-        client.check_eligibility({"payer_id": "00520", "npi": "123"})
-        assert captured[0].url.path == "/api/v1/eligibility"
+        x12_270 = "ISA*00*          *00*          *ZZ*SENDER*ZZ*RECEIVER*..."
+        client.check_eligibility({"x12_data": x12_270})
+
+        body = captured[0].content.decode()
+        assert "DataFormat=X12" in body
 
     def test_eligibility_response_active(self) -> None:
         client = _make_client(
-            _ok_handler(
+            _ok_json_handler(
                 {
                     "status": "active",
                     "referenceId": "REF-123",
@@ -216,124 +246,83 @@ class TestEligibility:
                 }
             )
         )
-        result = client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        result = client.check_eligibility(
+            {"payer_id": "00520", "npi": "123"}
+        )
 
         assert isinstance(result, ClearinghouseEligibilityResponse)
         assert result.status == "active"
         assert result.eligible is True
         assert result.reference_id == "REF-123"
-        assert result.plan_info["planName"] == "BCBS PPO"
+        assert result.plan_info.get("planName") == "BCBS PPO"
 
     def test_eligibility_response_inactive(self) -> None:
-        client = _make_client(_ok_handler({"status": "inactive"}))
-        result = client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        client = _make_client(_ok_json_handler({"status": "inactive"}))
+        result = client.check_eligibility(
+            {"payer_id": "00520", "npi": "123"}
+        )
         assert result.eligible is False
 
-    def test_eligibility_minimal_request(self) -> None:
-        """Request with only required fields should still work."""
+    def test_eligibility_non_json_response(self) -> None:
+        """HTML/TEXT responses return raw_response with raw_text."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                text="<html>Eligibility Report</html>",
+                headers={"content-type": "text/html"},
+            )
+
+        client = _make_client(handler)
+        result = client.check_eligibility(
+            {"payer_id": "00520", "npi": "123"}
+        )
+        assert result.status == "received"
+        assert "raw_text" in result.raw_response
+
+    def test_eligibility_response_with_errors(self) -> None:
+        client = _make_client(
+            _ok_json_handler(
+                {
+                    "status": "error",
+                    "ErrorMessage": "Invalid subscriber ID",
+                }
+            )
+        )
+        result = client.check_eligibility(
+            {"payer_id": "00520", "npi": "123"}
+        )
+        assert result.errors == ["Invalid subscriber ID"]
+
+    def test_eligibility_custom_response_type(self) -> None:
+        """User can specify ResponseType=271 for raw X12 response."""
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             captured.append(request)
-            return httpx.Response(200, json={"status": "unknown"})
+            return httpx.Response(200, text="ISA*00*...*IEA*1*...")
 
         client = _make_client(handler)
-        client.check_eligibility({"payer_id": "00520", "npi": "123"})
-
-        import json
-
-        body = json.loads(captured[0].content)
-        assert body["payerId"] == "00520"
-        assert body["providerNpi"] == "123"
-        assert "subscriber" not in body
-
-
-# ---------------------------------------------------------------------------
-# AC-4: Claims submission
-# ---------------------------------------------------------------------------
-
-
-class TestSubmitClaim:
-    """Verify claim submission and response parsing."""
-
-    def test_claim_request_mapping(self) -> None:
-        captured: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured.append(request)
-            return httpx.Response(200, json={"status": "accepted"})
-
-        client = _make_client(handler)
-        client.submit_claim(
+        client.check_eligibility(
             {
                 "payer_id": "00520",
-                "billing_npi": "1234567890",
-                "subscriber_id": "SUB-1",
-                "total_charge": 250.00,
-                "diagnosis_codes": ["J06.9"],
-                "lines": [
-                    {"cpt_code": "99213", "charge": 150.00, "units": 1},
-                    {"cpt_code": "87081", "charge": 100.00, "units": 1},
-                ],
+                "npi": "123",
+                "response_type": "271",
             }
         )
-
-        import json
-
-        body = json.loads(captured[0].content)
-        assert body["payerId"] == "00520"
-        assert body["billingNpi"] == "1234567890"
-        assert body["subscriberId"] == "SUB-1"
-        assert body["totalCharge"] == "250.0"
-        assert body["diagnosisCodes"] == ["J06.9"]
-        assert len(body["serviceLines"]) == 2
-        assert body["serviceLines"][0]["procedureCode"] == "99213"
-
-    def test_claim_posts_to_correct_path(self) -> None:
-        captured: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured.append(request)
-            return httpx.Response(200, json={"status": "accepted"})
-
-        client = _make_client(handler)
-        client.submit_claim({"payer_id": "00520"})
-        assert captured[0].url.path == "/api/v1/claims"
-
-    def test_submission_response_accepted(self) -> None:
-        client = _make_client(
-            _ok_handler(
-                {"status": "accepted", "referenceId": "CLAIM-456"}
-            )
-        )
-        result = client.submit_claim({"payer_id": "00520"})
-        assert isinstance(result, SubmissionResult)
-        assert result.accepted is True
-        assert result.reference_id == "CLAIM-456"
-
-    def test_submission_response_rejected(self) -> None:
-        client = _make_client(
-            _ok_handler(
-                {
-                    "status": "rejected",
-                    "errors": ["Invalid diagnosis code"],
-                }
-            )
-        )
-        result = client.submit_claim({"payer_id": "00520"})
-        assert result.accepted is False
-        assert result.errors == ["Invalid diagnosis code"]
+        body = captured[0].content.decode()
+        assert "ResponseType=271" in body
 
 
 # ---------------------------------------------------------------------------
-# AC-5: Claim status
+# AC-3: Claim History (GET with HMAC query-string signing)
 # ---------------------------------------------------------------------------
 
 
-class TestCheckClaimStatus:
-    """Verify claim status request and response parsing."""
+class TestClaimHistory:
+    """Verify claim history request with HMAC signing."""
 
-    def test_status_request(self) -> None:
+    def test_claim_history_uses_get(self) -> None:
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -341,14 +330,12 @@ class TestCheckClaimStatus:
             return httpx.Response(200, json={"status": "found"})
 
         client = _make_client(handler)
-        client.check_claim_status("REF-789")
+        client.check_claim_status("CLM-789")
 
-        import json
+        assert len(captured) == 1
+        assert captured[0].method == "GET"
 
-        body = json.loads(captured[0].content)
-        assert body["claimReference"] == "REF-789"
-
-    def test_status_posts_to_correct_path(self) -> None:
+    def test_claim_history_uses_claims_base_url(self) -> None:
         captured: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -356,25 +343,205 @@ class TestCheckClaimStatus:
             return httpx.Response(200, json={"status": "found"})
 
         client = _make_client(handler)
-        client.check_claim_status("REF-789")
-        assert captured[0].url.path == "/api/v1/claims/status"
+        client.check_claim_status("CLM-789")
 
-    def test_status_response_parsing(self) -> None:
+        url = str(captured[0].url)
+        assert url.startswith(DEFAULT_CLAIMS_BASE_URL)
+        assert CLAIM_HISTORY_PATH in url
+
+    def test_claim_history_has_required_params(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "found"})
+
+        client = _make_client(handler)
+        client.check_claim_status("CLM-789")
+
+        url = str(captured[0].url)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+
+        assert "CustID" in params
+        assert params["CustID"] == ["12345"]
+        assert "ClaimNum" in params
+        assert params["ClaimNum"] == ["CLM-789"]
+        assert "Version" in params
+        assert params["Version"] == ["2"]
+        assert "TimeStamp" in params
+        assert "Signature" in params
+
+    def test_claim_history_hmac_signature(self) -> None:
+        """HMAC signature is computed over query string (excl Signature)."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "found"})
+
+        client = _make_client(handler, secret="test-hmac-secret")
+
+        with patch(
+            "claim_validator.clearinghouse.providers.waystar._utc_timestamp",
+            return_value="03/04/2026 10:30:00 AM",
+        ):
+            client.check_claim_status("CLM-789")
+
+        url = str(captured[0].url)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+
+        # Verify signature is present
+        assert "Signature" in params
+        sig = params["Signature"][0]
+        assert len(sig) == 64  # SHA-256 hex digest
+
+        # Verify signature is deterministic: recompute it
+        query_to_sign = (
+            "CustID=12345&ClaimNum=CLM-789&"
+            "Version=2&TimeStamp=03/04/2026 10:30:00 AM"
+        )
+        expected_sig = hmac_mod.new(
+            b"test-hmac-secret",
+            query_to_sign.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+        assert sig == expected_sig
+
+    def test_claim_history_hmac_deterministic(self) -> None:
+        """Same inputs + same time → same signature."""
+        results: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            url = str(request.url)
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            results.append(params["Signature"][0])
+            return httpx.Response(200, json={"status": "found"})
+
+        with patch(
+            "claim_validator.clearinghouse.providers.waystar._utc_timestamp",
+            return_value="03/04/2026 10:30:00 AM",
+        ):
+            client1 = _make_client(handler)
+            client1.check_claim_status("CLM-789")
+            client2 = _make_client(handler)
+            client2.check_claim_status("CLM-789")
+
+        assert results[0] == results[1]
+
+    def test_claim_history_by_params(self) -> None:
+        """check_claim_status_by_params sends explicit fields."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "found"})
+
+        client = _make_client(handler)
+        client.check_claim_status_by_params(
+            dos="03/01/2026", claim_num="CLM-100", req_type="S"
+        )
+
+        url = str(captured[0].url)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        assert params["DOS"] == ["03/01/2026"]
+        assert params["ClaimNum"] == ["CLM-100"]
+        assert params["ReqType"] == ["S"]
+
+    def test_claim_history_json_response(self) -> None:
         client = _make_client(
-            _ok_handler(
+            _ok_json_handler(
                 {
                     "status": "found",
-                    "claimStatus": "paid",
-                    "adjudicationDate": "2026-03-01",
-                    "referenceId": "REF-789",
+                    "ClaimStatus": "paid",
+                    "AdjudicationDate": "2026-03-01",
+                    "ReferenceId": "REF-789",
                 }
             )
         )
-        result = client.check_claim_status("REF-789")
+        result = client.check_claim_status("CLM-789")
         assert isinstance(result, ClaimStatusResponse)
         assert result.claim_status == "paid"
         assert result.adjudication_date == "2026-03-01"
         assert result.reference_id == "REF-789"
+
+    def test_claim_history_xml_response(self) -> None:
+        """XML/HTML responses return raw_response with raw_text."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                text="<ClaimHistory><Claim>...</Claim></ClaimHistory>",
+                headers={"content-type": "text/xml"},
+            )
+
+        client = _make_client(handler)
+        result = client.check_claim_status("CLM-789")
+        assert result.status == "received"
+        assert "raw_text" in result.raw_response
+        assert "<ClaimHistory>" in result.raw_response["raw_text"]
+
+
+# ---------------------------------------------------------------------------
+# AC-4: Submit claim (placeholder)
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitClaim:
+    """Verify submit_claim raises until endpoint is confirmed."""
+
+    def test_submit_claim_raises(self) -> None:
+        client = _make_client(_ok_json_handler({}))
+        with pytest.raises(ClearinghouseError, match="not yet configured"):
+            client.submit_claim({"payer_id": "00520"})
+
+
+# ---------------------------------------------------------------------------
+# AC-5: Prior Auth
+# ---------------------------------------------------------------------------
+
+
+class TestPriorAuth:
+    """Verify prior auth request structure."""
+
+    def test_prior_auth_posts_json_with_credentials(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "received"})
+
+        client = _make_client(handler)
+        client.check_prior_auth_status("278*EDI*PAYLOAD*HERE~")
+
+        assert len(captured) == 1
+        req = captured[0]
+        assert req.method == "POST"
+
+        import json
+
+        body = json.loads(req.content)
+        assert body["Username"] == "test-user"
+        assert body["Password"] == "test-pass"
+        assert body["CustID"] == "12345"
+        assert body["PayloadType"] == "1952"
+        assert body["Payload"] == "278*EDI*PAYLOAD*HERE~"
+
+    def test_prior_auth_uses_prior_auth_base_url(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "ok"})
+
+        client = _make_client(handler)
+        client.check_prior_auth_status("test-payload")
+
+        url = str(captured[0].url)
+        assert url.startswith(DEFAULT_PRIOR_AUTH_BASE_URL)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +584,9 @@ class TestErrorHandling:
             "claim_validator.clearinghouse.providers.waystar.time.sleep"
         ):
             with pytest.raises(ClearinghouseServerError):
-                client.check_eligibility({"payer_id": "00520", "npi": "123"})
+                client.check_eligibility(
+                    {"payer_id": "00520", "npi": "123"}
+                )
         assert call_count == 2  # Original + 1 retry
 
     def test_500_retry_succeeds(self) -> None:
@@ -447,8 +616,17 @@ class TestErrorHandling:
         with pytest.raises(ClearinghouseTimeoutError, match="timed out"):
             client.check_eligibility({"payer_id": "00520", "npi": "123"})
 
+    def test_claim_history_timeout(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("Connection timed out")
+
+        client = _make_client(handler)
+        with pytest.raises(
+            ClearinghouseTimeoutError, match="claim history"
+        ):
+            client.check_claim_status("CLM-789")
+
     def test_no_phi_in_error_messages(self) -> None:
-        """Error messages should reference field names, not actual patient data."""
         client = _make_client(_error_handler(422, {"message": "Invalid NPI"}))
         with pytest.raises(ClearinghouseValidationError) as exc_info:
             client.check_eligibility(
@@ -480,7 +658,29 @@ class TestFactoryIntegration:
         fake_mod.WaystarClient = WaystarClient  # type: ignore[attr-defined]
         with patch.dict(sys.modules, {fake_mod.__name__: fake_mod}):
             client = get_clearinghouse_client(
-                "waystar", api_key="test-key", secret="test-secret"
+                "waystar",
+                api_key="test-key",
+                secret="test-secret",
+                user_id="test-user",
+                password="test-pass",
+                cust_id="12345",
             )
             assert isinstance(client, WaystarClient)
             assert client.provider_name == "waystar"
+
+
+# ---------------------------------------------------------------------------
+# Utility function tests
+# ---------------------------------------------------------------------------
+
+
+class TestUtilities:
+    """Verify helper functions."""
+
+    def test_utc_timestamp_format(self) -> None:
+        ts = _utc_timestamp()
+        # Format: MM/DD/YYYY HH:MM:SS AM/PM
+        assert "/" in ts
+        assert ("AM" in ts) or ("PM" in ts)
+        parts = ts.split(" ")
+        assert len(parts) == 3  # date, time, AM/PM
