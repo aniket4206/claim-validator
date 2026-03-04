@@ -79,17 +79,30 @@ class ExplodingValidator(BaseValidator):
 
 
 class MockClearinghouseClient:
-    """Duck-typed clearinghouse client for testing."""
+    """Duck-typed clearinghouse client for testing.
+
+    Supports all three dispatch methods used by BasePipeline:
+    check_eligibility, submit_claim, check_claim_status.
+    """
 
     def __init__(self, *, should_fail: bool = False) -> None:
         self.called = False
         self._should_fail = should_fail
 
-    def submit(self, data: Any) -> dict[str, str]:
+    def _do_call(self) -> dict[str, str]:
         self.called = True
         if self._should_fail:
             raise RuntimeError("Clearinghouse error")
         return {"status": "ok"}
+
+    def check_eligibility(self, data: Any) -> dict[str, str]:
+        return self._do_call()
+
+    def submit_claim(self, data: Any) -> dict[str, str]:
+        return self._do_call()
+
+    def check_claim_status(self, ref: str) -> dict[str, str]:
+        return self._do_call()
 
 
 # ---------------------------------------------------------------------------

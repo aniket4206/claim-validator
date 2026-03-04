@@ -43,6 +43,7 @@ def pre_claim_check(
     pa_request: PriorAuthRequest | None = None,
     settings: ClaimValidatorSettings | None = None,
     ai_config: dict[str, Any] | None = None,
+    clearinghouse_config: dict[str, Any] | None = None,
 ) -> PreClaimResult:
     """Run the unified pre-claim check: eligibility -> PA determination -> PA validation.
 
@@ -55,6 +56,10 @@ def pre_claim_check(
         settings: Optional settings override. Uses defaults if ``None``.
         ai_config: Optional AI provider config dict. Overrides
             ``settings.ai_config`` when both are provided.
+        clearinghouse_config: Optional clearinghouse provider config dict.
+            Keys: ``provider`` (required), plus provider-specific keys
+            (``api_key``, ``secret``, etc.). Overrides
+            ``settings.clearinghouse_config`` when both are provided.
 
     Returns:
         PreClaimResult with combined findings and ``ready_to_submit`` flag.
@@ -67,6 +72,17 @@ def pre_claim_check(
             settings = settings.model_copy(update={"ai_config": ai_config})
         else:
             settings = ClaimValidatorSettings(ai_config=ai_config)
+
+    # Wire clearinghouse_config into settings
+    if clearinghouse_config is not None:
+        if settings is not None:
+            settings = settings.model_copy(
+                update={"clearinghouse_config": clearinghouse_config},
+            )
+        else:
+            settings = ClaimValidatorSettings(
+                clearinghouse_config=clearinghouse_config,
+            )
 
     # --- Step 1: Eligibility validation ---
     elig_pipeline = EligibilityPipeline.from_settings(settings)

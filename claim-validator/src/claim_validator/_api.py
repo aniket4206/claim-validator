@@ -15,6 +15,7 @@ def validate(
     *,
     settings: ClaimValidatorSettings | None = None,
     ai_config: dict[str, Any] | None = None,
+    clearinghouse_config: dict[str, Any] | None = None,
 ) -> PipelineResult:
     """Validate a healthcare claim and return structured results.
 
@@ -25,6 +26,10 @@ def validate(
         ai_config: Optional AI provider config dict.
             Keys: provider, api_key, model (+ provider-specific).
             Overrides settings.ai_config if both provided.
+        clearinghouse_config: Optional clearinghouse provider config dict.
+            Keys: ``provider`` (required), plus provider-specific keys
+            (``api_key``, ``secret``, etc.). Overrides
+            ``settings.clearinghouse_config`` when both provided.
 
     Returns:
         PipelineResult with findings from all validators.
@@ -45,6 +50,16 @@ def validate(
         else:
             settings = ClaimValidatorSettings(
                 ai_config=ai_config,
+            )
+
+    if clearinghouse_config is not None:
+        if settings is not None:
+            settings = settings.model_copy(
+                update={"clearinghouse_config": clearinghouse_config},
+            )
+        else:
+            settings = ClaimValidatorSettings(
+                clearinghouse_config=clearinghouse_config,
             )
 
     pipeline = ValidationPipeline.from_settings(settings)

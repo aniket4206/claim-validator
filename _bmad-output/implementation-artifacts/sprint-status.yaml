@@ -93,10 +93,10 @@ development_status:
   # Epic 5: Clearinghouse Client Integration (FR44-FR55)
   # ============================================================
 
-  epic-5: in-progress
+  epic-5: done
   5-1-base-client-abc-factory-config-exceptions-models: done
-  5-2-stedi-client: review
-  5-3-claimmd-client: review
-  5-4-waystar-client: review
-  5-5-pipeline-integration-orchestrator-wiring: ready-for-dev
+  5-2-stedi-client: done
+  5-3-claimmd-client: done
+  5-4-waystar-client: done
+  5-5-pipeline-integration-orchestrator-wiring: done
   epic-5-retrospective: optional

@@ -10,6 +10,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from claim_validator.clearinghouse.exceptions import (
+    ClearinghouseAuthError,
+    ClearinghouseError,
+    ClearinghouseTimeoutError,
+    ClearinghouseValidationError,
+)
 from claim_validator.constants import Severity
 from claim_validator.exceptions import LLMError
 from claim_validator.models.results import (
@@ -120,11 +126,94 @@ class BasePipeline:
         )
 
     def _run_clearinghouse_phase(self, input_data: Any) -> PhaseResult:
-        """Execute the clearinghouse submission phase."""
+        """Execute the clearinghouse phase, dispatching by domain.
+
+        Calls the appropriate clearinghouse method based on
+        ``PipelineConfig.domain``:
+          - ``"eligibility"`` → ``check_eligibility(input_data)``
+          - ``"claim"`` → ``submit_claim(input_data)``
+          - otherwise → ``check_claim_status(str(input_data))``
+
+        ClearinghouseError subtypes are mapped to Finding severities:
+          - ``ClearinghouseValidationError`` → WARNING (data issue)
+          - ``ClearinghouseAuthError`` → ERROR (config issue)
+          - ``ClearinghouseTimeoutError`` → ERROR (transient)
+          - ``ClearinghouseError`` → ERROR (catch-all)
+        """
         start = time.perf_counter()
         outputs: list[ValidatorOutput] = []
         try:
-            self._config.clearinghouse_client.submit(input_data)
+            client = self._config.clearinghouse_client
+            domain = self._config.domain
+            if domain == "eligibility":
+                client.check_eligibility(input_data)
+            elif domain == "claim":
+                client.submit_claim(input_data)
+            else:
+                client.check_claim_status(str(input_data))
+        except ClearinghouseValidationError as exc:
+            outputs.append(
+                ValidatorOutput(
+                    validator_name="clearinghouse",
+                    findings=[
+                        Finding(
+                            code=f"{self._config.code_prefix}CLEARINGHOUSE_VALIDATION",
+                            message=str(exc),
+                            severity=Severity.WARNING,
+                            field_name="",
+                            suggestion="Check request data for clearinghouse submission",
+                        )
+                    ],
+                )
+            )
+        except ClearinghouseAuthError as exc:
+            outputs.append(
+                ValidatorOutput(
+                    validator_name="clearinghouse",
+                    findings=[
+                        Finding(
+                            code=f"{self._config.code_prefix}CLEARINGHOUSE_AUTH",
+                            message="Clearinghouse authentication failed",
+                            severity=Severity.ERROR,
+                            field_name="",
+                            suggestion="Check clearinghouse API credentials",
+                            context={"error": str(exc)},
+                        )
+                    ],
+                )
+            )
+        except ClearinghouseTimeoutError as exc:
+            outputs.append(
+                ValidatorOutput(
+                    validator_name="clearinghouse",
+                    findings=[
+                        Finding(
+                            code=f"{self._config.code_prefix}CLEARINGHOUSE_TIMEOUT",
+                            message="Clearinghouse request timed out",
+                            severity=Severity.ERROR,
+                            field_name="",
+                            suggestion="Retry later or check network connectivity",
+                            context={"error": str(exc)},
+                        )
+                    ],
+                )
+            )
+        except ClearinghouseError as exc:
+            outputs.append(
+                ValidatorOutput(
+                    validator_name="clearinghouse",
+                    findings=[
+                        Finding(
+                            code=f"{self._config.code_prefix}CLEARINGHOUSE_ERROR",
+                            message="Clearinghouse call failed",
+                            severity=Severity.ERROR,
+                            field_name="",
+                            suggestion="Check clearinghouse client configuration",
+                            context={"error": str(exc)},
+                        )
+                    ],
+                )
+            )
         except Exception as exc:
             outputs.append(
                 ValidatorOutput(
@@ -132,10 +221,10 @@ class BasePipeline:
                     findings=[
                         Finding(
                             code=f"{self._config.code_prefix}CLEARINGHOUSE_ERROR",
-                            message="Clearinghouse submission failed",
+                            message="Unexpected clearinghouse error",
                             severity=Severity.ERROR,
                             field_name="",
-                            suggestion="Check clearinghouse client configuration",
+                            suggestion="Check clearinghouse client implementation",
                             context={"error": str(exc)},
                         )
                     ],

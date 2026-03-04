@@ -11,6 +11,7 @@ from claim_validator._api import validate
 from claim_validator.clearinghouse import (
     BaseClearinghouseClient,
     ClearinghouseError,
+    build_clearinghouse_client,
     get_clearinghouse_client,
 )
 from claim_validator.conf import ClaimValidatorSettings
@@ -87,6 +88,7 @@ __all__ = [
     "BaseAIValidator",
     "BaseClearinghouseClient",
     "BaseLLMClient",
+    "build_clearinghouse_client",
     "BaseValidator",
     "BenefitInfo",
     "CertificationActionCode",
