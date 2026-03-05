@@ -154,7 +154,7 @@ class TestEligibility:
         assert result.status == "active"
         assert result.eligible is True
         assert result.reference_id == "CTL-123"
-        assert result.plan_info["planName"] == "BCBS PPO"
+        assert result.plan_info["planInformation"]["planName"] == "BCBS PPO"
 
     def test_eligibility_inactive(self) -> None:
         client = _make_client(
@@ -278,6 +278,56 @@ class TestEligibility:
         })
         body = json.loads(captured[0].content)
         assert body["encounter"]["dateOfService"] == "20260315"
+
+    def test_eligibility_response_parses_benefits_information(self) -> None:
+        """benefitsInformation is captured in plan_info."""
+        stedi_response = {
+            "statusCode": "active",
+            "benefitsInformation": [
+                {"code": "1", "coverageLevelCode": "IND", "serviceTypeCodes": ["30"]},
+                {"code": "C", "coverageLevelCode": "IND", "serviceTypeCodes": ["30"], "benefitAmount": "1500.00"},
+            ],
+            "planDateInformation": {"eligibilityBegin": "20240101", "eligibilityEnd": "20241231"},
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is True
+        assert len(result.plan_info["benefitsInformation"]) == 2
+        assert result.plan_info["planDateInformation"]["eligibilityBegin"] == "20240101"
+
+    def test_eligibility_response_parses_status_code_field(self) -> None:
+        """Newer Stedi responses use statusCode instead of status."""
+        stedi_response = {"statusCode": "active"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.status == "active"
+        assert result.eligible is True
+
+    def test_eligibility_response_inactive_status_code(self) -> None:
+        """statusCode=inactive means not eligible."""
+        stedi_response = {"statusCode": "inactive"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is False
+
+    def test_eligibility_response_captures_control_number(self) -> None:
+        """controlNumber from response is mapped to reference_id."""
+        stedi_response = {"statusCode": "active", "controlNumber": "CTL-555"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.reference_id == "CTL-555"
+
+    def test_eligibility_response_captures_errors(self) -> None:
+        """AAA errors from payer are captured in errors list."""
+        stedi_response = {
+            "statusCode": "unknown",
+            "errors": [{"code": "72", "description": "Invalid/Missing Subscriber ID"}],
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is None
+        assert len(result.errors) == 1
+        assert "Invalid/Missing Subscriber ID" in result.errors[0]
 
     def test_eligibility_maps_submitter_transaction_identifier(self) -> None:
         captured: list[httpx.Request] = []

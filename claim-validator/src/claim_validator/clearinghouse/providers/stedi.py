@@ -263,19 +263,36 @@ class StediClient(BaseClearinghouseClient):
         data: dict[str, Any],
     ) -> ClearinghouseEligibilityResponse:
         """Parse Stedi eligibility response to library model."""
-        status = data.get("status", "unknown")
-        plan_info: dict[str, Any] = {}
-        if "planInformation" in data:
-            plan_info = data["planInformation"]
-        elif "planStatus" in data:
-            plan_info = {"planStatus": data["planStatus"]}
+        # Stedi uses "statusCode" in newer responses, "status" in legacy
+        status = data.get("statusCode") or data.get("status", "unknown")
 
+        # Determine eligibility from status or planStatus
         eligible: bool | None = None
         plan_status = data.get("planStatus")
         if plan_status:
             eligible = plan_status.lower() in ("active", "active - full")
         elif status.lower() == "active":
             eligible = True
+        elif status.lower() in ("inactive", "terminated"):
+            eligible = False
+
+        # Build plan_info from structured response fields
+        plan_info: dict[str, Any] = {}
+        if "planInformation" in data:
+            plan_info["planInformation"] = data["planInformation"]
+        if "planDateInformation" in data:
+            plan_info["planDateInformation"] = data["planDateInformation"]
+        if "benefitsInformation" in data:
+            plan_info["benefitsInformation"] = data["benefitsInformation"]
+        if "planStatus" in data:
+            plan_info["planStatus"] = data["planStatus"]
+
+        # Extract errors from AAA rejections
+        errors: list[str] = []
+        for err in data.get("errors", []):
+            desc = err.get("description") or err.get("message", "")
+            code = err.get("code", "")
+            errors.append(f"{code}: {desc}" if code else desc)
 
         return ClearinghouseEligibilityResponse(
             status=status,
@@ -283,6 +300,7 @@ class StediClient(BaseClearinghouseClient):
             reference_id=data.get("controlNumber"),
             plan_info=plan_info,
             raw_response=data,
+            errors=errors,
         )
 
     @staticmethod
