@@ -383,12 +383,62 @@ class StediClient(BaseClearinghouseClient):
         payload: dict[str, Any] = {
             "tradingPartnerServiceId": claim_data.get("payer_id", ""),
         }
+        if "trading_partner_name" in claim_data:
+            payload["tradingPartnerName"] = claim_data["trading_partner_name"]
+        if "usage_indicator" in claim_data:
+            payload["usageIndicator"] = claim_data["usage_indicator"]
+
         if billing:
             payload["billing"] = billing
+
+        # Subscriber with full demographics
         if "subscriber_id" in claim_data:
-            payload["subscriber"] = {
+            subscriber: dict[str, Any] = {
                 "memberId": claim_data["subscriber_id"],
             }
+            if "first_name" in claim_data:
+                subscriber["firstName"] = claim_data["first_name"]
+            if "last_name" in claim_data:
+                subscriber["lastName"] = claim_data["last_name"]
+            if "dob" in claim_data:
+                subscriber["dateOfBirth"] = _strip_dashes(claim_data["dob"])
+            if "gender" in claim_data:
+                subscriber["gender"] = claim_data["gender"]
+            if "subscriber_address" in claim_data:
+                subscriber["address"] = claim_data["subscriber_address"]
+            if "payment_responsibility" in claim_data:
+                subscriber["paymentResponsibilityLevelCode"] = (
+                    claim_data["payment_responsibility"]
+                )
+            payload["subscriber"] = subscriber
+
+        # Claim metadata fields
+        if "claim_filing_code" in claim_data:
+            claim_info["claimFilingCode"] = claim_data["claim_filing_code"]
+        if "claim_frequency_code" in claim_data:
+            claim_info["claimFrequencyCode"] = claim_data["claim_frequency_code"]
+        if "patient_control_number" in claim_data:
+            claim_info["patientControlNumber"] = (
+                claim_data["patient_control_number"]
+            )
+        if "benefits_assignment" in claim_data:
+            claim_info["benefitsAssignmentCertificationIndicator"] = (
+                claim_data["benefits_assignment"]
+            )
+        if "claim_date_info" in claim_data:
+            claim_info["claimDateInformation"] = claim_data["claim_date_info"]
+
+        # Supplemental info (prior auth, referral, etc.)
+        supplemental: dict[str, Any] = {}
+        if "prior_auth_number" in claim_data:
+            supplemental["priorAuthorizationNumber"] = (
+                claim_data["prior_auth_number"]
+            )
+        if "referral_number" in claim_data:
+            supplemental["referralNumber"] = claim_data["referral_number"]
+        if supplemental:
+            claim_info["claimSupplementalInformation"] = supplemental
+
         if claim_info:
             payload["claimInformation"] = claim_info
         return payload

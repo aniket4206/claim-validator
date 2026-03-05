@@ -552,6 +552,67 @@ class TestSubmitClaim:
         assert billing["address"]["postalCode"] == "123450000"
         assert billing["contactInformation"][0]["phoneNumber"] == "6175551234"
 
+    def test_subscriber_and_claim_metadata_mapping(self) -> None:
+        """Subscriber should include demographics; claim should include filing codes."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "STEDITEST",
+            "trading_partner_name": "Stedi Test Payer",
+            "usage_indicator": "T",
+            "subscriber_id": "U7777788888",
+            "first_name": "John",
+            "last_name": "Anon",
+            "dob": "2000-01-01",
+            "gender": "M",
+            "subscriber_address": {
+                "address1": "456 Oak Ave",
+                "city": "Cambridge",
+                "state": "MA",
+                "postalCode": "021381234",
+            },
+            "payment_responsibility": "P",
+            "claim_filing_code": "12",
+            "claim_frequency_code": "1",
+            "patient_control_number": "CLM-001",
+            "benefits_assignment": "Y",
+            "prior_auth_number": "AUTH123",
+            "claim_date_info": {"initialTreatmentDate": "20240115"},
+        })
+
+        body = json.loads(captured[0].content)
+
+        # Top-level fields
+        assert body["tradingPartnerServiceId"] == "STEDITEST"
+        assert body["tradingPartnerName"] == "Stedi Test Payer"
+        assert body["usageIndicator"] == "T"
+
+        # Subscriber
+        sub = body["subscriber"]
+        assert sub["memberId"] == "U7777788888"
+        assert sub["firstName"] == "John"
+        assert sub["lastName"] == "Anon"
+        assert sub["dateOfBirth"] == "20000101"
+        assert sub["gender"] == "M"
+        assert sub["address"]["address1"] == "456 Oak Ave"
+        assert sub["paymentResponsibilityLevelCode"] == "P"
+
+        # Claim metadata
+        ci = body["claimInformation"]
+        assert ci["claimFilingCode"] == "12"
+        assert ci["claimFrequencyCode"] == "1"
+        assert ci["patientControlNumber"] == "CLM-001"
+        assert ci["benefitsAssignmentCertificationIndicator"] == "Y"
+        assert ci["claimSupplementalInformation"]["priorAuthorizationNumber"] == "AUTH123"
+        assert ci["claimDateInformation"]["initialTreatmentDate"] == "20240115"
+
     def test_submission_rejected(self) -> None:
         client = _make_client(
             _ok_handler({"status": "rejected", "errors": ["Invalid NPI"]})
