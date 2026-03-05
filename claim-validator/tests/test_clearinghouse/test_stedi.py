@@ -514,6 +514,44 @@ class TestSubmitClaim:
         assert ps["procedureModifiers"] == ["25"]
         assert line["serviceDate"] == "20240115"
 
+    def test_billing_provider_full_mapping(self) -> None:
+        """Billing provider should include address, employerId, org name, contact."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "billing_npi": "1234567890",
+            "taxonomy_code": "2084P0800X",
+            "billing_employer_id": "123456789",
+            "billing_organization_name": "Therapy Associates",
+            "billing_address": {
+                "address1": "123 Some St",
+                "city": "A City",
+                "state": "NY",
+                "postalCode": "123450000",
+            },
+            "billing_contact_phone": "6175551234",
+        })
+
+        body = json.loads(captured[0].content)
+        billing = body["billing"]
+        assert billing["npi"] == "1234567890"
+        assert billing["taxonomyCode"] == "2084P0800X"
+        assert billing["employerId"] == "123456789"
+        assert billing["organizationName"] == "Therapy Associates"
+        assert billing["address"]["address1"] == "123 Some St"
+        assert billing["address"]["city"] == "A City"
+        assert billing["address"]["state"] == "NY"
+        assert billing["address"]["postalCode"] == "123450000"
+        assert billing["contactInformation"][0]["phoneNumber"] == "6175551234"
+
     def test_submission_rejected(self) -> None:
         client = _make_client(
             _ok_handler({"status": "rejected", "errors": ["Invalid NPI"]})

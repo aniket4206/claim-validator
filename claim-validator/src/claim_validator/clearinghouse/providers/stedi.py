@@ -318,6 +318,27 @@ class StediClient(BaseClearinghouseClient):
             billing["npi"] = claim_data["billing_npi"]
         if "taxonomy_code" in claim_data:
             billing["taxonomyCode"] = claim_data["taxonomy_code"]
+        if "billing_employer_id" in claim_data:
+            billing["employerId"] = claim_data["billing_employer_id"]
+        if "billing_ssn" in claim_data:
+            billing["ssn"] = claim_data["billing_ssn"]
+        if "billing_organization_name" in claim_data:
+            billing["organizationName"] = claim_data["billing_organization_name"]
+        if "billing_first_name" in claim_data:
+            billing["firstName"] = claim_data["billing_first_name"]
+        if "billing_last_name" in claim_data:
+            billing["lastName"] = claim_data["billing_last_name"]
+        if "billing_address" in claim_data:
+            billing["address"] = claim_data["billing_address"]
+        if "billing_contact_phone" in claim_data:
+            contact: dict[str, str] = {
+                "phoneNumber": claim_data["billing_contact_phone"]
+            }
+            if "billing_contact_fax" in claim_data:
+                contact["faxNumber"] = claim_data["billing_contact_fax"]
+            if "billing_contact_email" in claim_data:
+                contact["email"] = claim_data["billing_contact_email"]
+            billing["contactInformation"] = [contact]
 
         claim_info: dict[str, Any] = {}
         if "total_charge" in claim_data:
