@@ -47,7 +47,10 @@
       "WebFetch(domain:developer.zirmed.com)",
       "WebFetch(domain:sur.ly)",
       "Bash(/home/lnv-20/Documents/chatbot/venv/bin/pip install:*)",
-      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/python:*)"
+      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/python:*)",
+      "Bash(/home/lnv-20/Documents/claude/claim-validator/.venv/bin/pip install:*)",
+      "Bash(/home/lnv-20/Documents/claude/claim-validator/.venv/bin/python:*)",
+      "mcp__plugin_superpowers-chrome_chrome__use_browser"
     ]
   }
 }
