@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from claim_validator.conf import ClaimValidatorSettings
+
+if TYPE_CHECKING:
+    from claim_validator.clearinghouse.models.batch_eligibility import (
+        BatchEligibilityResponse,
+    )
 from claim_validator.eligibility.models.request import EligibilityRequest
 from claim_validator.eligibility.models.response import EligibilityResponse
 from claim_validator.eligibility.models.result import EligibilityResult
@@ -67,7 +72,7 @@ def check_eligibility_batch(
     name: str,
     items: list[dict[str, Any]],
     settings: ClaimValidatorSettings | None = None,
-) -> "BatchEligibilityResponse":
+) -> BatchEligibilityResponse:
     """Submit a batch eligibility check via the configured clearinghouse.
 
     Args:
@@ -90,7 +95,6 @@ def check_eligibility_batch(
     from claim_validator.clearinghouse.models.batch_eligibility import (
         BatchEligibilityItem,
         BatchEligibilityRequest,
-        BatchEligibilityResponse,
     )
 
     ch_config = dict(settings.clearinghouse_config)

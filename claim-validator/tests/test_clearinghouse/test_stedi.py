@@ -24,7 +24,6 @@ from claim_validator.clearinghouse.models.batch_eligibility import (
     BatchEligibilityItem,
     BatchEligibilityRequest,
     BatchEligibilityResponse,
-    BatchItemStatus,
 )
 from claim_validator.clearinghouse.providers.stedi import (
     DEFAULT_BASE_URL,
@@ -293,7 +292,12 @@ class TestEligibility:
             "statusCode": "active",
             "benefitsInformation": [
                 {"code": "1", "coverageLevelCode": "IND", "serviceTypeCodes": ["30"]},
-                {"code": "C", "coverageLevelCode": "IND", "serviceTypeCodes": ["30"], "benefitAmount": "1500.00"},
+                {
+                    "code": "C",
+                    "coverageLevelCode": "IND",
+                    "serviceTypeCodes": ["30"],
+                    "benefitAmount": "1500.00",
+                },
             ],
             "planDateInformation": {"eligibilityBegin": "20240101", "eligibilityEnd": "20241231"},
         }
