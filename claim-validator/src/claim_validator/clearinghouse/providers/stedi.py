@@ -413,13 +413,27 @@ class StediClient(BaseClearinghouseClient):
     ) -> ClearinghouseEligibilityResponse:
         """Parse Stedi eligibility response to library model."""
         # Stedi uses "statusCode" in newer responses, "status" in legacy
-        status = data.get("statusCode") or data.get("status", "unknown")
+        status = data.get("statusCode") or data.get("status") or "unknown"
 
         # Determine eligibility from status or planStatus
         eligible: bool | None = None
         plan_status = data.get("planStatus")
         if plan_status:
-            eligible = plan_status.lower() in ("active", "active - full")
+            # planStatus can be a list of objects or a string
+            if isinstance(plan_status, list):
+                has_active = any(
+                    ps.get("status", "").lower() in ("active coverage",)
+                    or ps.get("statusCode") == "1"
+                    for ps in plan_status
+                )
+                has_inactive = any(
+                    ps.get("status", "").lower() in ("inactive",)
+                    or ps.get("statusCode") == "6"
+                    for ps in plan_status
+                )
+                eligible = has_active and not has_inactive
+            elif isinstance(plan_status, str):
+                eligible = plan_status.lower() in ("active", "active - full")
         elif status.lower() == "active":
             eligible = True
         elif status.lower() in ("inactive", "terminated"):
