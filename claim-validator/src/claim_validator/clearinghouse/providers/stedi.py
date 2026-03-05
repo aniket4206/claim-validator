@@ -21,6 +21,11 @@ from claim_validator.clearinghouse.models import (
     ClearinghouseEligibilityResponse,
     SubmissionResult,
 )
+from claim_validator.clearinghouse.models.batch_eligibility import (
+    BatchEligibilityItem,
+    BatchEligibilityRequest,
+    BatchEligibilityResponse,
+)
 
 DEFAULT_BASE_URL = "https://healthcare.us.stedi.com/2024-04-01"
 
@@ -29,6 +34,9 @@ _PROFESSIONAL_CLAIMS_PATH = (
     "/change/medicalnetwork/professionalclaims/v3/submission"
 )
 _CLAIM_STATUS_PATH = "/change/medicalnetwork/claimstatus/v2"
+
+DEFAULT_MANAGER_BASE_URL = "https://manager.us.stedi.com/2024-04-01"
+_BATCH_ELIGIBILITY_PATH = "/eligibility-manager/batch-eligibility"
 
 
 def _strip_dashes(date_str: str) -> str:
@@ -70,6 +78,19 @@ class StediClient(BaseClearinghouseClient):
                 "Content-Type": "application/json",
             },
         )
+        self._manager_client = httpx.Client(
+            base_url=DEFAULT_MANAGER_BASE_URL,
+            timeout=httpx.Timeout(timeout, connect=10.0),
+            headers={
+                "Authorization": api_key,
+                "Content-Type": "application/json",
+            },
+        )
+
+    def close(self) -> None:
+        """Close both HTTP clients."""
+        self._client.close()
+        self._manager_client.close()
 
     @property
     def provider_name(self) -> str:
@@ -129,6 +150,33 @@ class StediClient(BaseClearinghouseClient):
         self._handle_response(response)
         data = response.json()
         return self._parse_status_response(data)
+
+    def submit_eligibility_batch(
+        self, request: BatchEligibilityRequest
+    ) -> BatchEligibilityResponse:
+        """Submit a batch of eligibility checks.
+
+        Uses the Stedi Manager API which processes checks asynchronously.
+        Poll with ``get_batch_eligibility_status()`` to track progress.
+
+        Args:
+            request: Batch eligibility request with named items.
+
+        Returns:
+            Batch response with batch_id for status polling.
+        """
+        payload = self._to_stedi_batch(request)
+        try:
+            response = self._manager_client.post(
+                _BATCH_ELIGIBILITY_PATH, json=payload
+            )
+        except httpx.TimeoutException as exc:
+            raise ClearinghouseTimeoutError(
+                f"Stedi batch request timed out: {_BATCH_ELIGIBILITY_PATH}"
+            ) from exc
+        self._handle_response(response)
+        data = response.json()
+        return self._parse_batch_response(data)
 
     # -- Field mapping helpers -----------------------------------------------
 
@@ -256,6 +304,54 @@ class StediClient(BaseClearinghouseClient):
         """Translate claim reference to Stedi status request JSON."""
         return {"claimReference": claim_ref}
 
+    @staticmethod
+    def _to_stedi_batch_item(item: BatchEligibilityItem) -> dict[str, Any]:
+        """Translate a single batch item to Stedi JSON format."""
+        subscriber: dict[str, Any] = {
+            "memberId": item.subscriber_id,
+            "firstName": item.first_name,
+            "lastName": item.last_name,
+            "dateOfBirth": item.dob,
+        }
+        if item.gender:
+            subscriber["gender"] = item.gender
+
+        provider: dict[str, Any] = {"npi": item.npi}
+        if item.organization_name:
+            provider["organizationName"] = item.organization_name
+
+        stedi_item: dict[str, Any] = {
+            "tradingPartnerServiceId": item.payer_id,
+            "provider": provider,
+            "subscriber": subscriber,
+        }
+
+        if item.service_types:
+            stedi_item["encounter"] = {"serviceTypeCodes": item.service_types}
+        if item.date_of_service:
+            stedi_item.setdefault("encounter", {})["dateOfService"] = (
+                _strip_dashes(item.date_of_service)
+            )
+        if item.submitter_transaction_id:
+            stedi_item["submitterTransactionIdentifier"] = (
+                item.submitter_transaction_id
+            )
+        if item.external_patient_id:
+            stedi_item["externalPatientId"] = item.external_patient_id
+
+        return stedi_item
+
+    @staticmethod
+    def _to_stedi_batch(request: BatchEligibilityRequest) -> dict[str, Any]:
+        """Translate batch request to Stedi batch JSON format."""
+        return {
+            "name": request.name,
+            "items": [
+                StediClient._to_stedi_batch_item(item)
+                for item in request.items
+            ],
+        }
+
     # -- Response parsing helpers --------------------------------------------
 
     @staticmethod
@@ -324,6 +420,16 @@ class StediClient(BaseClearinghouseClient):
             claim_status=data.get("claimStatus"),
             adjudication_date=data.get("adjudicationDate"),
             reference_id=data.get("controlNumber"),
+            raw_response=data,
+        )
+
+    @staticmethod
+    def _parse_batch_response(data: dict[str, Any]) -> BatchEligibilityResponse:
+        """Parse Stedi batch eligibility response."""
+        return BatchEligibilityResponse(
+            batch_id=data.get("batchId", ""),
+            status=data.get("status", "unknown"),
+            total_items=data.get("totalChecks", 0),
             raw_response=data,
         )
 

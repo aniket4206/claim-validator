@@ -20,10 +20,17 @@ from claim_validator.clearinghouse.models import (
     ClearinghouseEligibilityResponse,
     SubmissionResult,
 )
+from claim_validator.clearinghouse.models.batch_eligibility import (
+    BatchEligibilityItem,
+    BatchEligibilityRequest,
+    BatchEligibilityResponse,
+)
 from claim_validator.clearinghouse.providers.stedi import (
     DEFAULT_BASE_URL,
     StediClient,
 )
+
+MANAGER_BASE_URL = "https://manager.us.stedi.com/2024-04-01"
 
 
 def _make_client(handler: Any) -> StediClient:
@@ -660,3 +667,138 @@ class TestFactoryIntegration:
             client = get_clearinghouse_client("stedi", api_key="test-key")
             assert isinstance(client, StediClient)
             assert client.provider_name == "stedi"
+
+
+# ---------------------------------------------------------------------------
+# Batch Eligibility
+# ---------------------------------------------------------------------------
+
+
+def _make_batch_client(handler: Any) -> StediClient:
+    """Create a StediClient with mocked manager client for batch operations."""
+    transport = httpx.MockTransport(handler)
+    client = StediClient(api_key="test-key")
+    client._manager_client.close()
+    client._manager_client = httpx.Client(
+        transport=transport,
+        base_url=MANAGER_BASE_URL,
+        headers={"Authorization": "test-key", "Content-Type": "application/json"},
+    )
+    return client
+
+
+def _sample_batch_request(num_items: int = 1) -> BatchEligibilityRequest:
+    """Create a sample batch request with the given number of items."""
+    items = [
+        BatchEligibilityItem(
+            payer_id=f"PAYER{i}",
+            npi=f"NPI{i:010d}",
+            subscriber_id=f"SUB{i:03d}",
+            first_name=f"First{i}",
+            last_name=f"Last{i}",
+            dob=f"199{i}-01-15",
+            service_types=["30"],
+            organization_name=f"Org{i}",
+            date_of_service=f"2026-03-0{i + 1}",
+            submitter_transaction_id=f"TXN{i:03d}",
+            external_patient_id=f"EXT{i:03d}",
+            gender="M" if i % 2 == 0 else "F",
+        )
+        for i in range(num_items)
+    ]
+    return BatchEligibilityRequest(name="test-batch", items=items)
+
+
+class TestBatchEligibility:
+    """Verify batch eligibility submission via Manager API."""
+
+    def test_submit_batch_request_mapping(self) -> None:
+        """Items are translated to Stedi batch JSON format."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B1", "status": "queued", "totalChecks": 1}
+            )
+
+        client = _make_batch_client(handler)
+        req = _sample_batch_request(1)
+        client.submit_eligibility_batch(req)
+
+        assert len(captured) == 1
+        body = json.loads(captured[0].content)
+        assert body["name"] == "test-batch"
+        assert len(body["items"]) == 1
+        item = body["items"][0]
+        assert item["tradingPartnerServiceId"] == "PAYER0"
+        assert item["provider"]["npi"] == "NPI0000000000"
+        assert item["provider"]["organizationName"] == "Org0"
+        assert item["subscriber"]["memberId"] == "SUB000"
+        assert item["subscriber"]["firstName"] == "First0"
+        assert item["subscriber"]["lastName"] == "Last0"
+        assert item["subscriber"]["dateOfBirth"] == "1990-01-15"
+        assert item["subscriber"]["gender"] == "M"
+        assert item["encounter"]["serviceTypeCodes"] == ["30"]
+        assert item["encounter"]["dateOfService"] == "20260301"
+        assert item["submitterTransactionIdentifier"] == "TXN000"
+        assert item["externalPatientId"] == "EXT000"
+
+    def test_submit_batch_posts_to_correct_path(self) -> None:
+        """POST goes to the Manager API batch eligibility endpoint."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B1", "status": "queued", "totalChecks": 1}
+            )
+
+        client = _make_batch_client(handler)
+        client.submit_eligibility_batch(_sample_batch_request(1))
+        assert (
+            captured[0].url.path
+            == "/2024-04-01/eligibility-manager/batch-eligibility"
+        )
+
+    def test_submit_batch_response_parsing(self) -> None:
+        """BatchEligibilityResponse is returned with correct fields."""
+        stedi_response = {
+            "batchId": "BATCH-123",
+            "status": "queued",
+            "totalChecks": 5,
+        }
+        client = _make_batch_client(_ok_handler(stedi_response))
+        result = client.submit_eligibility_batch(_sample_batch_request(1))
+
+        assert isinstance(result, BatchEligibilityResponse)
+        assert result.batch_id == "BATCH-123"
+        assert result.status == "queued"
+        assert result.total_items == 5
+        assert result.raw_response == stedi_response
+
+    def test_submit_batch_multiple_items(self) -> None:
+        """Multiple items are all included in the request payload."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B2", "status": "queued", "totalChecks": 3}
+            )
+
+        client = _make_batch_client(handler)
+        client.submit_eligibility_batch(_sample_batch_request(3))
+
+        body = json.loads(captured[0].content)
+        assert len(body["items"]) == 3
+        payer_ids = [item["tradingPartnerServiceId"] for item in body["items"]]
+        assert payer_ids == ["PAYER0", "PAYER1", "PAYER2"]
+
+    def test_submit_batch_auth_error(self) -> None:
+        """401 from Manager API raises ClearinghouseAuthError."""
+        client = _make_batch_client(
+            _error_handler(401, {"message": "Invalid API key"})
+        )
+        with pytest.raises(ClearinghouseAuthError, match="Invalid API key"):
+            client.submit_eligibility_batch(_sample_batch_request(1))
