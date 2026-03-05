@@ -399,7 +399,8 @@ class TestSubmitClaim:
         assert body["claimInformation"]["claimChargeAmount"] == "150.0"
         assert body["claimInformation"]["placeOfServiceCode"] == "11"
         assert body["claimInformation"]["healthCareCodeInformation"][0]["diagnosisCode"] == "J06.9"
-        assert body["claimInformation"]["serviceLines"][0]["professionalService"]["procedureCode"] == "99213"
+        svc = body["claimInformation"]["serviceLines"][0]
+        assert svc["professionalService"]["procedureCode"] == "99213"
 
     def test_claim_posts_to_correct_path(self) -> None:
         captured: list[httpx.Request] = []
