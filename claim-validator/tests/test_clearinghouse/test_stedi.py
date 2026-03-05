@@ -24,6 +24,7 @@ from claim_validator.clearinghouse.models.batch_eligibility import (
     BatchEligibilityItem,
     BatchEligibilityRequest,
     BatchEligibilityResponse,
+    BatchItemStatus,
 )
 from claim_validator.clearinghouse.providers.stedi import (
     DEFAULT_BASE_URL,
@@ -802,3 +803,79 @@ class TestBatchEligibility:
         )
         with pytest.raises(ClearinghouseAuthError, match="Invalid API key"):
             client.submit_eligibility_batch(_sample_batch_request(1))
+
+    def test_get_batch_status(self) -> None:
+        """Poll batch status returns progress info."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={
+                "batchId": "batch_abc", "status": "processing",
+                "totalChecks": 10, "completedChecks": 4,
+            })
+
+        client = _make_batch_client(handler)
+        result = client.get_batch_eligibility_status("batch_abc")
+        assert isinstance(result, BatchEligibilityResponse)
+        assert result.batch_id == "batch_abc"
+        assert result.status == "processing"
+        assert result.total_items == 10
+        assert result.completed_items == 4
+
+    def test_get_batch_status_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"batchId": "batch_abc", "status": "complete"})
+
+        client = _make_batch_client(handler)
+        client.get_batch_eligibility_status("batch_abc")
+        assert captured[0].url.path == "/2024-04-01/eligibility-manager/batch/batch_abc"
+
+    def test_get_batch_results(self) -> None:
+        """Retrieve completed batch item results."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={
+                "items": [
+                    {
+                        "submitterTransactionIdentifier": "TXN1",
+                        "status": "complete",
+                        "eligibilityCheck": {"statusCode": "active", "benefitsInformation": []},
+                    },
+                    {
+                        "submitterTransactionIdentifier": "TXN2",
+                        "status": "error",
+                        "errors": [{"message": "Payer unavailable"}],
+                    },
+                ]
+            })
+
+        client = _make_batch_client(handler)
+        result = client.get_batch_eligibility_results("batch_abc")
+        assert len(result) == 2
+        assert result[0].submitter_transaction_id == "TXN1"
+        assert result[0].status == "complete"
+        assert result[0].eligibility_response["statusCode"] == "active"
+        assert result[1].status == "error"
+        assert "Payer unavailable" in result[1].errors[0]
+
+    def test_get_batch_results_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"items": []})
+
+        client = _make_batch_client(handler)
+        client.get_batch_eligibility_results("batch_abc")
+        assert captured[0].url.path == "/2024-04-01/eligibility-manager/batch/batch_abc/items"
+
+    def test_get_batch_status_auth_error(self) -> None:
+        client = _make_batch_client(_error_handler(401, {"message": "Invalid API key"}))
+        with pytest.raises(ClearinghouseAuthError):
+            client.get_batch_eligibility_status("batch_abc")

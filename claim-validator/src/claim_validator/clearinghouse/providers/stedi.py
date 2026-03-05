@@ -25,6 +25,7 @@ from claim_validator.clearinghouse.models.batch_eligibility import (
     BatchEligibilityItem,
     BatchEligibilityRequest,
     BatchEligibilityResponse,
+    BatchItemStatus,
 )
 
 DEFAULT_BASE_URL = "https://healthcare.us.stedi.com/2024-04-01"
@@ -37,6 +38,8 @@ _CLAIM_STATUS_PATH = "/change/medicalnetwork/claimstatus/v2"
 
 DEFAULT_MANAGER_BASE_URL = "https://manager.us.stedi.com/2024-04-01"
 _BATCH_ELIGIBILITY_PATH = "/eligibility-manager/batch-eligibility"
+_BATCH_STATUS_PATH = "/eligibility-manager/batch/{batch_id}"
+_BATCH_ITEMS_PATH = "/eligibility-manager/batch/{batch_id}/items"
 
 
 def _strip_dashes(date_str: str) -> str:
@@ -177,6 +180,56 @@ class StediClient(BaseClearinghouseClient):
         self._handle_response(response)
         data = response.json()
         return self._parse_batch_response(data)
+
+    def get_batch_eligibility_status(
+        self, batch_id: str
+    ) -> BatchEligibilityResponse:
+        """Poll batch eligibility status.
+
+        Args:
+            batch_id: Batch identifier from ``submit_eligibility_batch()``.
+
+        Returns:
+            Batch status with progress counts.
+        """
+        path = _BATCH_STATUS_PATH.format(batch_id=batch_id)
+        try:
+            response = self._manager_client.get(path)
+        except httpx.TimeoutException as exc:
+            raise ClearinghouseTimeoutError(
+                f"Stedi batch status timed out: {path}"
+            ) from exc
+        self._handle_response(response)
+        data = response.json()
+        return BatchEligibilityResponse(
+            batch_id=data.get("batchId", batch_id),
+            status=data.get("status", "unknown"),
+            total_items=data.get("totalChecks", 0),
+            completed_items=data.get("completedChecks", 0),
+            raw_response=data,
+        )
+
+    def get_batch_eligibility_results(
+        self, batch_id: str
+    ) -> list[BatchItemStatus]:
+        """Retrieve individual eligibility results from a completed batch.
+
+        Args:
+            batch_id: Batch identifier from ``submit_eligibility_batch()``.
+
+        Returns:
+            List of per-item eligibility results.
+        """
+        path = _BATCH_ITEMS_PATH.format(batch_id=batch_id)
+        try:
+            response = self._manager_client.get(path)
+        except httpx.TimeoutException as exc:
+            raise ClearinghouseTimeoutError(
+                f"Stedi batch results timed out: {path}"
+            ) from exc
+        self._handle_response(response)
+        data = response.json()
+        return self._parse_batch_items(data.get("items", []))
 
     # -- Field mapping helpers -----------------------------------------------
 
@@ -432,6 +485,27 @@ class StediClient(BaseClearinghouseClient):
             total_items=data.get("totalChecks", 0),
             raw_response=data,
         )
+
+    @staticmethod
+    def _parse_batch_items(items: list[dict[str, Any]]) -> list[BatchItemStatus]:
+        """Parse batch item results from Stedi response."""
+        results: list[BatchItemStatus] = []
+        for item in items:
+            errors: list[str] = [
+                err.get("message", str(err))
+                for err in item.get("errors", [])
+            ]
+            results.append(
+                BatchItemStatus(
+                    submitter_transaction_id=item.get(
+                        "submitterTransactionIdentifier", ""
+                    ),
+                    status=item.get("status", "unknown"),
+                    eligibility_response=item.get("eligibilityCheck"),
+                    errors=errors,
+                )
+            )
+        return results
 
     # -- HTTP helpers --------------------------------------------------------
 
