@@ -334,14 +334,30 @@ class StediClient(BaseClearinghouseClient):
                 for i, code in enumerate(codes)
             ]
         if "lines" in claim_data:
-            claim_info["serviceLines"] = [
-                {
+            service_lines = []
+            for line in claim_data["lines"]:
+                prof_service: dict[str, Any] = {
                     "procedureCode": line.get("cpt_code", ""),
-                    "chargeAmount": str(line.get("charge", "")),
-                    "unitCount": str(line.get("units", "1")),
+                    "procedureIdentifier": "HC",
+                    "lineItemChargeAmount": str(line.get("charge", "")),
+                    "measurementUnit": "UN",
+                    "serviceUnitCount": str(line.get("units", "1")),
                 }
-                for line in claim_data["lines"]
-            ]
+                if "modifiers" in line:
+                    prof_service["procedureModifiers"] = line["modifiers"]
+                if "diagnosis_pointers" in line:
+                    prof_service["compositeDiagnosisCodePointers"] = {
+                        "diagnosisCodePointers": line["diagnosis_pointers"]
+                    }
+                svc_line: dict[str, Any] = {
+                    "professionalService": prof_service,
+                }
+                if "service_date" in line:
+                    svc_line["serviceDate"] = _strip_dashes(
+                        line["service_date"]
+                    )
+                service_lines.append(svc_line)
+            claim_info["serviceLines"] = service_lines
 
         payload: dict[str, Any] = {
             "tradingPartnerServiceId": claim_data.get("payer_id", ""),

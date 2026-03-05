@@ -399,7 +399,7 @@ class TestSubmitClaim:
         assert body["claimInformation"]["claimChargeAmount"] == "150.0"
         assert body["claimInformation"]["placeOfServiceCode"] == "11"
         assert body["claimInformation"]["healthCareCodeInformation"][0]["diagnosisCode"] == "J06.9"
-        assert body["claimInformation"]["serviceLines"][0]["procedureCode"] == "99213"
+        assert body["claimInformation"]["serviceLines"][0]["professionalService"]["procedureCode"] == "99213"
 
     def test_claim_posts_to_correct_path(self) -> None:
         captured: list[httpx.Request] = []
@@ -474,6 +474,45 @@ class TestSubmitClaim:
         assert codes[0] == {"diagnosisTypeCode": "ABK", "diagnosisCode": "J06.9"}
         assert codes[1] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "E11.65"}
         assert codes[2] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "I10"}
+
+    def test_service_lines_nested_professional_service(self) -> None:
+        """Service lines must use nested professionalService structure."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "lines": [
+                {
+                    "cpt_code": "99213",
+                    "charge": 150.00,
+                    "units": 1,
+                    "service_date": "2024-01-15",
+                    "modifiers": ["25"],
+                    "diagnosis_pointers": ["1"],
+                },
+            ],
+        })
+
+        body = json.loads(captured[0].content)
+        line = body["claimInformation"]["serviceLines"][0]
+        ps = line["professionalService"]
+        assert ps["procedureCode"] == "99213"
+        assert ps["procedureIdentifier"] == "HC"
+        assert ps["lineItemChargeAmount"] == "150.0"
+        assert ps["measurementUnit"] == "UN"
+        assert ps["serviceUnitCount"] == "1"
+        assert ps["compositeDiagnosisCodePointers"] == {
+            "diagnosisCodePointers": ["1"]
+        }
+        assert ps["procedureModifiers"] == ["25"]
+        assert line["serviceDate"] == "20240115"
 
     def test_submission_rejected(self) -> None:
         client = _make_client(
