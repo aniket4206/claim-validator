@@ -67,14 +67,16 @@ class ValidationPipeline:
         rule_validators: list[BaseValidator],
         ai_validators: list[BaseAIValidator],
         skip_ai_on_rule_failure: bool = True,
+        clearinghouse_client: object | None = None,
     ) -> None:
         self._rule_validators = rule_validators
         self._ai_validators = ai_validators
         self._skip_ai_on_rule_failure = skip_ai_on_rule_failure
-        # BasePipeline for rule-phase execution
+        # BasePipeline for rule-phase + clearinghouse execution
         self._base_pipeline = BasePipeline(PipelineConfig(
             domain="claim",
             validators=tuple(rule_validators),
+            clearinghouse_client=clearinghouse_client,
             code_prefix="",
         ))
 
@@ -90,6 +92,17 @@ class ValidationPipeline:
         rule_vals = registry.create_validators(
             settings.rule_validators,
         )
+
+        # Clearinghouse client (optional)
+        ch_client = None
+        if settings.clearinghouse_config:
+            from claim_validator.clearinghouse.factory import (
+                get_clearinghouse_client,
+            )
+
+            ch_config = dict(settings.clearinghouse_config)
+            provider = ch_config.pop("provider")
+            ch_client = get_clearinghouse_client(provider, **ch_config)
 
         ai_vals: list[BaseAIValidator] = []
         if settings.ai_config and settings.ai_validators:
@@ -118,6 +131,7 @@ class ValidationPipeline:
             rule_validators=rule_vals,
             ai_validators=ai_vals,
             skip_ai_on_rule_failure=settings.skip_ai_on_rule_failure,
+            clearinghouse_client=ch_client,
         )
 
     @classmethod
@@ -141,12 +155,12 @@ class ValidationPipeline:
         start = time.perf_counter()
         phase_results: list[PhaseResult] = []
 
-        # Phase 1: Rule-based (delegated to BasePipeline)
-        rule_result = self._base_pipeline.run(
+        # Phase 1 (+ optional Phase 2 clearinghouse): delegated to BasePipeline
+        base_result = self._base_pipeline.run(
             claim, validation_context=validation_context,
         )
-        rule_phase = rule_result.phase_results[0]
-        phase_results.append(rule_phase)
+        phase_results.extend(base_result.phase_results)
+        rule_phase = base_result.phase_results[0]
 
         # Phase 2: AI (conditional, domain-specific multi-validator)
         if self._ai_validators:

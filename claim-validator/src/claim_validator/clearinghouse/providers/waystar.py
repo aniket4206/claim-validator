@@ -160,18 +160,23 @@ class WaystarClient(BaseClearinghouseClient):
         self._handle_response(response)
         return self._parse_eligibility_response(response)
 
-    def submit_claim(self, claim_data: dict[str, Any]) -> SubmissionResult:
+    def submit_claim(self, claim_data: dict[str, Any] | Any) -> SubmissionResult:
         """Submit a claim to Waystar.
 
         Uses the Waystar claims submission endpoint with JSON body
         and UserID/Password authentication (same pattern as prior auth).
 
         Args:
-            claim_data: Claim data dictionary (ClaimData-compatible fields).
+            claim_data: Claim data dict or Pydantic model with
+                ``model_dump()`` method.
 
         Returns:
             SubmissionResult with acceptance status and reference ID.
         """
+        # Convert Pydantic models to dict for JSON serialization
+        if hasattr(claim_data, "model_dump"):
+            claim_data = claim_data.model_dump()
+
         url = f"{self._claims_base_url}/2.0/v1/Claims/Submit"
         json_body: dict[str, Any] = {
             "UserID": self._user_id,
