@@ -32,7 +32,22 @@
       "Bash(/home/lnv-20/Documents/claim-validator/.venv/bin/pytest:*)",
       "Bash(uv run:*)",
       "Bash(git:*)",
-      "Bash(do echo:*)"
+      "Bash(do echo:*)",
+      "WebFetch(domain:developer.waystar.com)",
+      "WebFetch(domain:tateeda.com)",
+      "WebFetch(domain:help.ezclaim.com)",
+      "WebFetch(domain:developer.patientco.com)",
+      "WebFetch(domain:www.stedi.com)",
+      "WebFetch(domain:docs.claim.md)",
+      "WebFetch(domain:api.claim.md)",
+      "WebFetch(domain:github.com)",
+      "Bash(ruff check:*)",
+      "Bash(sed:*)",
+      "WebFetch(domain:general.zirmed.com)",
+      "WebFetch(domain:developer.zirmed.com)",
+      "WebFetch(domain:sur.ly)",
+      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/pip install:*)",
+      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/python:*)"
     ]
   }
 }
