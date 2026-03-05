@@ -1,9 +1,12 @@
-"""PAMemberIDValidator — subscriber member ID validation for PA requests."""
+"""PAMemberIDValidator — subscriber member ID validation for PA requests.
+
+Thin wrapper around ``shared.validators.validate_member_id``.
+"""
 
 from __future__ import annotations
 
-from claim_validator.constants import Severity
-from claim_validator.models.results import Finding, ValidatorOutput
+from claim_validator.models.results import ValidatorOutput
+from claim_validator.shared.validators import validate_member_id
 from claim_validator.validators.base import BaseValidator
 
 
@@ -13,21 +16,11 @@ class PAMemberIDValidator(BaseValidator):
     name = "PAMemberIDValidator"
 
     def validate(self, request) -> ValidatorOutput:  # type: ignore[override]
-        findings: list[Finding] = []
-        member_id = request.subscriber.member_id
-
-        if not member_id or not member_id.strip():
-            findings.append(
-                self._make_finding(
-                    code="PA_MISSING_MEMBER_ID",
-                    message=(
-                        "Subscriber member ID in 'subscriber.member_id' "
-                        "is required and must not be empty"
-                    ),
-                    severity=Severity.ERROR,
-                    field_name="subscriber.member_id",
-                    suggestion="Provide the subscriber's member ID from their insurance card",
-                )
-            )
-
+        shared_findings = validate_member_id(
+            request.subscriber.member_id,
+            field_name="subscriber.member_id",
+            code_prefix="PA_",
+        )
+        # PA only checks presence — filter out format findings
+        findings = [f for f in shared_findings if f.code != "PA_INVALID_MEMBER_ID"]
         return self._make_output(findings)

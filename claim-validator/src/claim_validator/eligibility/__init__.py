@@ -17,6 +17,9 @@ from claim_validator.eligibility.models import (
     EligibilityResult,
 )
 from claim_validator.eligibility.pipeline import EligibilityPipeline
+from claim_validator.eligibility.validators.ai.interpreter import (
+    EligibilityInterpreterAI,
+)
 
 __all__ = [
     "AAAError",
@@ -28,6 +31,7 @@ __all__ = [
     "DeidentifiedCoverageInfo",
     "DeidentifiedEligibilityResponse",
     "EligibilityDeidentifier",
+    "EligibilityInterpreterAI",
     "EligibilityPipeline",
     "EligibilityRequest",
     "EligibilityResponse",

@@ -1,4 +1,8 @@
-"""ValidationPipeline — two-phase execution orchestrator."""
+"""ValidationPipeline — two-phase execution orchestrator.
+
+Delegates rule-phase execution to ``BasePipeline``.
+AI phase remains domain-specific (multi-validator pattern).
+"""
 
 from __future__ import annotations
 
@@ -17,6 +21,8 @@ from claim_validator.models.results import (
     PipelineResult,
     ValidatorOutput,
 )
+from claim_validator.shared.pipeline import BasePipeline, PipelineConfig
+from claim_validator.shared.pipeline.context import ValidationContext
 from claim_validator.validators.registry import ValidatorRegistry
 
 if TYPE_CHECKING:
@@ -51,7 +57,7 @@ class _PipelineBuilder:
 class ValidationPipeline:
     """Two-phase validation pipeline orchestrator.
 
-    Phase 1: Rule-based validators (offline, synchronous)
+    Phase 1: Rule-based validators (delegated to BasePipeline)
     Phase 2: AI validators (network, conditional on phase 1)
     """
 
@@ -61,10 +67,18 @@ class ValidationPipeline:
         rule_validators: list[BaseValidator],
         ai_validators: list[BaseAIValidator],
         skip_ai_on_rule_failure: bool = True,
+        clearinghouse_client: object | None = None,
     ) -> None:
         self._rule_validators = rule_validators
         self._ai_validators = ai_validators
         self._skip_ai_on_rule_failure = skip_ai_on_rule_failure
+        # BasePipeline for rule-phase + clearinghouse execution
+        self._base_pipeline = BasePipeline(PipelineConfig(
+            domain="claim",
+            validators=tuple(rule_validators),
+            clearinghouse_client=clearinghouse_client,
+            code_prefix="",
+        ))
 
     @classmethod
     def from_settings(
@@ -78,6 +92,17 @@ class ValidationPipeline:
         rule_vals = registry.create_validators(
             settings.rule_validators,
         )
+
+        # Clearinghouse client (optional)
+        ch_client = None
+        if settings.clearinghouse_config:
+            from claim_validator.clearinghouse.factory import (
+                get_clearinghouse_client,
+            )
+
+            ch_config = dict(settings.clearinghouse_config)
+            provider = ch_config.pop("provider")
+            ch_client = get_clearinghouse_client(provider, **ch_config)
 
         ai_vals: list[BaseAIValidator] = []
         if settings.ai_config and settings.ai_validators:
@@ -106,6 +131,7 @@ class ValidationPipeline:
             rule_validators=rule_vals,
             ai_validators=ai_vals,
             skip_ai_on_rule_failure=settings.skip_ai_on_rule_failure,
+            clearinghouse_client=ch_client,
         )
 
     @classmethod
@@ -113,18 +139,30 @@ class ValidationPipeline:
         """Return a fluent builder for custom pipelines."""
         return _PipelineBuilder()
 
-    def run(self, claim: ClaimData) -> PipelineResult:
-        """Execute the full validation pipeline."""
+    def run(
+        self,
+        claim: ClaimData,
+        *,
+        validation_context: ValidationContext | None = None,
+    ) -> PipelineResult:
+        """Execute the full validation pipeline.
+
+        Args:
+            claim: Claim data to validate.
+            validation_context: Optional cross-stage validation context
+                for passthrough optimization.
+        """
         start = time.perf_counter()
         phase_results: list[PhaseResult] = []
 
-        # Phase 1: Rule-based
-        rule_phase = self._run_phase(
-            "rule_based", self._rule_validators, claim,
+        # Phase 1 (+ optional Phase 2 clearinghouse): delegated to BasePipeline
+        base_result = self._base_pipeline.run(
+            claim, validation_context=validation_context,
         )
-        phase_results.append(rule_phase)
+        phase_results.extend(base_result.phase_results)
+        rule_phase = base_result.phase_results[0]
 
-        # Phase 2: AI (conditional)
+        # Phase 2: AI (conditional, domain-specific multi-validator)
         if self._ai_validators:
             rule_has_errors = any(
                 f.severity == Severity.ERROR
@@ -143,55 +181,6 @@ class ValidationPipeline:
         elapsed = time.perf_counter() - start
         return PipelineResult(
             phase_results=phase_results,
-            execution_time=elapsed,
-        )
-
-    def _run_phase(
-        self,
-        phase_name: str,
-        validators: list[BaseValidator],
-        claim: ClaimData,
-    ) -> PhaseResult:
-        """Run all rule-based validators in a phase."""
-        start = time.perf_counter()
-        outputs: list[ValidatorOutput] = []
-
-        for validator in validators:
-            try:
-                output = validator.validate(claim)
-                outputs.append(output)
-            except Exception as exc:
-                outputs.append(
-                    ValidatorOutput(
-                        validator_name=getattr(
-                            validator, "name",
-                            type(validator).__name__,
-                        ),
-                        findings=[
-                            Finding(
-                                code="VALIDATOR_ERROR",
-                                message=(
-                                    "Validator raised an"
-                                    " unexpected exception"
-                                ),
-                                severity=Severity.ERROR,
-                                field_name="",
-                                suggestion=(
-                                    "Check validator"
-                                    " implementation"
-                                ),
-                                context={
-                                    "error": str(exc),
-                                },
-                            ),
-                        ],
-                    )
-                )
-
-        elapsed = time.perf_counter() - start
-        return PhaseResult(
-            phase=phase_name,
-            validator_outputs=outputs,
             execution_time=elapsed,
         )
 

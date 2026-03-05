@@ -1,4 +1,8 @@
-"""EligibilityDeidentifier — HIPAA Safe Harbor de-identification for eligibility responses."""
+"""EligibilityDeidentifier — HIPAA Safe Harbor de-identification for eligibility responses.
+
+Delegates year extraction to ``BaseDeidentifier``. Nested AAA error
+stripping remains domain-specific.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,12 @@ from claim_validator.eligibility.models.response import (
     CoverageInfo,
     EligibilityResponse,
 )
+from claim_validator.shared.deidentifier import (
+    ELIGIBILITY_DEID_CONFIG,
+    BaseDeidentifier,
+)
+
+_base = BaseDeidentifier(ELIGIBILITY_DEID_CONFIG)
 
 
 class EligibilityDeidentifier:
@@ -51,10 +61,8 @@ class EligibilityDeidentifier:
             return None
         return DeidentifiedCoverageInfo(
             status=cov.status,
-            effective_year=cov.effective_date.year if cov.effective_date else None,
-            termination_year=(
-                cov.termination_date.year if cov.termination_date else None
-            ),
+            effective_year=_base.extract_year(cov.effective_date),
+            termination_year=_base.extract_year(cov.termination_date),
         )
 
     @staticmethod

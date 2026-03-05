@@ -13,6 +13,11 @@ paExtensionScope: 'prior-authorization-module'
 paExtensionStepsCompleted: [2, 3, 4, 5, 6, 7, 8]
 paExtensionStatus: 'complete'
 paExtensionCompletedAt: '2026-03-01'
+refactoringExtensionStartedAt: '2026-03-02'
+refactoringExtensionScope: 'v3-codebase-refactoring'
+refactoringExtensionStepsCompleted: [2, 3, 4, 5, 6, 7, 8]
+refactoringExtensionStatus: 'complete'
+refactoringExtensionCompletedAt: '2026-03-02'
 inputDocuments:
   - '_bmad-output/planning-artifacts/prd.md'
   - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-18.md'
@@ -22,6 +27,7 @@ inputDocuments:
   - 'docs/Claim-Eligibility-Check-Implementation-Guide.md'
   - '_bmad-output/planning-artifacts/product-brief-healthcare-claim-analyzer-2026-02-27.md'
   - '_bmad-output/planning-artifacts/research/domain-healthcare-prior-authorization-278-research-2026-02-27.md'
+  - '_bmad-output/planning-artifacts/prd.md (v3.0 refactoring PRD - 2026-03-02)'
 workflowType: 'architecture'
 project_name: 'healthcare-claim-analyzer'
 user_name: 'aniket'
@@ -2603,3 +2609,1080 @@ All 10 new decisions (D24-D33) compatible with 23 existing decisions (D1-D23):
 12. Top-level API — `submit_prior_auth()` convenience function
 13. `__init__.py` re-exports — add PA symbols
 14. Test suite — all ~25 test files
+
+---
+
+## v3.0 Codebase Refactoring — Context Analysis
+
+### Requirements Overview
+
+**Functional Requirements:**
+43 FRs across 10 categories driving a full internal refactoring to eliminate duplicate code, consolidate shared logic, and build a unified sequential pipeline.
+
+| Category | Count | Architectural Impact |
+|---|---|---|
+| Shared Validators (FR1-FR9) | 9 | Extract 7 canonical validators into `shared/validators/`, register per-stage via config |
+| Shared De-identification (FR10-FR13) | 4 | Single base de-identifier with domain config replaces 3 independent implementations |
+| Shared Pipeline Engine (FR14-FR17) | 4 | Single configurable pipeline replaces `ValidationPipeline`, `EligibilityPipeline`, `PriorAuthPipeline` |
+| Shared Code Tables (FR18-FR20) | 3 | Unified access layer consolidates `code_tables/`, `eligibility/code_tables/`, `prior_auth/code_tables/` |
+| Unified Workflow Orchestrator (FR21-FR27) | 7 | NEW `process_claim()` API chains Eligibility → PA → Claim with validation passthrough |
+| Validation Passthrough (FR28-FR30) | 3 | Track prior validation results; downstream stages skip redundant checks |
+| Existing API Preservation (FR31-FR34) | 4 | `validate()`, `check_eligibility()`, `submit_prior_auth()` unchanged externally |
+| Result Models (FR35-FR37) | 3 | `WorkflowResult` with per-stage results, execution times, aggregate `passed` |
+| HIPAA Compliance (FR38-FR40) | 3 | Shared de-identifier verified across all 3 domains |
+| Configuration (FR41-FR43) | 3 | Configurable validator-per-stage, configurable gating, existing env vars preserved |
+
+**Non-Functional Requirements:**
+27 NFRs across 5 categories establishing hard performance budgets, zero-duplicate enforcement, and backward compatibility.
+
+| Category | Count | Key Constraint |
+|---|---|---|
+| Performance (NFR1-NFR6) | 6 | <50ms rule-based, <150ms full workflow, <5ms indirection overhead, no memory bloat |
+| Security (NFR7-NFR11) | 5 | Zero PHI to LLM, zero PHI in logs, PHI cleared per-call, 18 identifiers verified |
+| Scalability (NFR12-NFR15) | 4 | Stateless validators, thread-safe pipeline, locked singletons, O(n) scaling |
+| Integration (NFR16-NFR20) | 5 | Clearinghouse/LLM ABCs unchanged, settings unchanged, Python 3.11-3.13, cross-platform |
+| Code Quality (NFR21-NFR27) | 7 | Zero duplicate validators, coverage maintained, mypy strict, ruff clean, <15MB wheel |
+
+**Scale & Complexity:**
+
+- Primary domain: **Python library internal refactoring** (brownfield, same package)
+- Complexity level: **High** — touching all 3 existing modules, creating 2 new top-level subpackages (`shared/`, `workflow/`), changing all internal import paths
+- Estimated new architectural components: **~8 major** — shared validator module, shared de-identifier base, shared pipeline engine, shared code tables layer, workflow orchestrator, WorkflowResult models, validation passthrough mechanism, stage abstraction
+
+### New Technical Constraints & Dependencies
+
+| Constraint | Source | Architectural Implication |
+|---|---|---|
+| **Zero duplicate validation code** | NFR21 | Every validator function must exist in exactly one file — `shared/validators/` |
+| **<5ms indirection overhead** | NFR5 | Shared module indirection (import + dispatch) adds negligible cost vs direct call |
+| **<150ms full workflow (rule-based)** | NFR4 | 3 stages × 50ms budget; validation passthrough must skip, not add overhead |
+| **Existing APIs unchanged** | FR31-FR34 | `validate()`, `check_eligibility()`, `submit_prior_auth()` produce identical behavior |
+| **Clean break at v3.0** | PRD | New internal paths; no re-exports or deprecation shims for old paths |
+| **Validation passthrough** | FR28-FR30 | Pipeline must track validation history and skip redundant checks downstream |
+| **Cross-module orchestration** | FR21-FR27 | `process_claim()` depends on eligibility, PA, and claim modules sequentially |
+| **PHI isolation between stages** | FR39 | Unified pipeline must not leak PHI between stages; fresh de-id per AI phase |
+
+### New Cross-Cutting Concerns
+
+| Concern | Scope | Strategy |
+|---|---|---|
+| **Shared validator registration** | All 3 pipelines reference shared validators by config | Registry maps validator IDs to shared implementations; domain pipelines configure which validators to run |
+| **Base de-identifier with domain config** | 3 domains have different PHI field sets | Single base class with domain-specific field mapping; each domain provides its config |
+| **Configurable pipeline engine** | 3 pipelines have identical phase logic | Single base pipeline class parameterized by: validator set, clearinghouse client, AI interpreter, gating rules |
+| **Validation passthrough data structure** | Workflow orchestrator → downstream pipelines | Lightweight `ValidationContext` carrying validator name → result pairs; optional parameter on pipeline.run() |
+| **Unified code table access** | Code tables split across 3 module directories | Single `shared/code_tables/` with all tables; domain modules import from shared |
+| **Workflow stage abstraction** | Orchestrator chains 3 domain pipelines | `Stage` protocol/ABC with `run(request, context) -> StageResult`; orchestrator iterates stages |
+
+### Reuse Analysis
+
+| Existing Component | Refactoring Strategy | Change |
+|---|---|---|
+| `validators/rule_based/npi.py` + eligibility NPI + `prior_auth/validators/rule_based/npi.py` | **Consolidate** → `shared/validators/npi.py` | 3 files → 1 |
+| `validators/rule_based/demographics.py` + eligibility + PA variants | **Consolidate** → `shared/validators/demographics.py` | 3 files → 1 |
+| `ClaimDeidentifier` + `EligibilityDeidentifier` + `PriorAuthDeidentifier` | **Consolidate** → `shared/deidentifier/base.py` + domain config | 3 classes → 1 base + 3 configs |
+| `ValidationPipeline` + `EligibilityPipeline` + `PriorAuthPipeline` | **Consolidate** → `shared/pipeline/engine.py` + domain config | 3 classes → 1 base + 3 configs |
+| `code_tables/` + `eligibility/code_tables/` + `prior_auth/code_tables/` | **Consolidate** → `shared/code_tables/` | 3 directories → 1 |
+| `BaseClearinghouseClient` ABC | **Direct reuse** | Unchanged |
+| `BaseLLMClient` ABC + providers | **Direct reuse** | Unchanged |
+| `Finding`, `Severity`, `ValidatorOutput` | **Direct reuse** | Unchanged |
+| `ClaimValidatorSettings` | **Extend** | Add workflow-specific settings |
+| Exception hierarchy | **Extend** | May add workflow-specific exceptions |
+| All existing models (`ClaimData`, `EligibilityRequest`, `PriorAuthRequest`, results) | **Direct reuse** | Unchanged |
+| `BaseValidator` ABC | **Direct reuse** (validators continue subclassing it) | Unchanged |
+
+### Relationship to Existing Architectural Decisions
+
+All 33 existing decisions (D1-D33) remain valid. The refactoring does NOT change:
+- D1-D4: Data architecture (compressed JSON, lazy singletons, frozen models, Pydantic settings)
+- D5-D6: HIPAA security architecture (pipeline-integrated de-id, type-driven PHI boundary)
+- D7-D9: LLM provider architecture (chat-based, per-validator prompts, hybrid parsing)
+- D10-D13: Pipeline/registry/versioning/import architecture (dotted paths, settings-driven)
+- D14-D23: Eligibility-specific decisions
+- D24-D33: PA-specific decisions
+
+What changes is the **internal organization** — shared logic moves to `shared/`, domain modules delegate to shared, and a new `workflow/` module orchestrates the full flow. Public API signatures are preserved.
+
+### Starter Template Evaluation (v3.0 Refactoring)
+
+**Primary Technology Domain:** Python library internal refactoring — restructuring `claim-validator` package internals.
+
+**Starter: N/A — Existing Package Refactoring**
+
+All foundational decisions from the original architecture (D1-D13) and both extensions (D14-D33) remain in effect. The project already exists with its full tooling chain:
+
+- **Build:** hatchling + hatch-vcs (D12)
+- **Runtime:** Python 3.11+ (NFR19)
+- **Core dep:** Pydantic 2.x (D3)
+- **Linting:** ruff (line-length=100, E/F/I/N/W/UP)
+- **Type checking:** mypy strict + Pydantic plugin
+- **Testing:** pytest
+- **Layout:** src layout (`src/claim_validator/`)
+
+No new starter template, CLI scaffolding, or tooling changes are needed. The refactoring adds `shared/` and `workflow/` subpackages inside the existing package and restructures internal imports.
+
+**What the refactoring adds to `pyproject.toml`:** No new optional extras in MVP. The `process_claim()` API uses existing extras (`[ai]`, `[stedi]`) when AI/clearinghouse features are enabled. Rule-based unified workflow works with zero additional dependencies.
+
+## v3.0 Refactoring — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Already Decided (from D1-D33):**
+Data formats, model patterns, settings, LLM/clearinghouse ABCs, exception hierarchy, naming conventions, test patterns — all unchanged.
+
+**Critical Decisions (Block Implementation):**
+- D34: Shared validator consolidation — how shared validators serve all 3 domains
+- D35: Shared de-identifier base — base class with domain config
+- D36: Shared pipeline engine — parameterized base pipeline
+- D37: Validation passthrough mechanism — tracking and skipping
+- D38: Workflow orchestrator — `process_claim()` and stage abstraction
+
+**Important Decisions (Shape Architecture):**
+- D39: Shared code tables consolidation — unified access layer
+- D40: WorkflowResult model design — per-stage results
+- D41: Domain module refactoring pattern — how existing modules delegate to shared
+- D42: Configuration extension — workflow-specific settings
+- D43: Import path migration — clean break v3.0 strategy
+
+**Deferred Decisions (Post-MVP):**
+- Smart validation skipping configuration — Phase 2
+- Workflow state object (rich context between stages) — Phase 2
+- Configurable stage ordering — Phase 2
+- Async pipeline support — Phase 3
+
+### Shared Module Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D34: Shared validator consolidation** | Canonical implementations in `shared/validators/`, domain validators import and delegate | Each shared validator (NPI, date, member ID, demographics, diagnosis, procedure, payer ID) lives in one file in `shared/validators/`. Domain-specific validators (e.g., `PANPIValidator`) become thin wrappers that call the shared function and wrap results with domain-specific finding codes. This achieves FR1-FR7 (single canonical implementation) while preserving domain-specific finding code prefixes (FR8) | `shared/validators/*.py`, `validators/rule_based/`, `eligibility/validators/`, `prior_auth/validators/` |
+| **D35: Shared de-identifier** | Base class `BaseDeidentifier` with domain config dict | `BaseDeidentifier` implements the core 18-identifier stripping logic. Each domain provides a `DeidentificationConfig` specifying: field mappings (which model fields contain which PHI types), age cap behavior, date reduction strategy. Domain classes (`ClaimDeidentifier`, `EligibilityDeidentifier`, `PriorAuthDeidentifier`) become thin subclasses that set their config. Achieves FR10-FR13 | `shared/deidentifier/base.py`, `shared/deidentifier/config.py` |
+| **D36: Shared pipeline engine** | `BasePipeline` class parameterized by `PipelineConfig` dataclass | Single `BasePipeline.run(input, context?) -> PipelineResult` handles: phase sequencing, gating logic, timing, error aggregation. Each domain provides `PipelineConfig`: validator list, clearinghouse client (optional), AI interpreter (optional), gating rules, finding code prefix. Achieves FR14-FR17 | `shared/pipeline/engine.py`, `shared/pipeline/config.py` |
+
+**Shared validator pattern:**
+```python
+# shared/validators/npi.py — THE canonical NPI validation
+class NPIValidatorBase(BaseValidator):
+    """Canonical NPI Luhn check. All domains delegate to this."""
+    name = "shared_npi"
+
+    def validate(self, data: Any) -> ValidatorOutput:
+        npi = self._extract_npi(data)  # duck-typed extraction
+        findings = validate_npi(npi)   # pure function
+        return self._make_output(findings)
+
+def validate_npi(npi: str | None, field_name: str = "npi",
+                 code_prefix: str = "") -> list[Finding]:
+    """Pure function: validates NPI, returns findings with configurable code prefix."""
+    # Single implementation of Luhn check + format validation
+```
+
+```python
+# validators/rule_based/npi.py — claim domain wrapper (thin)
+from claim_validator.shared.validators.npi import validate_npi
+
+class NPIValidator(BaseValidator):
+    name = "npi"
+    def validate(self, claim: ClaimData) -> ValidatorOutput:
+        findings = validate_npi(claim.billing_provider_npi, "billing_provider_npi")
+        return self._make_output(findings)
+
+# prior_auth/validators/rule_based/npi.py — PA domain wrapper (thin)
+class PANPIValidator(BaseValidator):
+    name = "pa_npi"
+    def validate(self, data: PriorAuthRequest) -> ValidatorOutput:
+        findings = validate_npi(data.requester_npi, "requester_npi", code_prefix="PA_")
+        return self._make_output(findings)
+```
+
+**Shared de-identifier pattern:**
+```python
+# shared/deidentifier/base.py
+class BaseDeidentifier:
+    """Base de-identifier — strips 18 HIPAA identifiers per domain config."""
+
+    def __init__(self, config: DeidentificationConfig):
+        self._config = config
+
+    def deidentify(self, data: Any) -> Any:
+        """Strip PHI fields per config. Cap ages 90+. Dates to year-only."""
+        # Single implementation of 18-identifier stripping
+        # Config tells us which fields to strip and what type they are
+
+# shared/deidentifier/config.py
+@dataclass(frozen=True)
+class DeidentificationConfig:
+    name_fields: tuple[str, ...]      # ("subscriber_first_name", "subscriber_last_name")
+    date_fields: tuple[str, ...]      # ("date_of_birth", "service_date")
+    id_fields: tuple[str, ...]        # ("subscriber_id", "member_id", "ssn")
+    address_fields: tuple[str, ...]   # ("address", "city", "state", "zip")
+    age_field: str | None             # "patient_age" — for 90+ cap
+    output_model: type                # DeidentifiedClaim / DeidentifiedEligibilityResponse / etc.
+```
+
+**Shared pipeline pattern:**
+```python
+# shared/pipeline/engine.py
+class BasePipeline:
+    """Configurable multi-phase pipeline engine."""
+
+    def __init__(self, config: PipelineConfig):
+        self._config = config
+
+    def run(self, input_data: Any, validation_context: ValidationContext | None = None) -> Any:
+        # Phase 1: Rule-based validators (respects validation_context for passthrough)
+        # Gate: configurable skip behavior
+        # Phase 2: Clearinghouse (if client provided)
+        # Gate: configurable skip behavior
+        # Phase 3: AI interpretation (if interpreter provided)
+        # Returns domain-specific result model
+
+# shared/pipeline/config.py
+@dataclass(frozen=True)
+class PipelineConfig:
+    domain: str                              # "claim", "eligibility", "prior_auth"
+    rule_validators: tuple[str, ...]         # dotted paths
+    clearinghouse_client: Any | None         # BaseClearinghouseClient instance
+    ai_interpreter: Any | None               # AI validator instance
+    deidentifier: BaseDeidentifier | None    # domain-configured de-identifier
+    skip_next_on_rule_failure: bool          # gate behavior
+    skip_ai: bool                            # skip AI phase
+    result_factory: Callable                 # builds domain-specific result model
+```
+
+### Workflow Architecture
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D37: Validation passthrough** | `ValidationContext` frozen dataclass carrying `dict[str, ValidatorResult]` | Lightweight object passed from orchestrator to downstream pipelines. Maps validator name → pass/fail + findings. `BasePipeline.run()` accepts optional `validation_context` parameter. When present, pipeline skips validators whose name appears in context with a passing result. In standalone mode (no context), runs all validators. Achieves FR28-FR30 | `shared/pipeline/context.py`, `shared/pipeline/engine.py`, `workflow/orchestrator.py` |
+| **D38: Workflow orchestrator** | `WorkflowOrchestrator` class with `Stage` protocol | Orchestrator iterates `Stage` objects sequentially. Each stage wraps a domain pipeline. Stages: `EligibilityStage`, `PADeterminationStage`, `PAStage` (conditional), `ClaimValidationStage`. Orchestrator passes `ValidationContext` between stages. Stops on first stage failure (configurable). Returns `WorkflowResult`. Achieves FR21-FR27 | `workflow/orchestrator.py`, `workflow/stages.py`, `workflow/models.py` |
+
+**Validation passthrough pattern:**
+```python
+# shared/pipeline/context.py
+@dataclass(frozen=True)
+class ValidatorResult:
+    passed: bool
+    findings: tuple[Finding, ...]
+
+@dataclass
+class ValidationContext:
+    """Carries validation results between pipeline stages."""
+    results: dict[str, ValidatorResult] = field(default_factory=dict)
+
+    def has_passed(self, validator_name: str) -> bool:
+        """Check if a validator already ran and passed."""
+        return validator_name in self.results and self.results[validator_name].passed
+
+    def record(self, validator_name: str, result: ValidatorResult) -> None:
+        """Record a validator's result for downstream stages."""
+        self.results[validator_name] = result
+```
+
+**Workflow orchestrator pattern:**
+```python
+# workflow/orchestrator.py
+class WorkflowOrchestrator:
+    def __init__(self, stages: list[Stage], settings: ClaimValidatorSettings):
+        self._stages = stages
+        self._settings = settings
+
+    def run(self, request: dict | WorkflowRequest) -> WorkflowResult:
+        context = ValidationContext()
+        stage_results: list[StageResult] = []
+
+        for stage in self._stages:
+            if stage.should_skip(context, stage_results):
+                continue
+            result = stage.run(request, context)
+            stage_results.append(result)
+            if not result.passed and stage.is_gate:
+                return WorkflowResult(
+                    stage_results=stage_results,
+                    stopped_at=stage.name,
+                    ...
+                )
+        return WorkflowResult(stage_results=stage_results, stopped_at=None, ...)
+
+# workflow/stages.py
+class Stage(Protocol):
+    name: str
+    is_gate: bool
+    def should_skip(self, ctx: ValidationContext, prior: list[StageResult]) -> bool: ...
+    def run(self, request: Any, ctx: ValidationContext) -> StageResult: ...
+```
+
+### Supporting Decisions
+
+| Decision | Choice | Rationale | Affects |
+|---|---|---|---|
+| **D39: Shared code tables** | Move all code table loaders + data to `shared/code_tables/` | Single directory with: `icd10.py`, `hcpcs.py`, `taxonomy.py`, `pos.py`, `payer_directory.py`, `service_types.py`, `hcr_actions.py`, `aaa_reject_codes.py`, `timely_filing.py`. All `data/*.json(.gz)` files move to `shared/data/`. Domain modules import from `shared.code_tables`. Achieves FR18-FR20 | `shared/code_tables/`, `shared/data/` |
+| **D40: WorkflowResult model** | Frozen Pydantic model with per-stage typed results | `WorkflowResult.eligibility: EligibilityResult`, `.prior_auth: PriorAuthResult | None`, `.claim_validation: PipelineResult`, `.stopped_at: str | None`, `.passed: bool` (aggregate), `.execution_time: float`, `.stage_results: list[StageResult]`. Achieves FR35-FR37 | `workflow/models.py` |
+| **D41: Domain module refactoring** | Domain modules become thin orchestration layers delegating to shared | `validators/pipeline.py` → creates `BasePipeline` with claim-specific `PipelineConfig`. `eligibility/pipeline.py` → creates `BasePipeline` with eligibility-specific config. Domain validators become thin wrappers calling shared functions. Domain de-identifiers subclass `BaseDeidentifier` with domain config | All domain modules |
+| **D42: Configuration extension** | Add workflow settings to `ClaimValidatorSettings` | New flat fields: `workflow_stages` (list of stage dotted paths), `workflow_stop_on_failure` (bool), `workflow_skip_pa_when_not_required` (bool). All use `CLAIM_VALIDATOR_` prefix. Achieves FR41-FR43 | `conf.py` |
+| **D43: Import path migration** | Clean break — new internal paths, no compatibility shims | `shared/validators/npi.py` is the canonical path. Old paths (`validators/rule_based/npi.py`) still exist but contain thin wrappers. No `__getattr__` re-export hacks for old internal paths. Public API paths (`from claim_validator import validate`) unchanged. Achieves PRD clean break requirement | All `__init__.py` files |
+
+### Decision Impact Analysis
+
+**Implementation Sequence:**
+1. `shared/` scaffolding — `__init__.py`, `validators/`, `deidentifier/`, `pipeline/`, `code_tables/`
+2. Shared code tables (D39) — move all loaders + data
+3. Shared validators (D34) — extract pure functions, create canonical validators
+4. Shared de-identifier (D35) — `BaseDeidentifier` + `DeidentificationConfig`
+5. Shared pipeline engine (D36) — `BasePipeline` + `PipelineConfig`
+6. Validation passthrough (D37) — `ValidationContext`
+7. Refactor claim module (D41) — delegate to shared
+8. Refactor eligibility module (D41) — delegate to shared
+9. Refactor PA module (D41) — delegate to shared
+10. WorkflowResult model (D40)
+11. Workflow orchestrator + stages (D38)
+12. Configuration extension (D42)
+13. `process_claim()` top-level API
+14. Import path cleanup (D43)
+
+**Cross-Component Dependencies:**
+- D34 (shared validators) enables D41 (domain refactoring) — domains delegate to shared
+- D35 (shared de-identifier) enables D36 (shared pipeline) — pipeline uses de-identifier
+- D36 (shared pipeline) requires D37 (passthrough) — pipeline accepts `ValidationContext`
+- D37 (passthrough) enables D38 (orchestrator) — orchestrator passes context between stages
+- D39 (shared code tables) enables D34 (shared validators) — validators look up shared tables
+- D38 (orchestrator) requires D40 (WorkflowResult) — orchestrator builds result
+- D42 (settings) required by D38 (orchestrator) — orchestrator reads workflow config
+
+## v3.0 Refactoring — Implementation Patterns & Consistency Rules
+
+### Refactoring-Specific Conflict Points
+
+**10 new conflict areas** identified for the v3.0 refactoring extension. These extend the existing 50 conflict points from core + eligibility + PA.
+
+### Shared Validator Patterns
+
+**Pure function signature pattern:**
+
+```python
+# CORRECT — shared pure function with configurable code prefix and field name
+def validate_npi(
+    npi: str | None,
+    field_name: str = "npi",
+    code_prefix: str = "",
+) -> list[Finding]:
+    """Canonical NPI validation. Returns findings with configurable prefix."""
+    findings: list[Finding] = []
+    if npi is None:
+        findings.append(Finding(
+            code=f"{code_prefix}MISSING_NPI",
+            message="NPI is required",
+            severity=Severity.ERROR,
+            field_name=field_name,
+            suggestion="Provide a valid 10-digit NPI",
+        ))
+        return findings
+    if not _luhn_check(npi):
+        findings.append(Finding(
+            code=f"{code_prefix}INVALID_NPI",
+            message="NPI fails Luhn check-digit validation",
+            severity=Severity.ERROR,
+            field_name=field_name,
+            suggestion="Verify NPI at https://npiregistry.cms.hhs.gov",
+            context={"npi_length": len(npi)},
+        ))
+    return findings
+
+# WRONG — hardcoded domain specifics in shared function
+def validate_npi(claim: ClaimData) -> list[Finding]:  # Tied to ClaimData
+    ...  # Can't reuse for EligibilityRequest or PriorAuthRequest
+```
+
+**Domain wrapper pattern:**
+
+```python
+# CORRECT — thin wrapper: extract field, delegate, wrap
+class NPIValidator(BaseValidator):
+    name = "npi"
+    def validate(self, claim: ClaimData) -> ValidatorOutput:
+        findings = validate_npi(
+            claim.billing_provider_npi,
+            field_name="billing_provider_npi",
+        )
+        return self._make_output(findings)
+
+# CORRECT — PA wrapper with prefix
+class PANPIValidator(BaseValidator):
+    name = "pa_npi"
+    def validate(self, data: PriorAuthRequest) -> ValidatorOutput:
+        findings = validate_npi(
+            data.requester_npi,
+            field_name="requester_npi",
+            code_prefix="PA_",
+        )
+        return self._make_output(findings)
+
+# WRONG — duplicating logic in wrapper
+class PANPIValidator(BaseValidator):
+    name = "pa_npi"
+    def validate(self, data: PriorAuthRequest) -> ValidatorOutput:
+        # BAD: reimplements Luhn check instead of calling validate_npi()
+        if not _check_luhn(data.requester_npi):
+            ...
+
+# WRONG — wrapper adds behavior beyond field extraction + delegation
+class PANPIValidator(BaseValidator):
+    name = "pa_npi"
+    def validate(self, data: PriorAuthRequest) -> ValidatorOutput:
+        findings = validate_npi(data.requester_npi, ...)
+        # BAD: wrapper adds extra validation not in shared function
+        if data.requester_npi and len(data.requester_npi) > 10:
+            findings.append(...)  # Should be in shared function
+        return self._make_output(findings)
+```
+
+**Shared validator naming convention:**
+
+| Element | Convention | Example | Anti-Pattern |
+|---|---|---|---|
+| Shared pure function | `validate_{concept}()` | `validate_npi()`, `validate_date()` | `check_npi()`, `npi_validation()` |
+| Shared module file | `shared/validators/{concept}.py` | `shared/validators/npi.py` | `shared/validators/npi_validator.py` |
+| Domain wrapper class | Domain convention unchanged | `NPIValidator`, `PANPIValidator` | `SharedNPIValidator` |
+| Private helpers | `_{verb}_{noun}()` | `_luhn_check()`, `_format_npi()` | `luhn()`, `checkLuhn()` |
+
+### Shared De-identifier Patterns
+
+**Domain config pattern:**
+
+```python
+# CORRECT — domain provides config, base does the work
+CLAIM_DEID_CONFIG = DeidentificationConfig(
+    name_fields=("patient_first_name", "patient_last_name"),
+    date_fields=("date_of_birth", "service_date"),
+    id_fields=("subscriber_id", "member_id"),
+    address_fields=("patient_address", "patient_city", "patient_state", "patient_zip"),
+    age_field="patient_age",
+    output_model=DeidentifiedClaim,
+)
+
+class ClaimDeidentifier(BaseDeidentifier):
+    """Claim-specific de-identifier. Thin subclass with config."""
+    def __init__(self) -> None:
+        super().__init__(CLAIM_DEID_CONFIG)
+
+# WRONG — overriding deidentify() in subclass
+class ClaimDeidentifier(BaseDeidentifier):
+    def deidentify(self, data: ClaimData) -> DeidentifiedClaim:
+        # BAD: reimplements stripping logic
+        ...
+```
+
+### Shared Pipeline Patterns
+
+**Pipeline config pattern:**
+
+```python
+# CORRECT — domain creates BasePipeline with domain-specific config
+def build_claim_pipeline(settings: ClaimValidatorSettings) -> BasePipeline:
+    config = PipelineConfig(
+        domain="claim",
+        rule_validators=settings.rule_validators,
+        clearinghouse_client=None,  # claims don't use clearinghouse
+        ai_interpreter=None,  # loaded lazily if AI enabled
+        deidentifier=ClaimDeidentifier(),
+        skip_next_on_rule_failure=settings.skip_ai_on_rule_failure,
+        skip_ai=not settings.ai_config,
+        result_factory=build_pipeline_result,
+    )
+    return BasePipeline(config)
+
+# WRONG — subclassing BasePipeline for domain behavior
+class ClaimPipeline(BasePipeline):
+    def run(self, claim: ClaimData) -> PipelineResult:
+        # BAD: overrides run() — defeats shared engine purpose
+        ...
+```
+
+**Pipeline `run()` with passthrough:**
+
+```python
+# CORRECT — pipeline respects ValidationContext
+def run(self, input_data: Any, validation_context: ValidationContext | None = None) -> Any:
+    for validator in self._rule_validators:
+        if validation_context and validation_context.has_passed(validator.name):
+            continue  # Skip — already validated upstream
+        output = validator.validate(input_data)
+        if validation_context:
+            validation_context.record(validator.name, ValidatorResult(
+                passed=not any(f.severity == Severity.ERROR for f in output.findings),
+                findings=tuple(output.findings),
+            ))
+        all_findings.extend(output.findings)
+
+# WRONG — ignoring validation_context
+def run(self, input_data: Any, validation_context: ValidationContext | None = None) -> Any:
+    for validator in self._rule_validators:
+        output = validator.validate(input_data)  # Always runs, even if already validated
+        ...
+```
+
+### Workflow Patterns
+
+**Stage implementation pattern:**
+
+```python
+# CORRECT — stage wraps a domain pipeline
+class EligibilityStage:
+    name = "eligibility"
+    is_gate = True
+
+    def should_skip(self, ctx: ValidationContext, prior: list[StageResult]) -> bool:
+        return False  # Eligibility always runs first
+
+    def run(self, request: Any, ctx: ValidationContext) -> StageResult:
+        pipeline = build_eligibility_pipeline(self._settings)
+        result = pipeline.run(request, validation_context=ctx)
+        return StageResult(
+            stage=self.name,
+            result=result,
+            passed=result.passed,
+            execution_time=result.execution_time,
+        )
+
+# CORRECT — conditional stage
+class PAStage:
+    name = "prior_auth"
+    is_gate = True
+
+    def should_skip(self, ctx: ValidationContext, prior: list[StageResult]) -> bool:
+        # Skip PA if determination says not required
+        elig_result = next((s for s in prior if s.stage == "eligibility"), None)
+        if elig_result is None:
+            return True
+        determination = determine_pa_required(elig_result.result.response)
+        return not determination.required
+
+# WRONG — stage does its own validation instead of delegating to pipeline
+class EligibilityStage:
+    def run(self, request: Any, ctx: ValidationContext) -> StageResult:
+        # BAD: reimplements pipeline logic in stage
+        for validator in validators:
+            validator.validate(request)
+```
+
+**WorkflowResult access pattern:**
+
+```python
+# CORRECT — typed per-stage access
+result = process_claim(request)
+result.eligibility        # EligibilityResult (always present)
+result.prior_auth         # PriorAuthResult | None (None if skipped)
+result.claim_validation   # PipelineResult (None if stopped early)
+result.stopped_at         # "eligibility" | "prior_auth" | None
+result.passed             # True only if ALL stages passed
+result.execution_time     # Total wall-clock time
+result.stage_results      # list[StageResult] — ordered, for iteration
+
+# WRONG — index-based access
+result.stages[0]          # Don't force users to know stage order
+result.results["eligibility"]  # Don't use string dict keys
+```
+
+### Shared Code Table Patterns
+
+**Import pattern:**
+
+```python
+# CORRECT — all code table access through shared module
+from claim_validator.shared.code_tables import get_icd10_table, get_payer_directory
+
+# CORRECT — domain code uses shared tables
+class CodingValidator(BaseValidator):
+    def validate(self, claim: ClaimData) -> ValidatorOutput:
+        icd10 = get_icd10_table()  # From shared, not from local code_tables/
+        ...
+
+# WRONG — importing from old domain-specific location
+from claim_validator.code_tables import get_icd10_table          # Old claim path
+from claim_validator.eligibility.code_tables import get_payer_directory  # Old elig path
+```
+
+### Test Patterns for Shared Modules
+
+```python
+# Shared validator tests — test the pure function directly
+# tests/test_shared/test_validators/test_npi.py
+class TestValidateNPI:
+    def test_valid_npi(self):
+        findings = validate_npi("1234567893", "billing_provider_npi")
+        assert len(findings) == 0
+
+    def test_invalid_npi(self):
+        findings = validate_npi("1234567890", "billing_provider_npi")
+        assert any(f.code == "INVALID_NPI" for f in findings)
+
+    def test_custom_prefix(self):
+        findings = validate_npi("1234567890", "requester_npi", code_prefix="PA_")
+        assert any(f.code == "PA_INVALID_NPI" for f in findings)
+
+    def test_no_phi_in_findings(self):
+        findings = validate_npi("1234567890", "billing_provider_npi")
+        for f in findings:
+            assert "1234567890" not in f.message  # PHI leak check
+
+# Domain wrapper tests — verify delegation, not re-test logic
+# tests/test_validators/test_rule_based/test_npi.py
+class TestNPIValidator:
+    def test_delegates_to_shared(self):
+        """Verify wrapper extracts correct field and delegates."""
+        claim = ClaimData(billing_provider_npi="1234567890", ...)
+        result = NPIValidator().validate(claim)
+        assert any(f.code == "INVALID_NPI" for f in result.findings)
+        assert result.findings[0].field_name == "billing_provider_npi"
+```
+
+### Enforcement Guidelines
+
+**All AI Agents MUST (v3.0 refactoring-specific):**
+
+1. **Never duplicate validation logic** — all validation functions exist only in `shared/validators/`. Domain validators are thin wrappers that extract fields and delegate
+2. **Use `validate_{concept}()` pure functions** — shared validators expose pure functions with `field_name` and `code_prefix` parameters
+3. **Keep domain wrappers thin** — extract field, call shared function, wrap output. No additional logic in wrappers
+4. **Provide `DeidentificationConfig`** — domain de-identifiers set config in `__init__`, never override `deidentify()`
+5. **Use `PipelineConfig`** — domain pipelines create `BasePipeline` with config, never subclass `BasePipeline.run()`
+6. **Respect `ValidationContext`** — pipeline `run()` must skip validators that have already passed in context
+7. **Stages delegate to pipelines** — workflow stages wrap domain pipelines, never reimplement pipeline logic
+8. **Import code tables from `shared.code_tables`** — never from old domain-specific paths
+9. **Test shared functions directly** — test pure functions in `test_shared/`. Domain wrapper tests verify delegation only
+10. **No re-export shims** — old internal import paths are not re-exported. Clean break at v3.0
+
+## v3.0 Refactoring — Project Structure & Boundaries
+
+### Complete v3.0 Directory Structure
+
+**New and modified files** (existing unchanged files omitted for clarity):
+
+```
+src/claim_validator/
+├── __init__.py                          # MODIFIED — add process_claim, WorkflowResult exports
+├── _api.py                              # MODIFIED — validate() delegates to shared pipeline
+├── conf.py                              # MODIFIED — add workflow settings (D42)
+├── shared/                              # NEW — all shared utilities
+│   ├── __init__.py
+│   ├── validators/                      # NEW — canonical validator implementations (D34)
+│   │   ├── __init__.py                  # Re-exports: validate_npi, validate_date, etc.
+│   │   ├── npi.py                       # validate_npi() pure function
+│   │   ├── date.py                      # validate_date() — service date, DOB
+│   │   ├── member_id.py                 # validate_member_id()
+│   │   ├── demographics.py              # validate_demographics() — name, gender, DOB
+│   │   ├── diagnosis.py                 # validate_diagnosis() — ICD-10 code table lookup
+│   │   ├── procedure.py                 # validate_procedure() — CPT/HCPCS lookup
+│   │   └── payer_id.py                  # validate_payer_id() — payer directory lookup
+│   ├── deidentifier/                    # NEW — base de-identifier engine (D35)
+│   │   ├── __init__.py                  # Re-exports: BaseDeidentifier, DeidentificationConfig
+│   │   ├── base.py                      # BaseDeidentifier class
+│   │   └── config.py                    # DeidentificationConfig dataclass
+│   ├── pipeline/                        # NEW — shared pipeline engine (D36, D37)
+│   │   ├── __init__.py                  # Re-exports: BasePipeline, PipelineConfig, ValidationContext
+│   │   ├── engine.py                    # BasePipeline — multi-phase execution
+│   │   ├── config.py                    # PipelineConfig dataclass
+│   │   └── context.py                   # ValidationContext, ValidatorResult
+│   ├── code_tables/                     # NEW — unified code table access (D39)
+│   │   ├── __init__.py                  # Re-exports: all get_*_table() functions
+│   │   ├── loader.py                    # Lazy singleton loader with threading.Lock
+│   │   ├── icd10.py                     # get_icd10_table()
+│   │   ├── hcpcs.py                     # get_hcpcs_table()
+│   │   ├── taxonomy.py                  # get_taxonomy_table()
+│   │   ├── pos.py                       # get_pos_table()
+│   │   ├── payer_directory.py           # get_payer_directory()
+│   │   ├── service_types.py             # get_service_types()
+│   │   ├── hcr_actions.py               # get_hcr_action_codes()
+│   │   ├── aaa_reject_codes.py          # get_aaa_reject_codes()
+│   │   └── timely_filing.py             # get_timely_filing_rules()
+│   └── data/                            # NEW — all bundled data files (moved here)
+│       ├── icd10_cm.json.gz
+│       ├── hcpcs.json.gz
+│       ├── taxonomy.json.gz
+│       ├── pos_codes.json.gz
+│       ├── timely_filing.json
+│       ├── payer_directory.json
+│       ├── service_types.json
+│       ├── hcr_action_codes.json
+│       └── aaa_reject_codes.json
+├── workflow/                            # NEW — unified sequential pipeline (D38, D40)
+│   ├── __init__.py                      # Re-exports: process_claim, WorkflowResult
+│   ├── _api.py                          # process_claim() convenience function
+│   ├── orchestrator.py                  # WorkflowOrchestrator class
+│   ├── stages.py                        # Stage protocol + EligibilityStage, PAStage, ClaimStage
+│   └── models.py                        # WorkflowResult, WorkflowRequest, StageResult
+├── validators/                          # MODIFIED — delegates to shared (D41)
+│   ├── pipeline.py                      # MODIFIED — builds BasePipeline with claim config
+│   └── rule_based/                      # MODIFIED — thin wrappers calling shared
+│       ├── npi.py                       # NPIValidator → calls validate_npi()
+│       ├── demographics.py              # DemographicsValidator → calls validate_demographics()
+│       ├── coding.py                    # CodingValidator → calls validate_diagnosis/procedure()
+│       └── ...                          # Other validators → delegate to shared
+├── deidentifier/                        # MODIFIED — subclasses BaseDeidentifier
+│   └── deidentifier.py                  # ClaimDeidentifier(BaseDeidentifier) with claim config
+├── eligibility/                         # MODIFIED — delegates to shared (D41)
+│   ├── pipeline.py                      # MODIFIED — builds BasePipeline with eligibility config
+│   ├── deidentifier.py                  # MODIFIED — EligibilityDeidentifier(BaseDeidentifier)
+│   ├── validators/rule_based/           # MODIFIED — thin wrappers calling shared
+│   │   ├── payer_id.py                  # PayerIDValidator → calls validate_payer_id()
+│   │   ├── demographics.py              # EligDemographicsValidator → calls validate_demographics()
+│   │   └── ...                          # Other validators → delegate to shared
+│   ├── code_tables/                     # REMOVED — imports from shared/code_tables/
+│   └── data/                            # REMOVED — data moved to shared/data/
+├── prior_auth/                          # MODIFIED — delegates to shared (D41)
+│   ├── pipeline.py                      # MODIFIED — builds BasePipeline with PA config
+│   ├── deidentifier.py                  # MODIFIED — PriorAuthDeidentifier(BaseDeidentifier)
+│   ├── validators/rule_based/           # MODIFIED — thin wrappers calling shared
+│   │   ├── npi.py                       # PANPIValidator → calls validate_npi()
+│   │   ├── diagnosis.py                 # PADiagnosisValidator → calls validate_diagnosis()
+│   │   └── ...                          # Other validators → delegate to shared
+│   ├── code_tables/                     # REMOVED — imports from shared/code_tables/
+│   └── data/                            # REMOVED — data moved to shared/data/
+└── ...                                  # Unchanged: models/, llm/, constants.py, exceptions.py
+```
+
+**Test structure:**
+
+```
+tests/
+├── test_shared/                         # NEW — shared module tests
+│   ├── conftest.py                      # Shared test fixtures
+│   ├── test_validators/
+│   │   ├── test_npi.py                  # validate_npi() pure function tests
+│   │   ├── test_date.py                 # validate_date() tests
+│   │   ├── test_member_id.py            # validate_member_id() tests
+│   │   ├── test_demographics.py         # validate_demographics() tests
+│   │   ├── test_diagnosis.py            # validate_diagnosis() tests
+│   │   ├── test_procedure.py            # validate_procedure() tests
+│   │   └── test_payer_id.py             # validate_payer_id() tests
+│   ├── test_deidentifier/
+│   │   ├── test_base.py                 # BaseDeidentifier core logic tests
+│   │   └── test_config.py               # DeidentificationConfig tests
+│   ├── test_pipeline/
+│   │   ├── test_engine.py               # BasePipeline phase execution, gating, timing
+│   │   ├── test_config.py               # PipelineConfig tests
+│   │   └── test_context.py              # ValidationContext passthrough tests
+│   └── test_code_tables/
+│       └── test_loader.py               # Unified lazy loading, thread safety
+├── test_workflow/                       # NEW — workflow orchestrator tests
+│   ├── conftest.py                      # Workflow test fixtures
+│   ├── test_api.py                      # process_claim() top-level function
+│   ├── test_orchestrator.py             # WorkflowOrchestrator sequential execution
+│   ├── test_stages.py                   # Stage implementations, skip logic
+│   └── test_models.py                   # WorkflowResult, StageResult
+├── test_validators/                     # MODIFIED — wrapper delegation tests
+│   └── test_rule_based/
+│       ├── test_npi.py                  # NPIValidator delegates to validate_npi()
+│       └── ...
+├── test_eligibility/                    # MODIFIED — delegation tests
+│   └── ...
+├── test_prior_auth/                     # MODIFIED — delegation tests
+│   └── ...
+└── test_hipaa/                          # EXISTING — verify shared de-identifier
+    ├── test_phi_leak.py                 # Scan all 3 domains
+    ├── test_no_network.py               # Rule-based zero network calls
+    └── test_deidentification.py         # All 18 identifiers stripped (claims, elig, PA)
+```
+
+**Modified existing files summary:**
+
+| File | Change | Reason |
+|---|---|---|
+| `__init__.py` | Add `process_claim`, `WorkflowResult`, `WorkflowRequest` exports | FR21, new public API |
+| `_api.py` | `validate()` builds `BasePipeline` with claim config | D41 delegation |
+| `conf.py` | Add workflow settings fields | D42 |
+| `validators/pipeline.py` | Replace `ValidationPipeline` with `BasePipeline` construction | D36, D41 |
+| `validators/rule_based/*.py` | Thin wrappers calling `shared/validators/` functions | D34 |
+| `deidentifier/deidentifier.py` | `ClaimDeidentifier` subclasses `BaseDeidentifier` | D35 |
+| `eligibility/pipeline.py` | Replace `EligibilityPipeline` with `BasePipeline` construction | D36, D41 |
+| `eligibility/deidentifier.py` | `EligibilityDeidentifier` subclasses `BaseDeidentifier` | D35 |
+| `eligibility/validators/rule_based/*.py` | Thin wrappers calling shared functions | D34 |
+| `prior_auth/pipeline.py` | Replace `PriorAuthPipeline` with `BasePipeline` construction | D36, D41 |
+| `prior_auth/deidentifier.py` | `PriorAuthDeidentifier` subclasses `BaseDeidentifier` | D35 |
+| `prior_auth/validators/rule_based/*.py` | Thin wrappers calling shared functions | D34 |
+
+**Removed directories** (data/code_tables moved to shared):
+
+| Removed | Replaced By |
+|---|---|
+| `data/` (claim data dir) | `shared/data/` |
+| `code_tables/` (claim code tables) | `shared/code_tables/` |
+| `eligibility/data/` | `shared/data/` |
+| `eligibility/code_tables/` | `shared/code_tables/` |
+| `prior_auth/data/` | `shared/data/` |
+| `prior_auth/code_tables/` | `shared/code_tables/` |
+
+**New file count:** ~25 new source files (`shared/` + `workflow/`) + ~20 new test files = ~45 new files
+**Modified file count:** ~15 existing files refactored
+**Removed directories:** 6 (replaced by `shared/`)
+
+### v3.0 Architectural Boundaries
+
+**Public API Boundary (new symbols):**
+
+| Symbol | Module | Stability |
+|---|---|---|
+| `process_claim()` | `workflow/_api.py` | Stable from v3.0 |
+| `WorkflowResult` | `workflow/models.py` | Stable from v3.0 |
+| `WorkflowRequest` | `workflow/models.py` | Stable from v3.0 |
+
+**Internal boundary (shared module):**
+- `shared/validators/*.py` — internal; domain wrappers are the public interface
+- `shared/deidentifier/` — internal; domain de-identifiers are the public interface
+- `shared/pipeline/engine.py` — internal; domain `build_*_pipeline()` functions are the interface
+- `shared/pipeline/context.py` — `ValidationContext` is semi-public (used by workflow, not by end users)
+- `shared/code_tables/` — public (any code can look up any table via `get_*_table()`)
+- `shared/data/` — package data, not importable
+
+**Workflow boundary:**
+- `workflow/orchestrator.py` — internal; `process_claim()` in `workflow/_api.py` is the public interface
+- `workflow/stages.py` — internal; stage implementations are not user-facing
+- `workflow/models.py` — public; `WorkflowResult`, `StageResult` returned to users
+
+### v3.0 Requirements to Structure Mapping
+
+| FR Category | Primary Location | Supporting Files |
+|---|---|---|
+| **Shared Validators (FR1-FR9)** | `shared/validators/*.py` | Domain `validators/rule_based/*.py` (thin wrappers) |
+| **Shared De-identification (FR10-FR13)** | `shared/deidentifier/base.py`, `config.py` | Domain `deidentifier.py` files (thin subclasses) |
+| **Shared Pipeline Engine (FR14-FR17)** | `shared/pipeline/engine.py`, `config.py` | Domain `pipeline.py` files (config + construction) |
+| **Shared Code Tables (FR18-FR20)** | `shared/code_tables/*.py`, `shared/data/` | — |
+| **Unified Workflow (FR21-FR27)** | `workflow/orchestrator.py`, `workflow/stages.py` | `workflow/_api.py`, `workflow/models.py` |
+| **Validation Passthrough (FR28-FR30)** | `shared/pipeline/context.py`, `shared/pipeline/engine.py` | `workflow/orchestrator.py` |
+| **API Preservation (FR31-FR34)** | `_api.py`, `eligibility/_api.py`, `prior_auth/_api.py` | Domain pipeline construction |
+| **Result Models (FR35-FR37)** | `workflow/models.py` | — |
+| **HIPAA Compliance (FR38-FR40)** | `shared/deidentifier/base.py` | `tests/test_hipaa/` |
+| **Configuration (FR41-FR43)** | `conf.py` | — |
+
+### v3.0 Data Flow — Unified Workflow
+
+```
+User Input (dict or WorkflowRequest)
+    │
+    ▼
+process_claim() [workflow/_api.py]
+    │ Constructs WorkflowRequest if dict, builds orchestrator from settings
+    ▼
+WorkflowOrchestrator.run(request) [workflow/orchestrator.py]
+    │ Creates ValidationContext()
+    │
+    ├── Stage 1: EligibilityStage
+    │   ├── build_eligibility_pipeline(settings) → BasePipeline [eligibility/pipeline.py]
+    │   ├── pipeline.run(request, validation_context=ctx)
+    │   │   ├── Phase 1: Shared validators (via thin wrappers)
+    │   │   │   ├── validate_npi() [shared/validators/npi.py]
+    │   │   │   ├── validate_payer_id() [shared/validators/payer_id.py]
+    │   │   │   ├── validate_demographics() [shared/validators/demographics.py]
+    │   │   │   └── ... → records results in ValidationContext
+    │   │   ├── Phase 2: Clearinghouse → EligibilityResponse
+    │   │   └── Phase 3: AI → EligibilityDeidentifier(BaseDeidentifier) → LLM
+    │   └── StageResult(eligibility_result, ctx updated)
+    │
+    ├── Gate: if eligibility failed → stopped_at="eligibility", return
+    │
+    ├── Stage 2: PA Determination
+    │   ├── determine_pa_required(eligibility_response) → PADeterminationResult
+    │   └── If not required → skip PA stage
+    │
+    ├── Stage 3: PAStage (conditional)
+    │   ├── build_pa_pipeline(settings) → BasePipeline [prior_auth/pipeline.py]
+    │   ├── pipeline.run(request, validation_context=ctx)
+    │   │   ├── Phase 1: Shared validators (SKIPS already-validated: NPI, demographics)
+    │   │   ├── Phase 2: Clearinghouse → PriorAuthResponse
+    │   │   └── Phase 3: AI → PriorAuthDeidentifier(BaseDeidentifier) → LLM
+    │   └── StageResult(pa_result, ctx updated)
+    │
+    ├── Gate: if PA failed → stopped_at="prior_auth", return
+    │
+    └── Stage 4: ClaimValidationStage
+        ├── build_claim_pipeline(settings) → BasePipeline [validators/pipeline.py]
+        ├── pipeline.run(request, validation_context=ctx)
+        │   ├── Phase 1: Shared validators (SKIPS already-validated)
+        │   └── Phase 2: AI → ClaimDeidentifier(BaseDeidentifier) → LLM
+        └── StageResult(claim_result)
+    │
+    ▼
+WorkflowResult(eligibility, prior_auth, claim_validation, stopped_at, passed, execution_time)
+```
+
+---
+
+## v3.0 Refactoring — Architecture Validation Results
+
+### Coherence Validation ✅
+
+**Decision Compatibility:**
+
+All 43 decisions (D1-D43) are compatible. The v3.0 refactoring decisions (D34-D43) are additive — they introduce shared infrastructure that existing domain decisions delegate to, without contradicting any prior decision. Key compatibility points:
+
+- D34 (shared validators) provides the implementations that D5-D6 (claim validators), D16-D17 (eligibility validators), and D26-D27 (PA validators) delegate to
+- D35 (shared de-identifier) unifies D8 (claim de-id), D19 (eligibility de-id), and D29 (PA de-id) under a single base with config-driven behavior
+- D36 (shared pipeline) generalizes D7 (claim pipeline), D14 (eligibility pipeline), and D24 (PA pipeline) into a config-parameterized engine
+- D42 (configuration extension) adds flat fields to D10/D20/D30 settings — no conflicts with existing env var patterns
+- D43 (clean break) explicitly acknowledges that internal import paths change, which is consistent with D41 (domain refactoring)
+
+No version conflicts — all technology choices remain unchanged (Python 3.11+, Pydantic 2.x, hatchling).
+
+**Pattern Consistency:**
+
+All 10 new conflict points (from step 5) align with existing patterns:
+- Shared validator pure functions follow the same `Finding`-based return pattern as existing validators
+- Domain wrappers maintain `BaseValidator.validate()` interface unchanged
+- `BaseDeidentifier` follows the same ABC pattern as `BaseLLMClient` and `BaseClearinghouseClient`
+- `BasePipeline` with `PipelineConfig` mirrors the settings-driven configuration pattern used throughout
+- Naming conventions are consistent: `validate_{concept}()`, `{Domain}Deidentifier`, `{Domain}Pipeline`
+
+**Structure Alignment:**
+
+The v3.0 directory structure (step 6) properly supports all decisions:
+- `shared/` subpackage is cleanly isolated with no circular dependencies
+- Domain modules (`validators/`, `eligibility/`, `prior_auth/`) become thin orchestration layers
+- `workflow/` subpackage is separate from domain logic
+- Test structure mirrors source structure exactly
+
+### Requirements Coverage Validation ✅
+
+**Functional Requirements Coverage (43/43 — 100%):**
+
+| FR Group | FRs | Architectural Support |
+|---|---|---|
+| Shared Validators | FR1-FR9 | D34 shared validators, `shared/validators/` directory |
+| Shared De-identification | FR10-FR13 | D35 BaseDeidentifier, `shared/deidentifier/` directory |
+| Shared Pipeline Engine | FR14-FR17 | D36 BasePipeline + PipelineConfig, `shared/pipeline/` directory |
+| Shared Code Tables | FR18-FR20 | D39 unified code tables, `shared/code_tables/` + `shared/data/` |
+| Unified Workflow Orchestrator | FR21-FR27 | D38 WorkflowOrchestrator + Stage protocol, `workflow/` directory |
+| Validation Passthrough | FR28-FR30 | D37 ValidationContext, pipeline skip logic |
+| Existing API Preservation | FR31-FR34 | D41 domain refactoring (thin wrappers), D43 clean break |
+| Result Models | FR35-FR37 | D40 WorkflowResult model |
+| HIPAA Compliance | FR38-FR40 | D35 shared de-id inherits all existing HIPAA tests |
+| Configuration | FR41-FR43 | D42 configuration extension, flat settings pattern |
+
+**Non-Functional Requirements Coverage (27/27 — 100%):**
+
+| NFR Group | NFRs | Architectural Support |
+|---|---|---|
+| Performance | NFR1-NFR6 | D34 pure functions (<50ms), D36 no overhead (<5ms indirection), D39 lazy singletons (<1ms lookup) |
+| Security | NFR7-NFR11 | D35 BaseDeidentifier enforces de-id before every LLM call, PHI cleared per-call |
+| Scalability | NFR12-NFR15 | D34 stateless validators, D36 thread-safe pipeline, D39 locked singletons |
+| Integration | NFR16-NFR20 | D41 existing APIs unchanged, D43 internal paths change only, Python 3.11-3.13 |
+| Code Quality | NFR21-NFR27 | D34 eliminates duplication, D41 thin wrappers reduce complexity, test patterns maintained |
+
+### Implementation Readiness Validation ✅
+
+**Decision Completeness:**
+
+- All 10 refactoring decisions (D34-D43) include version/rationale, code examples, and migration notes
+- Implementation patterns cover all major shared module interfaces with concrete code samples
+- Enforcement guidelines provide 10 clear rules for AI agent consistency
+- Examples provided for: shared validator, domain wrapper, de-identifier config, pipeline config, stage implementation, WorkflowResult access, code table import, and test patterns
+
+**Structure Completeness:**
+
+- Complete v3.0 directory structure with ~45 new files and ~15 modified files
+- All files and directories defined with purpose annotations
+- Integration points clearly specified (shared → domain delegation, workflow → pipeline composition)
+- Component boundaries well-defined (shared = pure logic, domain = orchestration, workflow = sequencing)
+
+**Pattern Completeness:**
+
+- All 10 conflict points addressed with code examples
+- Naming conventions comprehensive and consistent with existing codebase
+- Error handling follows existing exception hierarchy (no new exception classes needed)
+- Test patterns cover shared modules, domain wrappers, passthrough logic, and workflow integration
+
+### Gap Analysis Results
+
+**Critical Gaps: 0**
+
+No blocking gaps identified.
+
+**Important Gaps: 2 (both resolved during validation)**
+
+1. **FR31-33 "identical behavior" specification** — Resolved: existing test suites serve as the formal specification. Domain wrappers must pass all existing tests unchanged. Added to enforcement guidelines.
+
+2. **ValidationContext thread safety** — Resolved: `ValidationContext` is created per-call (not shared across threads). The `WorkflowOrchestrator.process_claim()` creates a fresh context for each invocation. No thread-safety concern.
+
+**Nice-to-Have Gaps: 2**
+
+1. **Migration script** — A script to verify that all existing tests pass after refactoring would be helpful but is not architecturally blocking. Can be created during implementation.
+
+2. **Performance benchmark suite** — A benchmark comparing v2 vs v3 performance for all NFR thresholds would validate the <5ms indirection overhead claim. Can be created post-implementation.
+
+### Validation Issues Addressed
+
+No critical or blocking issues found. The two important gaps were resolved inline during validation (see above).
+
+### Architecture Completeness Checklist
+
+**✅ Requirements Analysis**
+
+- [x] Project context thoroughly analyzed (43 FRs, 27 NFRs, existing codebase)
+- [x] Scale and complexity assessed (refactoring 3 modules, ~45 new files)
+- [x] Technical constraints identified (Python 3.11+, Pydantic 2.x, HIPAA)
+- [x] Cross-cutting concerns mapped (PHI, validation passthrough, configuration)
+
+**✅ Architectural Decisions**
+
+- [x] Critical decisions documented with versions (D34-D43)
+- [x] Technology stack fully specified (unchanged from existing)
+- [x] Integration patterns defined (shared→domain delegation, workflow→pipeline composition)
+- [x] Performance considerations addressed (pure functions, lazy singletons, no overhead)
+
+**✅ Implementation Patterns**
+
+- [x] Naming conventions established (10 conflict points)
+- [x] Structure patterns defined (shared module, domain wrapper, workflow stage)
+- [x] Communication patterns specified (ValidationContext, StageResult, WorkflowResult)
+- [x] Process patterns documented (enforcement guidelines, test patterns)
+
+**✅ Project Structure**
+
+- [x] Complete directory structure defined (~45 new + ~15 modified files)
+- [x] Component boundaries established (shared/domain/workflow)
+- [x] Integration points mapped (FR-to-structure table)
+- [x] Requirements to structure mapping complete (43/43 FRs, 27/27 NFRs)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — based on 100% FR/NFR coverage, zero critical gaps, and complete implementation patterns with code examples.
+
+**Key Strengths:**
+
+1. Clean separation between shared logic (pure functions) and domain orchestration (thin wrappers)
+2. Config-driven de-identification and pipeline behavior — domains differ only in configuration
+3. Validation passthrough eliminates redundant work without coupling stages
+4. WorkflowOrchestrator with Stage protocol enables clean sequencing with gate logic
+5. All existing APIs preserved — refactoring is purely internal
+
+**Areas for Future Enhancement:**
+
+1. Performance benchmark suite to validate NFR thresholds empirically
+2. Migration verification script for test suite continuity
+3. Potential async pipeline support (not in v3.0 scope)
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+
+- Follow all architectural decisions (D34-D43) exactly as documented
+- Use implementation patterns consistently — especially the thin domain wrapper pattern
+- Respect the shared/domain/workflow boundary: shared = pure logic, domain = orchestration, workflow = sequencing
+- Refer to this document for all architectural questions
+- Run existing test suites after every refactoring step to verify "identical behavior" (FR31-33)
+
+**Implementation Sequence (15 steps):**
+
+1. Create `shared/` package skeleton with `__init__.py` files
+2. Implement `shared/validators/` — extract pure functions from existing validators
+3. Implement `shared/deidentifier/` — `BaseDeidentifier` + `DeidentificationConfig`
+4. Implement `shared/pipeline/` — `BasePipeline` + `PipelineConfig`
+5. Implement `shared/code_tables/` — consolidate all loaders + data
+6. Write tests for all shared modules
+7. Refactor `validators/` (claims) — thin wrappers delegating to shared
+8. Refactor `eligibility/` — thin wrappers delegating to shared
+9. Refactor `prior_auth/` — thin wrappers delegating to shared
+10. Verify all existing tests pass after domain refactoring
+11. Implement `ValidationContext` and passthrough logic in `BasePipeline`
+12. Implement `workflow/` — `WorkflowOrchestrator`, stages, `WorkflowResult`
+13. Implement `process_claim()` top-level API
+14. Write workflow integration tests
+15. Final validation: all tests green, mypy strict, ruff clean, coverage maintained

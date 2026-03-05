@@ -1,15 +1,16 @@
-"""DemographicsValidator — patient demographics consistency."""
+"""DemographicsValidator — patient demographics consistency.
+
+Delegates DOB + gender checks to ``shared.validators.validate_demographics``.
+Self-relationship mismatch check remains domain-specific.
+"""
 
 from __future__ import annotations
-
-import datetime
 
 from claim_validator.constants import Severity
 from claim_validator.models.claim import ClaimData
 from claim_validator.models.results import Finding, ValidatorOutput
+from claim_validator.shared.validators import validate_demographics
 from claim_validator.validators.base import BaseValidator
-
-_VALID_GENDERS = {"M", "F", "U"}
 
 
 class DemographicsValidator(BaseValidator):
@@ -20,60 +21,20 @@ class DemographicsValidator(BaseValidator):
     def validate(self, claim: ClaimData) -> ValidatorOutput:
         findings: list[Finding] = []
 
-        self._check_dob(claim, findings)
-        self._check_gender(claim, findings)
+        # Delegate DOB + gender to shared pure function
+        shared_findings = validate_demographics(
+            name=claim.patient_first_name,  # pass to avoid false MISSING_PATIENT_NAME
+            gender=claim.patient_gender,
+            dob=claim.patient_dob,
+            field_prefix="patient_",
+        )
+        # Filter name-related findings — CompletenessValidator handles required fields
+        findings.extend(f for f in shared_findings if f.code != "MISSING_PATIENT_NAME")
+
+        # Domain-specific cross-field check
         self._check_self_relationship(claim, findings)
 
         return self._make_output(findings)
-
-    def _check_dob(self, claim: ClaimData, findings: list[Finding]) -> None:
-        dob = claim.patient_dob
-        if not dob or not dob.strip():
-            return  # CompletenessValidator handles required
-
-        try:
-            dob_date = datetime.date.fromisoformat(dob.strip())
-        except ValueError:
-            findings.append(
-                self._make_finding(
-                    code="INVALID_DOB_FORMAT",
-                    message="Field 'patient_dob' must be a valid date in YYYY-MM-DD format",
-                    severity=Severity.ERROR,
-                    field_name="patient_dob",
-                    suggestion="Provide date of birth in YYYY-MM-DD format (CMS-1500 Box 3)",
-                )
-            )
-            return  # Can't check future if format is invalid
-
-        if dob_date > datetime.date.today():
-            findings.append(
-                self._make_finding(
-                    code="FUTURE_DOB",
-                    message="Field 'patient_dob' is in the future",
-                    severity=Severity.ERROR,
-                    field_name="patient_dob",
-                    suggestion="Verify the patient date of birth (CMS-1500 Box 3)",
-                )
-            )
-
-    def _check_gender(self, claim: ClaimData, findings: list[Finding]) -> None:
-        gender = claim.patient_gender
-        if not gender or not gender.strip():
-            return  # CompletenessValidator handles required
-
-        if gender.strip().upper() not in _VALID_GENDERS:
-            findings.append(
-                self._make_finding(
-                    code="INVALID_GENDER",
-                    message="Field 'patient_gender' must be one of: M, F, U",
-                    severity=Severity.ERROR,
-                    field_name="patient_gender",
-                    suggestion=(
-                        "Use M (male), F (female), or U (unknown)"
-                        " for patient gender (CMS-1500 Box 3)"
-                    ),
-                )
-            )
 
     def _check_self_relationship(self, claim: ClaimData, findings: list[Finding]) -> None:
         rel = claim.patient_relationship

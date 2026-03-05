@@ -1,18 +1,31 @@
-"""CodingValidator — diagnosis/procedure code validation."""
+"""CodingValidator — diagnosis/procedure code validation.
+
+Delegates ICD-10 + CPT/HCPCS format/lookup to shared pure functions.
+Modifier checks, diagnosis pointer, and unreferenced-diagnosis checks
+remain domain-specific.
+"""
 
 from __future__ import annotations
 
 import re
 
-from claim_validator.code_tables import lookup_hcpcs, lookup_icd10
 from claim_validator.constants import Severity
 from claim_validator.models.claim import ClaimData
 from claim_validator.models.results import Finding, ValidatorOutput
+from claim_validator.shared.validators import validate_diagnosis, validate_procedure
 from claim_validator.validators.base import BaseValidator
 
-_ICD10_PATTERN = re.compile(r"^[A-Za-z]\d{2}(\.\d{1,4})?$")
-_PROCEDURE_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{5}$")
 _MODIFIER_PATTERN = re.compile(r"^[A-Za-z0-9]{2}$")
+
+# Shared → domain code remapping tables
+_DX_CODE_MAP = {
+    "INVALID_DIAGNOSIS_FORMAT": "INVALID_DIAGNOSIS_CODE_FORMAT",
+    "INVALID_DIAGNOSIS": "INVALID_DIAGNOSIS_CODE",
+}
+_PX_CODE_MAP = {
+    "INVALID_PROCEDURE_FORMAT": "INVALID_PROCEDURE_CODE_FORMAT",
+    "INVALID_PROCEDURE": "INVALID_PROCEDURE_CODE",
+}
 
 
 class CodingValidator(BaseValidator):
@@ -38,48 +51,16 @@ class CodingValidator(BaseValidator):
         if not claim.diagnosis_codes:
             return
 
-        for i, dx in enumerate(claim.diagnosis_codes, start=1):
-            code = dx.code.strip() if dx.code else ""
-            if not code:
-                continue
+        codes = [dx.code.strip() if dx.code else "" for dx in claim.diagnosis_codes]
+        codes = [c for c in codes if c]  # skip empty — CompletenessValidator handles
 
-            if not _ICD10_PATTERN.match(code):
-                findings.append(
-                    self._make_finding(
-                        code="INVALID_DIAGNOSIS_CODE_FORMAT",
-                        message=(
-                            f"Diagnosis code at position {i} in"
-                            " 'diagnosis_codes' has invalid"
-                            " format"
-                        ),
-                        severity=Severity.ERROR,
-                        field_name="diagnosis_codes",
-                        suggestion=(
-                            "ICD-10-CM codes must start with a"
-                            " letter followed by 2+ digits"
-                            " (e.g., J06.9)"
-                        ),
-                    )
-                )
-                continue
-
-            if lookup_icd10(code) is None:
-                findings.append(
-                    self._make_finding(
-                        code="INVALID_DIAGNOSIS_CODE",
-                        message=(
-                            f"Diagnosis code at position {i} in"
-                            " 'diagnosis_codes' not found in"
-                            " bundled ICD-10-CM table"
-                        ),
-                        severity=Severity.ERROR,
-                        field_name="diagnosis_codes",
-                        suggestion=(
-                            "Verify the ICD-10-CM code against"
-                            " the current CMS code set"
-                        ),
-                    )
-                )
+        shared_findings = validate_diagnosis(codes, field_name="diagnosis_codes")
+        for f in shared_findings:
+            new_code = _DX_CODE_MAP.get(f.code, f.code)
+            if new_code != f.code:
+                findings.append(f.model_copy(update={"code": new_code}))
+            else:
+                findings.append(f)
 
     def _check_procedure_codes(
         self, claim: ClaimData, findings: list[Finding],
@@ -92,47 +73,18 @@ class CodingValidator(BaseValidator):
             if not code:
                 continue
 
-            if not _PROCEDURE_CODE_PATTERN.match(code):
-                findings.append(
-                    self._make_finding(
-                        code="INVALID_PROCEDURE_CODE_FORMAT",
-                        message=(
-                            "Procedure code in"
-                            " 'procedure_code' must be"
-                            " exactly 5 alphanumeric"
-                            " characters"
-                        ),
-                        severity=Severity.ERROR,
-                        field_name="procedure_code",
-                        line_number=idx,
-                        suggestion=(
-                            "CPT codes are 5 digits"
-                            " (e.g., 99213). HCPCS codes"
-                            " are letter + 4 digits"
-                            " (e.g., J0120)"
-                        ),
-                    )
-                )
-                continue
-
-            if lookup_hcpcs(code) is None:
-                findings.append(
-                    self._make_finding(
-                        code="INVALID_PROCEDURE_CODE",
-                        message=(
-                            "Procedure code in"
-                            " 'procedure_code' not found"
-                            " in bundled CPT/HCPCS table"
-                        ),
-                        severity=Severity.ERROR,
-                        field_name="procedure_code",
-                        line_number=idx,
-                        suggestion=(
-                            "Verify the CPT/HCPCS code"
-                            " against the current code set"
-                        ),
-                    )
-                )
+            shared_findings = validate_procedure(
+                [code], field_name="procedure_code",
+            )
+            for f in shared_findings:
+                new_code = _PX_CODE_MAP.get(f.code, f.code)
+                update: dict = {"line_number": idx}
+                if new_code != f.code:
+                    update["code"] = new_code
+                # Claims treats unknown procedures as ERROR (shared uses WARNING)
+                if f.severity == Severity.WARNING:
+                    update["severity"] = Severity.ERROR
+                findings.append(f.model_copy(update=update))
 
     def _check_modifiers(
         self, claim: ClaimData, findings: list[Finding],

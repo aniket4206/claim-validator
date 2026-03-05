@@ -43,6 +43,8 @@ Issues = "https://github.com/aniket/claim-validator/issues"
 
 [tool.hatch.version]
 source = "vcs"
+raw-options.root = ".."
+raw-options.relative_to = "pyproject.toml"
 
 [tool.hatch.build.hooks.vcs]
 version-file = "src/claim_validator/_version.py"

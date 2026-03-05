@@ -1,4 +1,8 @@
-"""ClaimDeidentifier — HIPAA Safe Harbor de-identification."""
+"""ClaimDeidentifier — HIPAA Safe Harbor de-identification.
+
+Delegates year extraction to ``BaseDeidentifier``.  Age computation
+uses module-level ``datetime`` for test mockability.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +13,15 @@ from claim_validator.models.deidentified import (
     DeidentifiedClaim,
     DeidentifiedLineData,
 )
+from claim_validator.shared.deidentifier import (
+    CLAIM_DEID_CONFIG,
+    BaseDeidentifier,
+)
 
 # Safe Harbor age cap: ages 90+ reported as 90
 _SAFE_HARBOR_AGE_CAP = 90
+
+_base = BaseDeidentifier(CLAIM_DEID_CONFIG)
 
 
 class ClaimDeidentifier:
@@ -58,7 +68,7 @@ class ClaimDeidentifier:
         line: ClaimLineData,
     ) -> DeidentifiedLineData:
         """Strip PHI from a single claim line."""
-        service_year = cls._extract_year(line.service_date_from)
+        service_year = _base.extract_year(line.service_date_from)
         return DeidentifiedLineData(
             procedure_code=line.procedure_code,
             modifiers=list(line.modifiers),
@@ -72,7 +82,10 @@ class ClaimDeidentifier:
 
     @staticmethod
     def _compute_age(dob_str: str | None) -> int | None:
-        """Convert DOB string to age, capped at 90."""
+        """Convert DOB string to age, capped at 90.
+
+        Uses module-level ``datetime`` for test mock compatibility.
+        """
         if not dob_str:
             return None
         try:
@@ -84,13 +97,3 @@ class ClaimDeidentifier:
             (today.month, today.day) < (dob.month, dob.day)
         )
         return min(age, _SAFE_HARBOR_AGE_CAP)
-
-    @staticmethod
-    def _extract_year(date_str: str | None) -> int | None:
-        """Extract year from a date string."""
-        if not date_str:
-            return None
-        try:
-            return datetime.date.fromisoformat(date_str).year
-        except (ValueError, TypeError):
-            return None

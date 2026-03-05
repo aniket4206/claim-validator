@@ -1,0 +1,733 @@
+
+======================================================================
+  CLAIM VALIDATOR — ALL SCENARIOS REPORT
+======================================================================
+
+Generated: 2026-03-04 19:56:41
+Clearinghouse: Waystar (Zirmed)
+
+======================================================================
+  SCENARIO 1: ELIGIBILITY — PASS (test payer 66666)
+======================================================================
+
+Request:
+{
+  "payer_id": "66666",
+  "npi": "1245319599",
+  "subscriber_id": "SUB987654321",
+  "first_name": "Alice",
+  "last_name": "Williams",
+  "dob": "1980-07-22",
+  "service_type": "02"
+}
+
+Response:
+  Status:       active
+  Eligible:     True
+  Reference ID: 218559495
+
+  Carrier:      ZIRMED (1234567890)
+  Subscriber:   ALICE WILLIAMS | DOB: 7/22/1980 | ID: SUB987654321
+  File Status:  ACTIVE
+
+  Plans:
+    1. CHOICE PLUS (ACTIVE)
+       Effective:      3/4/2026
+       Deductible IN:  $1500
+       Deductible OUT: $2000
+       CoIns IN:       N/A
+       CoIns OUT:      N/A
+       Ded Remaining:  $500
+       OOP Remaining:  $1000
+    2. 12 (ACTIVE)
+       Effective:      3/4/2026
+       Deductible IN:  $N/A
+       Deductible OUT: $N/A
+       CoIns IN:       .2
+       CoIns OUT:      .4
+
+  Benefits:
+    Service Type 30:
+      IND: Ded $0 (rem $500) | OOP $0 (rem $1000)
+      FAM: Ded $1500 (rem $1500) | OOP $0 (rem $2000)
+    Service Type 12:
+      IND: Ded $- (rem $-) | OOP $- (rem $-)
+      FAM: Ded $0 (rem $-) | OOP $- (rem $-)
+
+--- Raw Response JSON ---
+
+{
+  "RawOutput": "ISA*00*          *00*          *ZZ*ZIRMED         *ZZ*605            *260304*0926*^*00501*007158507*0*P*:~GS*HB*ZIRMED*605*20260304*0926*7158507*X*005010X279A1~ST*271*0001*005010X279A1~BHT*0022*11*REQ001*20260304*092643~HL*1**20*1~NM1*P5*2*TEST DATA*****PI*87726~HL*2*1*21*1~NM1*1P*1*ZIRMED*DEMO****XX*1234567890~HL*3*2*22*0~TRN*2*217648508*9ZIRMEDCOM~TRN*2*220686992*9ZIRMEDCOM*ELR ID~TRN*1*218559495*9ZIRMEDCOM*ELI ID~NM1*IL*1*WILLIAMS*ALICE****MI*SUB987654321~DMG*D8*19800722~DTP*291*D8*20260304~EB*1**30*C1*CHOICE PLUS~LS*2120~NM1*P5*2*TEST DATA*****PI*87726~N3*P.O. BOX 30555~N4*SALT LAKE CITY*UT*841300555~PER*IC~LE*2120~EB*C*IND*30***23*500*****W~EB*G*FAM*30*C1**23*2000*****W~EB*G*IND*30*C1**23*1000*****W~EB*C*FAM*30***24*0*****W~EB*C*IND*30***24*0*****W~EB*G*FAM*30*C1**24*0*****W~EB*G*IND*30*C1**24*0*****W~EB*C*IND*30***29*500*****W~EB*G*FAM*30*C1**29*2000*****W~EB*G*IND*30*C1**29*1000*****W~EB*C*FAM*30***23*1500*****Y~EB*C*FAM*30***29*2000*****N~EB*C*FAM*30***23*2000*****N~EB*C*FAM*30***29*1500*****Y~EB*1**12*********W~EB*A*IND*12***27**.4****N~EB*A*IND*12***27**.2****Y~EB*B*IND*12***27*0*****W~EB*C*FAM*12****0*****W~EB*F*IND*12****0*****W~EB*F*IND*12****0*****W~MSG*ADDITIONAL COVERED PER OCCURRENCE~EB*X~LS*2120~NM1*1P*1*ZIRMED*DEMO****XX*1234567890~LE*2120~SE*47*0001~GE*1*7158507~IEA*1*007158507~",
+  "ParsedOutput": {
+    "CarrierCode": "1234567890",
+    "CarrierName": "ZIRMED",
+    "CarrierAddress1": "P.O. BOX 30555",
+    "CarrierCity": "SALT LAKE CITY",
+    "CarrierState": "UT",
+    "CarrierZip": "841300555",
+    "Dtps": [
+      {
+        "Type": "291",
+        "Date": "20260304"
+      }
+    ],
+    "ClaimsInfo": {
+      "Name": "TEST DATA",
+      "Address1": "P.O. BOX 30555",
+      "City": "SALT LAKE CITY",
+      "State": "UT",
+      "Zip": "841300555"
+    },
+    "MemberId": "SUB987654321",
+    "SubscriberRelationship": "SUBSCRIBER",
+    "Subscriber": {
+      "First": "ALICE",
+      "Last": "WILLIAMS",
+      "Dob": "7/22/1980",
+      "MemberId": "SUB987654321"
+    },
+    "Patient": {
+      "First": "ALICE",
+      "Last": "WILLIAMS",
+      "Dob": "7/22/1980"
+    },
+    "FileStatus": 1,
+    "FileStatusDescription": "ACTIVE",
+    "HasMedicarePassportadvantage": 0,
+    "Plans": [
+      {
+        "InsurancePlan": "30",
+        "InsurancePlanName": "CHOICE PLUS",
+        "FileStatus": 1,
+        "FileStatusDescription": "ACTIVE",
+        "PatientEffectiveBenefitDate": "3/4/2026",
+        "DeductibleInNetwork": "1500",
+        "DeductibleOutNetwork": "2000",
+        "ServiceType": "30",
+        "Name": "C1",
+        "ActiveDate": "3/4/2026",
+        "IsActive": true,
+        "PlanBinDed": "1500",
+        "PlanBinDedRem": "500",
+        "PlaoncenBinOopRem": "1000",
+        "PlanBonDed": "2000",
+        "PlanBonDedRem": "2000"
+      },
+      {
+        "InsurancePlan": "12",
+        "FileStatus": 1,
+        "FileStatusDescription": "ACTIVE",
+        "PatientEffectiveBenefitDate": "3/4/2026",
+        "CoInsuranceInNetwork": ".2",
+        "CoInsuranceOutNetwork": ".4",
+        "ServiceType": "12",
+        "Name": "12",
+        "ActiveDate": "3/4/2026",
+        "IsActive": true
+      }
+    ],
+    "Benefits": {
+      "30": {
+        "IND": {
+          "BinDed": "0",
+          "BinDedRem": "500",
+          "Deds": [
+            {
+              "Value": "500",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "DedRems": [
+            {
+              "Value": "500",
+              "NetFlag": "W"
+            }
+          ],
+          "Oops": [
+            {
+              "Value": "1000",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "OopRems": [
+            {
+              "Value": "1000",
+              "NetFlag": "W"
+            }
+          ],
+          "CoverageStatus": "Active",
+          "PlanType": "30",
+          "InsuranceType": "C1",
+          "PlanCoverageDescription": "CHOICE PLUS",
+          "BinOop": "0",
+          "BinOopRem": "1000"
+        },
+        "FAM": {
+          "Deds": [
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "1500",
+              "NetFlag": "Y"
+            },
+            {
+              "Value": "2000",
+              "NetFlag": "N"
+            }
+          ],
+          "DedRems": [
+            {
+              "Value": "2000",
+              "NetFlag": "N"
+            },
+            {
+              "Value": "1500",
+              "NetFlag": "Y"
+            }
+          ],
+          "Oops": [
+            {
+              "Value": "2000",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "OopRems": [
+            {
+              "Value": "2000",
+              "NetFlag": "W"
+            }
+          ],
+          "BinOop": "0",
+          "BinDed": "1500",
+          "BinOopRem": "2000",
+          "BonDedRem": "2000",
+          "BonDed": "2000",
+          "BinDedRem": "1500"
+        }
+      },
+      "12": {
+        "IND": {
+          "CovgPercs": [
+            {
+              "Value": "60%",
+              "NetFlag": "N"
+            },
+            {
+              "Value": "80%",
+              "NetFlag": "Y"
+            }
+          ],
+          "Copays": [
+            {
+              "Value": "0",
+              "Tq": "27",
+              "NetFlag": "W"
+            }
+          ],
+          "Days": [
+            {
+              "NetFlag": "W"
+            },
+            {
+              "NetFlag": "W",
+              "Msg": "ADDITIONAL COVERED PER OCCURRENCE"
+            }
+          ],
+          "CoverageStatus": "Active",
+          "PlanType": "12",
+          "BonCovgPerc": "60%",
+          "BinCovgPerc": "80%",
+          "BinCopay1": "0",
+          "BinDaysMsg": "ADDITIONAL COVERED PER OCCURRENCE"
+        },
+        "FAM": {
+          "Deds": [
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "BinDed": "0"
+        }
+      },
+      "It-none": {
+        "St-none": {
+          "Benefits": [
+            {
+              "ProviderName": "DEMO ZIRMED",
+              "Npi": "1234567890"
+            }
+          ]
+        }
+      }
+    },
+    "PlanName": "CHOICE PLUS"
+  },
+  "InquiryId": 218559495
+}
+
+======================================================================
+  SCENARIO 2: ELIGIBILITY — FAIL (unregistered payer 00520)
+======================================================================
+
+Request:
+{
+  "payer_id": "00520",
+  "npi": "1245319599",
+  "subscriber_id": "SUB987654321",
+  "first_name": "Alice",
+  "last_name": "Williams",
+  "dob": "1980-07-22",
+  "service_type": "02"
+}
+
+Response:
+  Status:       The submitted provider is either invalid or has not been registered with the carrier..
+  Eligible:     None
+  Reference ID: 10200053645
+
+  Carrier:      00520 (00520)
+  Subscriber:   ALICE WILLIAMS | DOB: 7/22/1980 | ID: SUB987654321
+  File Status:  3
+  Fail Reason:  The submitted provider is either invalid or has not been registered with the carrier..
+  Fail Code:    T4
+
+--- Raw Response JSON ---
+
+{
+  "RawOutput": "ISA|00|          |00|          |ZZ|ZIRMED         |ZZ|10864          |260304|0926|}|00501|003314693|0|P|^~GS|HB|ZIRMED|10864|20260304|0926|3314693|X|005010X279A1~ST|271|0001|005010X279A1~BHT|0022|11|REQ001|20260304|092644~HL|1||20|1~NM1|PR|2|00520|||||PI|00520~AAA|N||T4|C~HL|2|1|21|1~NM1|1P|2||||||SV|99999~AAA|N||44|C~HL|3|2|22|0~TRN|2|REQ001|9SENDER   ~TRN|2|10708487141|9ZIRMEDCOM|ELR ID~TRN|1|10200053645|9ZIRMEDCOM|ELI ID~NM1|IL|1|WILLIAMS|ALICE||||MI|SUB987654321~DMG|D8|19800722~DTP|291|D8|20260304~EB|V~MSG|INQUIRING PROVIDER NAME MATCHING REQUIRED ()~MSG|PAYER ID (00520) IS NOT SETUP FOR ELIGIBILITY.  PLEASE EDIT AND RESUBMIT.~SE|19|0001~GE|1|3314693~IEA|1|003314693~",
+  "ParsedOutput": {
+    "CarrierCode": "00520",
+    "CarrierName": "00520",
+    "Dtps": [
+      {
+        "Type": "291",
+        "Date": "20260304"
+      }
+    ],
+    "MemberId": "SUB987654321",
+    "SubscriberRelationship": "SUBSCRIBER",
+    "Subscriber": {
+      "First": "ALICE",
+      "Last": "WILLIAMS",
+      "Dob": "7/22/1980",
+      "MemberId": "SUB987654321"
+    },
+    "Patient": {
+      "First": "ALICE",
+      "Last": "WILLIAMS",
+      "Dob": "7/22/1980"
+    },
+    "FileStatus": 3,
+    "FailReason": "The submitted provider is either invalid or has not been registered with the carrier..",
+    "FailCode": "T4",
+    "HasMedicarePassportadvantage": 0
+  },
+  "InquiryId": 10200053645
+}
+
+======================================================================
+  SCENARIO 3: ELIGIBILITY — FAIL (unknown subscriber)
+======================================================================
+
+Request:
+{
+  "payer_id": "66666",
+  "npi": "1245319599",
+  "subscriber_id": "INVALID000",
+  "first_name": "Nonexistent",
+  "last_name": "Person",
+  "dob": "2099-12-31",
+  "service_type": "02"
+}
+
+Response:
+  Status:       active
+  Eligible:     True
+  Reference ID: 218559495
+
+  Carrier:      ZIRMED (1234567890)
+  Subscriber:   NONEXISTENT PERSON | DOB: 12/31/2099 | ID: INVALID000
+  File Status:  ACTIVE
+
+  Plans:
+    1. CHOICE PLUS (ACTIVE)
+       Effective:      3/4/2026
+       Deductible IN:  $1500
+       Deductible OUT: $2000
+       CoIns IN:       N/A
+       CoIns OUT:      N/A
+       Ded Remaining:  $500
+       OOP Remaining:  $1000
+    2. 12 (ACTIVE)
+       Effective:      3/4/2026
+       Deductible IN:  $N/A
+       Deductible OUT: $N/A
+       CoIns IN:       .2
+       CoIns OUT:      .4
+
+  Benefits:
+    Service Type 30:
+      IND: Ded $0 (rem $500) | OOP $0 (rem $1000)
+      FAM: Ded $1500 (rem $1500) | OOP $0 (rem $2000)
+    Service Type 12:
+      IND: Ded $- (rem $-) | OOP $- (rem $-)
+      FAM: Ded $0 (rem $-) | OOP $- (rem $-)
+
+--- Raw Response JSON ---
+
+{
+  "RawOutput": "ISA*00*          *00*          *ZZ*ZIRMED         *ZZ*605            *260304*0926*^*00501*007158508*0*P*:~GS*HB*ZIRMED*605*20260304*0926*7158508*X*005010X279A1~ST*271*0001*005010X279A1~BHT*0022*11*REQ001*20260304*092645~HL*1**20*1~NM1*P5*2*TEST DATA*****PI*87726~HL*2*1*21*1~NM1*1P*1*ZIRMED*DEMO****XX*1234567890~HL*3*2*22*0~TRN*2*217648508*9ZIRMEDCOM~TRN*2*220686992*9ZIRMEDCOM*ELR ID~TRN*1*218559495*9ZIRMEDCOM*ELI ID~NM1*IL*1*PERSON*NONEXISTENT****MI*INVALID000~DMG*D8*20991231~DTP*291*D8*20260304~EB*1**30*C1*CHOICE PLUS~LS*2120~NM1*P5*2*TEST DATA*****PI*87726~N3*P.O. BOX 30555~N4*SALT LAKE CITY*UT*841300555~PER*IC~LE*2120~EB*C*IND*30***23*500*****W~EB*G*FAM*30*C1**23*2000*****W~EB*G*IND*30*C1**23*1000*****W~EB*C*FAM*30***24*0*****W~EB*C*IND*30***24*0*****W~EB*G*FAM*30*C1**24*0*****W~EB*G*IND*30*C1**24*0*****W~EB*C*IND*30***29*500*****W~EB*G*FAM*30*C1**29*2000*****W~EB*G*IND*30*C1**29*1000*****W~EB*C*FAM*30***23*1500*****Y~EB*C*FAM*30***29*2000*****N~EB*C*FAM*30***23*2000*****N~EB*C*FAM*30***29*1500*****Y~EB*1**12*********W~EB*A*IND*12***27**.4****N~EB*A*IND*12***27**.2****Y~EB*B*IND*12***27*0*****W~EB*C*FAM*12****0*****W~EB*F*IND*12****0*****W~EB*F*IND*12****0*****W~MSG*ADDITIONAL COVERED PER OCCURRENCE~EB*X~LS*2120~NM1*1P*1*ZIRMED*DEMO****XX*1234567890~LE*2120~SE*47*0001~GE*1*7158508~IEA*1*007158508~",
+  "ParsedOutput": {
+    "CarrierCode": "1234567890",
+    "CarrierName": "ZIRMED",
+    "CarrierAddress1": "P.O. BOX 30555",
+    "CarrierCity": "SALT LAKE CITY",
+    "CarrierState": "UT",
+    "CarrierZip": "841300555",
+    "Dtps": [
+      {
+        "Type": "291",
+        "Date": "20260304"
+      }
+    ],
+    "ClaimsInfo": {
+      "Name": "TEST DATA",
+      "Address1": "P.O. BOX 30555",
+      "City": "SALT LAKE CITY",
+      "State": "UT",
+      "Zip": "841300555"
+    },
+    "MemberId": "INVALID000",
+    "SubscriberRelationship": "SUBSCRIBER",
+    "Subscriber": {
+      "First": "NONEXISTENT",
+      "Last": "PERSON",
+      "Dob": "12/31/2099",
+      "MemberId": "INVALID000"
+    },
+    "Patient": {
+      "First": "NONEXISTENT",
+      "Last": "PERSON",
+      "Dob": "12/31/2099"
+    },
+    "FileStatus": 1,
+    "FileStatusDescription": "ACTIVE",
+    "HasMedicarePassportadvantage": 0,
+    "Plans": [
+      {
+        "InsurancePlan": "30",
+        "InsurancePlanName": "CHOICE PLUS",
+        "FileStatus": 1,
+        "FileStatusDescription": "ACTIVE",
+        "PatientEffectiveBenefitDate": "3/4/2026",
+        "DeductibleInNetwork": "1500",
+        "DeductibleOutNetwork": "2000",
+        "ServiceType": "30",
+        "Name": "C1",
+        "ActiveDate": "3/4/2026",
+        "IsActive": true,
+        "PlanBinDed": "1500",
+        "PlanBinDedRem": "500",
+        "PlanBinOopRem": "1000",
+        "PlanBonDed": "2000",
+        "PlanBonDedRem": "2000"
+      },
+      {
+        "InsurancePlan": "12",
+        "FileStatus": 1,
+        "FileStatusDescription": "ACTIVE",
+        "PatientEffectiveBenefitDate": "3/4/2026",
+        "CoInsuranceInNetwork": ".2",
+        "CoInsuranceOutNetwork": ".4",
+        "ServiceType": "12",
+        "Name": "12",
+        "ActiveDate": "3/4/2026",
+        "IsActive": true
+      }
+    ],
+    "Benefits": {
+      "30": {
+        "IND": {
+          "BinDed": "0",
+          "BinDedRem": "500",
+          "Deds": [
+            {
+              "Value": "500",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "DedRems": [
+            {
+              "Value": "500",
+              "NetFlag": "W"
+            }
+          ],
+          "Oops": [
+            {
+              "Value": "1000",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "OopRems": [
+            {
+              "Value": "1000",
+              "NetFlag": "W"
+            }
+          ],
+          "CoverageStatus": "Active",
+          "PlanType": "30",
+          "InsuranceType": "C1",
+          "PlanCoverageDescription": "CHOICE PLUS",
+          "BinOop": "0",
+          "BinOopRem": "1000"
+        },
+        "FAM": {
+          "Deds": [
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "1500",
+              "NetFlag": "Y"
+            },
+            {
+              "Value": "2000",
+              "NetFlag": "N"
+            }
+          ],
+          "DedRems": [
+            {
+              "Value": "2000",
+              "NetFlag": "N"
+            },
+            {
+              "Value": "1500",
+              "NetFlag": "Y"
+            }
+          ],
+          "Oops": [
+            {
+              "Value": "2000",
+              "NetFlag": "W"
+            },
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "OopRems": [
+            {
+              "Value": "2000",
+              "NetFlag": "W"
+            }
+          ],
+          "BinOop": "0",
+          "BinDed": "1500",
+          "BinOopRem": "2000",
+          "BonDedRem": "2000",
+          "BonDed": "2000",
+          "BinDedRem": "1500"
+        }
+      },
+      "12": {
+        "IND": {
+          "CovgPercs": [
+            {
+              "Value": "60%",
+              "NetFlag": "N"
+            },
+            {
+              "Value": "80%",
+              "NetFlag": "Y"
+            }
+          ],
+          "Copays": [
+            {
+              "Value": "0",
+              "Tq": "27",
+              "NetFlag": "W"
+            }
+          ],
+          "Days": [
+            {
+              "NetFlag": "W"
+            },
+            {
+              "NetFlag": "W",
+              "Msg": "ADDITIONAL COVERED PER OCCURRENCE"
+            }
+          ],
+          "CoverageStatus": "Active",
+          "PlanType": "12",
+          "BonCovgPerc": "60%",
+          "BinCovgPerc": "80%",
+          "BinCopay1": "0",
+          "BinDaysMsg": "ADDITIONAL COVERED PER OCCURRENCE"
+        },
+        "FAM": {
+          "Deds": [
+            {
+              "Value": "0",
+              "NetFlag": "W"
+            }
+          ],
+          "BinDed": "0"
+        }
+      },
+      "It-none": {
+        "St-none": {
+          "Benefits": [
+            {
+              "ProviderName": "DEMO ZIRMED",
+              "Npi": "1234567890"
+            }
+          ]
+        }
+      }
+    },
+    "PlanName": "CHOICE PLUS"
+  },
+  "InquiryId": 218559495
+}
+
+======================================================================
+  SCENARIO 4: PRIOR AUTHORIZATION STATUS CHECK
+======================================================================
+
+Request:
+{
+  "payer_id": "66666",
+  "npi": "1245319599",
+  "subscriber_id": "SUB987654321",
+  "first_name": "Alice",
+  "last_name": "Williams",
+  "dob": "1980-07-22",
+  "procedure_code": "27447",
+  "diagnosis_code": "M17.11"
+}
+
+Step 1 — Submit 278x215 inquiry (POST):
+  Result: ClearinghouseServerError: HTTP 500
+
+  NOTE: 278 payload structure parses correctly (3-level HL:
+  payer/provider/subscriber). The server error likely means
+  this account does not have the PA product enabled, or the
+  test subscriber has no authorization data in Waystar.
+
+======================================================================
+  SCENARIO 5: CLAIM HISTORY / STATUS CHECK (HMAC-signed)
+======================================================================
+
+Request: check_claim_status('TEST-CLAIM-001', dos='03/04/2026')
+
+  Result: ClearinghouseError: Bad Request: Parameters Invalid
+
+  NOTE: Claim History v2.0 requires CustID, DOS, ClaimNum,
+  ReqType=CLMHIST, Version=2.0, TimeStamp (UTC within 5min),
+  and HMAC-SHA256 Signature. ResponseType is excluded from
+  signature but required in the GET request. Test data may
+  return 'no resource found' — real claim numbers needed.
+
+======================================================================
+  SCENARIO 6: FULL WORKFLOW — process_claim()
+======================================================================
+
+Eligibility Request (validation):
+{
+  "provider_npi": "1245319599",
+  "payer_id": "60054",
+  "subscriber_id": "SUB987654321",
+  "subscriber_first_name": "Alice",
+  "subscriber_last_name": "Williams",
+  "subscriber_dob": "1980-07-22",
+  "date_of_service": "2026-03-04"
+}
+
+Claim Data:
+{
+  "claim_type": "professional",
+  "billing_provider_npi": "1245319599",
+  "payer_id": "60054",
+  "subscriber_id": "SUB987654321",
+  "patient_first_name": "Alice",
+  "patient_last_name": "Williams",
+  "patient_dob": "1980-07-22",
+  "patient_gender": "F",
+  "service_date": "2026-03-04",
+  "diagnosis_codes": [
+    {
+      "code": "J06.9"
+    }
+  ],
+  "lines": [
+    {
+      "procedure_code": "99213",
+      "charge_amount": 150.0,
+      "units": 1.0,
+      "diagnosis_pointers": [
+        1
+      ],
+      "service_date_from": "2026-03-04",
+      "place_of_service": "11"
+    }
+  ]
+}
+
+Eligibility Response: from Waystar Scenario 1 (ACTIVE)
+
+Workflow Result:
+  Workflow Passed: True
+  Stopped At:      (completed all stages)
+  Execution Time:  0.0092s
+  Total Findings:  0
+
+  Stage Results:
+    [PASS] eligibility  (0.0052s)
+    [PASS] pa_determination  (0.0000s)
+    [SKIPPED] prior_auth — Prior authorization not required  (0.0000s)
+    [PASS] claim_validation  (0.0039s)
+
+  Domain Results:
+    Eligibility:      passed=True findings=0
+    PA Determination: required=False
+      Reason: authOrCertIndicator is unknown/missing and no free-text PA indicators found
+    Claim Validation: passed=True findings=0
+
+======================================================================
+  SUMMARY
+======================================================================
+
+  [+] 1. Eligibility PASS: PASS
+  [+] 2. Eligibility FAIL (bad payer): REJECTED
+  [-] 3. Eligibility FAIL (bad subscriber): ACCEPTED (test payer)
+  [-] 4. Prior Auth Status: SERVER ERROR: HTTP 500
+  [-] 5. Claim History: NEEDS REAL CLAIM REF
+  [+] 6. Full Workflow: PASS
+
+======================================================================
+  END OF REPORT
+======================================================================

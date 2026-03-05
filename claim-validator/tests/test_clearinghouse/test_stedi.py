@@ -1,0 +1,1046 @@
+"""Tests for StediClient clearinghouse provider."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+from unittest.mock import patch
+
+import httpx
+import pytest
+
+from claim_validator.clearinghouse.exceptions import (
+    ClearinghouseAuthError,
+    ClearinghouseServerError,
+    ClearinghouseTimeoutError,
+    ClearinghouseValidationError,
+)
+from claim_validator.clearinghouse.models import (
+    ClaimStatusResponse,
+    ClearinghouseEligibilityResponse,
+    SubmissionResult,
+)
+from claim_validator.clearinghouse.models.batch_eligibility import (
+    BatchEligibilityItem,
+    BatchEligibilityRequest,
+    BatchEligibilityResponse,
+)
+from claim_validator.clearinghouse.providers.stedi import (
+    DEFAULT_BASE_URL,
+    StediClient,
+)
+
+MANAGER_BASE_URL = "https://manager.us.stedi.com/2024-04-01"
+
+
+def _make_client(handler: Any) -> StediClient:
+    """Create a StediClient backed by httpx.MockTransport (zero network)."""
+    transport = httpx.MockTransport(handler)
+    client = StediClient(api_key="test-key")
+    client._client.close()
+    client._client = httpx.Client(
+        transport=transport,
+        base_url=DEFAULT_BASE_URL,
+        headers={
+            "Authorization": "test-key",
+            "Content-Type": "application/json",
+        },
+    )
+    return client
+
+
+def _ok_handler(data: dict[str, Any]) -> Any:
+    """Return a handler that responds 200 with the given JSON data."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=data)
+
+    return handler
+
+
+def _error_handler(status_code: int, body: dict[str, Any] | None = None) -> Any:
+    """Return a handler that responds with the given error status."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code, json=body or {"message": f"HTTP {status_code}"}
+        )
+
+    return handler
+
+
+# ---------------------------------------------------------------------------
+# AC-1: StediClient implements BaseClearinghouseClient
+# ---------------------------------------------------------------------------
+
+
+class TestStediClientBasics:
+    """Verify StediClient structure and ABC compliance."""
+
+    def test_provider_name(self) -> None:
+        client = _make_client(_ok_handler({}))
+        assert client.provider_name == "stedi"
+
+    def test_is_subclass(self) -> None:
+        from claim_validator.clearinghouse.base import BaseClearinghouseClient
+
+        assert issubclass(StediClient, BaseClearinghouseClient)
+
+    def test_importable_from_providers(self) -> None:
+        from claim_validator.clearinghouse.providers.stedi import (
+            StediClient as StediClientImport,
+        )
+
+        assert StediClientImport is StediClient
+
+    def test_default_base_url(self) -> None:
+        assert DEFAULT_BASE_URL == "https://healthcare.us.stedi.com/2024-04-01"
+
+
+# ---------------------------------------------------------------------------
+# AC-2: Eligibility check (270/271)
+# ---------------------------------------------------------------------------
+
+
+class TestEligibility:
+    """Verify eligibility request mapping and response parsing."""
+
+    def test_eligibility_request_mapping(self) -> None:
+        """Library dict fields are translated to Stedi JSON format."""
+        captured_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured_requests.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility(
+            {
+                "payer_id": "00520",
+                "npi": "1245319599",
+                "subscriber_id": "SUB123",
+                "first_name": "Alice",
+                "last_name": "Williams",
+                "dob": "1980-07-22",
+                "service_type": "30",
+            }
+        )
+
+        assert len(captured_requests) == 1
+        body = json.loads(captured_requests[0].content)
+        assert body["tradingPartnerServiceId"] == "00520"
+        assert body["provider"]["npi"] == "1245319599"
+        assert body["subscriber"]["memberId"] == "SUB123"
+        assert body["subscriber"]["firstName"] == "Alice"
+        assert body["subscriber"]["lastName"] == "Williams"
+        assert body["subscriber"]["dateOfBirth"] == "19800722"  # No dashes
+        assert body["encounter"]["serviceTypeCodes"] == ["30"]
+
+    def test_eligibility_posts_to_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        assert captured[0].url.path == "/2024-04-01/change/medicalnetwork/eligibility/v3"
+
+    def test_eligibility_response_parsing(self) -> None:
+        stedi_response = {
+            "status": "active",
+            "planStatus": "Active - Full",
+            "controlNumber": "CTL-123",
+            "planInformation": {"planName": "BCBS PPO"},
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+        assert isinstance(result, ClearinghouseEligibilityResponse)
+        assert result.status == "active"
+        assert result.eligible is True
+        assert result.reference_id == "CTL-123"
+        assert result.plan_info["planInformation"]["planName"] == "BCBS PPO"
+
+    def test_eligibility_inactive(self) -> None:
+        client = _make_client(
+            _ok_handler({"status": "inactive", "planStatus": "Inactive"})
+        )
+        result = client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        assert result.eligible is False
+
+    def test_eligibility_maps_organization_name(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "organization_name": "ACME Health Services",
+            "subscriber_id": "123456789", "first_name": "Jane",
+            "last_name": "Doe", "dob": "1900-01-01", "service_type": "MH",
+        })
+        body = json.loads(captured[0].content)
+        assert body["provider"]["organizationName"] == "ACME Health Services"
+
+    def test_eligibility_maps_external_patient_id(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "external_patient_id": "UAA111222333",
+        })
+        body = json.loads(captured[0].content)
+        assert body["externalPatientId"] == "UAA111222333"
+
+    def test_eligibility_maps_multiple_service_type_codes(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "service_types": ["MH", "78"],
+        })
+        body = json.loads(captured[0].content)
+        assert body["encounter"]["serviceTypeCodes"] == ["MH", "78"]
+
+    def test_eligibility_maps_dependent(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789",
+            "dependent_first_name": "Bobby", "dependent_last_name": "Doe",
+            "dependent_dob": "2010-05-15", "dependent_relationship": "19",
+        })
+        body = json.loads(captured[0].content)
+        assert len(body["dependents"]) == 1
+        dep = body["dependents"][0]
+        assert dep["firstName"] == "Bobby"
+        assert dep["lastName"] == "Doe"
+        assert dep["dateOfBirth"] == "20100515"
+        assert dep["individualRelationshipCode"] == "19"
+
+    def test_eligibility_maps_all_optional_provider_and_subscriber_fields(self) -> None:
+        """All optional provider/subscriber fields are mapped correctly."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS",
+            "npi": "1999999984",
+            "organization_name": "ACME Health",
+            "provider_first_name": "Dr",
+            "provider_last_name": "Smith",
+            "tax_id": "123456789",
+            "subscriber_id": "MBR123",
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "dob": "1990-01-01",
+            "gender": "F",
+            "trading_partner_name": "Aetna",
+        })
+        body = json.loads(captured[0].content)
+        assert body["provider"]["organizationName"] == "ACME Health"
+        assert body["provider"]["firstName"] == "Dr"
+        assert body["provider"]["lastName"] == "Smith"
+        assert body["provider"]["taxId"] == "123456789"
+        assert body["subscriber"]["gender"] == "F"
+        assert body["tradingPartnerName"] == "Aetna"
+
+    def test_eligibility_maps_encounter_date_of_service(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "service_type": "30",
+            "date_of_service": "2026-03-15",
+        })
+        body = json.loads(captured[0].content)
+        assert body["encounter"]["dateOfService"] == "20260315"
+
+    def test_eligibility_response_parses_benefits_information(self) -> None:
+        """benefitsInformation is captured in plan_info."""
+        stedi_response = {
+            "statusCode": "active",
+            "benefitsInformation": [
+                {"code": "1", "coverageLevelCode": "IND", "serviceTypeCodes": ["30"]},
+                {
+                    "code": "C",
+                    "coverageLevelCode": "IND",
+                    "serviceTypeCodes": ["30"],
+                    "benefitAmount": "1500.00",
+                },
+            ],
+            "planDateInformation": {"eligibilityBegin": "20240101", "eligibilityEnd": "20241231"},
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is True
+        assert len(result.plan_info["benefitsInformation"]) == 2
+        assert result.plan_info["planDateInformation"]["eligibilityBegin"] == "20240101"
+
+    def test_eligibility_response_parses_status_code_field(self) -> None:
+        """Newer Stedi responses use statusCode instead of status."""
+        stedi_response = {"statusCode": "active"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.status == "active"
+        assert result.eligible is True
+
+    def test_eligibility_response_inactive_status_code(self) -> None:
+        """statusCode=inactive means not eligible."""
+        stedi_response = {"statusCode": "inactive"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is False
+
+    def test_eligibility_response_captures_control_number(self) -> None:
+        """controlNumber from response is mapped to reference_id."""
+        stedi_response = {"statusCode": "active", "controlNumber": "CTL-555"}
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.reference_id == "CTL-555"
+
+    def test_eligibility_response_captures_errors(self) -> None:
+        """AAA errors from payer are captured in errors list."""
+        stedi_response = {
+            "statusCode": "unknown",
+            "errors": [{"code": "72", "description": "Invalid/Missing Subscriber ID"}],
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_eligibility({"payer_id": "AHS", "npi": "123"})
+        assert result.eligible is None
+        assert len(result.errors) == 1
+        assert "Invalid/Missing Subscriber ID" in result.errors[0]
+
+    def test_eligibility_maps_submitter_transaction_identifier(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789",
+            "submitter_transaction_id": "ABC123456789",
+        })
+        body = json.loads(captured[0].content)
+        assert body["submitterTransactionIdentifier"] == "ABC123456789"
+
+
+# ---------------------------------------------------------------------------
+# AC-3: Professional claims submission (837P)
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitClaim:
+    """Verify claim submission mapping, idempotency, and response parsing."""
+
+    def test_claim_request_mapping(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-456"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim(
+            {
+                "payer_id": "00520",
+                "billing_npi": "1234567890",
+                "taxonomy_code": "207Q00000X",
+                "subscriber_id": "MBR-999",
+                "total_charge": 150.00,
+                "place_of_service": "11",
+                "diagnosis_codes": ["J06.9"],
+                "lines": [
+                    {"cpt_code": "99213", "charge": 150.00, "units": 1},
+                ],
+            }
+        )
+
+        body = json.loads(captured[0].content)
+        assert body["tradingPartnerServiceId"] == "00520"
+        assert body["billing"]["npi"] == "1234567890"
+        assert body["billing"]["taxonomyCode"] == "207Q00000X"
+        assert body["subscriber"]["memberId"] == "MBR-999"
+        assert body["claimInformation"]["claimChargeAmount"] == "150.0"
+        assert body["claimInformation"]["placeOfServiceCode"] == "11"
+        assert body["claimInformation"]["healthCareCodeInformation"][0]["diagnosisCode"] == "J06.9"
+        svc = body["claimInformation"]["serviceLines"][0]
+        assert svc["professionalService"]["procedureCode"] == "99213"
+
+    def test_claim_posts_to_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "accepted"})
+
+        client = _make_client(handler)
+        client.submit_claim({"payer_id": "00520"})
+        assert (
+            captured[0].url.path
+            == "/2024-04-01/change/medicalnetwork/professionalclaims/v3/submission"
+        )
+
+    def test_idempotency_key_header(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "accepted"})
+
+        client = _make_client(handler)
+        client.submit_claim({"payer_id": "00520"})
+        assert "idempotency-key" in captured[0].headers
+
+    def test_idempotency_key_is_uuid(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "accepted"})
+
+        client = _make_client(handler)
+        client.submit_claim({"payer_id": "00520"})
+        import uuid
+
+        key = captured[0].headers["idempotency-key"]
+        uuid.UUID(key)  # Raises ValueError if not valid UUID
+
+    def test_submission_response_parsing(self) -> None:
+        stedi_response = {
+            "status": "accepted",
+            "controlNumber": "REF-456",
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.submit_claim({"payer_id": "00520"})
+
+        assert isinstance(result, SubmissionResult)
+        assert result.status == "accepted"
+        assert result.accepted is True
+        assert result.reference_id == "REF-456"
+
+    def test_diagnosis_codes_use_abk_then_abf(self) -> None:
+        """First diagnosis should be ABK (principal), rest ABF (secondary)."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "diagnosis_codes": ["J06.9", "E11.65", "I10"],
+        })
+
+        body = json.loads(captured[0].content)
+        codes = body["claimInformation"]["healthCareCodeInformation"]
+        assert codes[0] == {"diagnosisTypeCode": "ABK", "diagnosisCode": "J06.9"}
+        assert codes[1] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "E11.65"}
+        assert codes[2] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "I10"}
+
+    def test_service_lines_nested_professional_service(self) -> None:
+        """Service lines must use nested professionalService structure."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "lines": [
+                {
+                    "cpt_code": "99213",
+                    "charge": 150.00,
+                    "units": 1,
+                    "service_date": "2024-01-15",
+                    "modifiers": ["25"],
+                    "diagnosis_pointers": ["1"],
+                },
+            ],
+        })
+
+        body = json.loads(captured[0].content)
+        line = body["claimInformation"]["serviceLines"][0]
+        ps = line["professionalService"]
+        assert ps["procedureCode"] == "99213"
+        assert ps["procedureIdentifier"] == "HC"
+        assert ps["lineItemChargeAmount"] == "150.0"
+        assert ps["measurementUnit"] == "UN"
+        assert ps["serviceUnitCount"] == "1"
+        assert ps["compositeDiagnosisCodePointers"] == {
+            "diagnosisCodePointers": ["1"]
+        }
+        assert ps["procedureModifiers"] == ["25"]
+        assert line["serviceDate"] == "20240115"
+
+    def test_billing_provider_full_mapping(self) -> None:
+        """Billing provider should include address, employerId, org name, contact."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "billing_npi": "1234567890",
+            "taxonomy_code": "2084P0800X",
+            "billing_employer_id": "123456789",
+            "billing_organization_name": "Therapy Associates",
+            "billing_address": {
+                "address1": "123 Some St",
+                "city": "A City",
+                "state": "NY",
+                "postalCode": "123450000",
+            },
+            "billing_contact_phone": "6175551234",
+        })
+
+        body = json.loads(captured[0].content)
+        billing = body["billing"]
+        assert billing["npi"] == "1234567890"
+        assert billing["taxonomyCode"] == "2084P0800X"
+        assert billing["employerId"] == "123456789"
+        assert billing["organizationName"] == "Therapy Associates"
+        assert billing["address"]["address1"] == "123 Some St"
+        assert billing["address"]["city"] == "A City"
+        assert billing["address"]["state"] == "NY"
+        assert billing["address"]["postalCode"] == "123450000"
+        assert billing["contactInformation"][0]["phoneNumber"] == "6175551234"
+
+    def test_subscriber_and_claim_metadata_mapping(self) -> None:
+        """Subscriber should include demographics; claim should include filing codes."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "STEDITEST",
+            "trading_partner_name": "Stedi Test Payer",
+            "usage_indicator": "T",
+            "subscriber_id": "U7777788888",
+            "first_name": "John",
+            "last_name": "Anon",
+            "dob": "2000-01-01",
+            "gender": "M",
+            "subscriber_address": {
+                "address1": "456 Oak Ave",
+                "city": "Cambridge",
+                "state": "MA",
+                "postalCode": "021381234",
+            },
+            "payment_responsibility": "P",
+            "claim_filing_code": "12",
+            "claim_frequency_code": "1",
+            "patient_control_number": "CLM-001",
+            "benefits_assignment": "Y",
+            "prior_auth_number": "AUTH123",
+            "claim_date_info": {"initialTreatmentDate": "20240115"},
+        })
+
+        body = json.loads(captured[0].content)
+
+        # Top-level fields
+        assert body["tradingPartnerServiceId"] == "STEDITEST"
+        assert body["tradingPartnerName"] == "Stedi Test Payer"
+        assert body["usageIndicator"] == "T"
+
+        # Subscriber
+        sub = body["subscriber"]
+        assert sub["memberId"] == "U7777788888"
+        assert sub["firstName"] == "John"
+        assert sub["lastName"] == "Anon"
+        assert sub["dateOfBirth"] == "20000101"
+        assert sub["gender"] == "M"
+        assert sub["address"]["address1"] == "456 Oak Ave"
+        assert sub["paymentResponsibilityLevelCode"] == "P"
+
+        # Claim metadata
+        ci = body["claimInformation"]
+        assert ci["claimFilingCode"] == "12"
+        assert ci["claimFrequencyCode"] == "1"
+        assert ci["patientControlNumber"] == "CLM-001"
+        assert ci["benefitsAssignmentCertificationIndicator"] == "Y"
+        assert ci["claimSupplementalInformation"]["priorAuthorizationNumber"] == "AUTH123"
+        assert ci["claimDateInformation"]["initialTreatmentDate"] == "20240115"
+
+    def test_submission_rejected(self) -> None:
+        client = _make_client(
+            _ok_handler({"status": "rejected", "errors": ["Invalid NPI"]})
+        )
+        result = client.submit_claim({"payer_id": "00520"})
+        assert result.accepted is False
+        assert result.errors == ["Invalid NPI"]
+
+
+# ---------------------------------------------------------------------------
+# AC-4: Claim status check (276/277)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckClaimStatus:
+    """Verify claim status request mapping and response parsing."""
+
+    def test_status_request_mapping(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "found"})
+
+        client = _make_client(handler)
+        client.check_claim_status("REF-789")
+        body = json.loads(captured[0].content)
+        assert body["claimReference"] == "REF-789"
+
+    def test_status_posts_to_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "found"})
+
+        client = _make_client(handler)
+        client.check_claim_status("REF-789")
+        assert (
+            captured[0].url.path
+            == "/2024-04-01/change/medicalnetwork/claimstatus/v2"
+        )
+
+    def test_status_response_parsing(self) -> None:
+        stedi_response = {
+            "status": "found",
+            "claimStatus": "paid",
+            "adjudicationDate": "2026-03-01",
+            "controlNumber": "CTL-999",
+        }
+        client = _make_client(_ok_handler(stedi_response))
+        result = client.check_claim_status("REF-789")
+
+        assert isinstance(result, ClaimStatusResponse)
+        assert result.status == "found"
+        assert result.claim_status == "paid"
+        assert result.adjudication_date == "2026-03-01"
+        assert result.reference_id == "CTL-999"
+
+
+# ---------------------------------------------------------------------------
+# AC-5: Authentication
+# ---------------------------------------------------------------------------
+
+
+class TestAuthentication:
+    """Verify API key auth header is set on requests."""
+
+    def test_authorization_header(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "ok"})
+
+        client = _make_client(handler)
+        client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        assert captured[0].headers["authorization"] == "test-key"
+
+    def test_content_type_header(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "ok"})
+
+        client = _make_client(handler)
+        client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        assert "application/json" in captured[0].headers["content-type"]
+
+
+# ---------------------------------------------------------------------------
+# AC-6: Error handling
+# ---------------------------------------------------------------------------
+
+
+class TestErrorHandling:
+    """Verify HTTP error mapping to clearinghouse exceptions."""
+
+    def test_401_raises_auth_error(self) -> None:
+        client = _make_client(
+            _error_handler(401, {"message": "Invalid API key"})
+        )
+        with pytest.raises(ClearinghouseAuthError, match="Invalid API key"):
+            client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+    def test_403_raises_auth_error(self) -> None:
+        client = _make_client(_error_handler(403))
+        with pytest.raises(ClearinghouseAuthError):
+            client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+    def test_422_raises_validation_error(self) -> None:
+        client = _make_client(
+            _error_handler(422, {"message": "Missing required field"})
+        )
+        with pytest.raises(
+            ClearinghouseValidationError, match="Missing required field"
+        ):
+            client.submit_claim({"payer_id": "00520"})
+
+    def test_500_retries_then_raises_server_error(self) -> None:
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            return httpx.Response(500, json={"message": "Server error"})
+
+        client = _make_client(handler)
+        with patch("claim_validator.clearinghouse.providers.stedi.time.sleep"):
+            with pytest.raises(ClearinghouseServerError, match="Server error"):
+                client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        # Retried once (2 total calls)
+        assert call_count == 2
+
+    def test_500_retry_succeeds(self) -> None:
+        """First call returns 500, retry returns 200."""
+        call_count = 0
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return httpx.Response(500, json={"message": "Temporary"})
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        with patch("claim_validator.clearinghouse.providers.stedi.time.sleep"):
+            result = client.check_eligibility(
+                {"payer_id": "00520", "npi": "123"}
+            )
+        assert result.status == "active"
+        assert call_count == 2
+
+    def test_timeout_raises_timeout_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("Connection timed out")
+
+        client = _make_client(handler)
+        with pytest.raises(ClearinghouseTimeoutError, match="timed out"):
+            client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+    def test_no_phi_in_error_messages(self) -> None:
+        """Error messages must reference field names, not patient data."""
+        client = _make_client(
+            _error_handler(
+                422,
+                {"message": "Missing required field: subscriber.memberId"},
+            )
+        )
+        with pytest.raises(ClearinghouseValidationError) as exc_info:
+            client.check_eligibility(
+                {
+                    "payer_id": "00520",
+                    "npi": "123",
+                    "first_name": "SensitiveFirstName",
+                    "last_name": "SensitiveLastName",
+                }
+            )
+        error_msg = str(exc_info.value)
+        assert "SensitiveFirstName" not in error_msg
+        assert "SensitiveLastName" not in error_msg
+
+    def test_error_response_without_json(self) -> None:
+        """Handle error responses that don't have JSON body."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(500, text="Internal Server Error")
+
+        client = _make_client(handler)
+        with patch("claim_validator.clearinghouse.providers.stedi.time.sleep"):
+            with pytest.raises(ClearinghouseServerError, match="HTTP 500"):
+                client.check_eligibility({"payer_id": "00520", "npi": "123"})
+
+
+# ---------------------------------------------------------------------------
+# AC-7: Factory integration
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryIntegration:
+    """Verify StediClient works through the factory."""
+
+    def test_factory_returns_stedi_client(self) -> None:
+        import sys
+        import types
+
+        from claim_validator.clearinghouse.factory import (
+            get_clearinghouse_client,
+        )
+
+        fake_mod = types.ModuleType(
+            "claim_validator.clearinghouse.providers.stedi"
+        )
+        fake_mod.StediClient = StediClient  # type: ignore[attr-defined]
+        with patch.dict(sys.modules, {fake_mod.__name__: fake_mod}):
+            client = get_clearinghouse_client("stedi", api_key="test-key")
+            assert isinstance(client, StediClient)
+            assert client.provider_name == "stedi"
+
+
+# ---------------------------------------------------------------------------
+# Batch Eligibility
+# ---------------------------------------------------------------------------
+
+
+def _make_batch_client(handler: Any) -> StediClient:
+    """Create a StediClient with mocked manager client for batch operations."""
+    transport = httpx.MockTransport(handler)
+    client = StediClient(api_key="test-key")
+    client._manager_client.close()
+    client._manager_client = httpx.Client(
+        transport=transport,
+        base_url=MANAGER_BASE_URL,
+        headers={"Authorization": "test-key", "Content-Type": "application/json"},
+    )
+    return client
+
+
+def _sample_batch_request(num_items: int = 1) -> BatchEligibilityRequest:
+    """Create a sample batch request with the given number of items."""
+    items = [
+        BatchEligibilityItem(
+            payer_id=f"PAYER{i}",
+            npi=f"NPI{i:010d}",
+            subscriber_id=f"SUB{i:03d}",
+            first_name=f"First{i}",
+            last_name=f"Last{i}",
+            dob=f"199{i}-01-15",
+            service_types=["30"],
+            organization_name=f"Org{i}",
+            date_of_service=f"2026-03-0{i + 1}",
+            submitter_transaction_id=f"TXN{i:03d}",
+            external_patient_id=f"EXT{i:03d}",
+            gender="M" if i % 2 == 0 else "F",
+        )
+        for i in range(num_items)
+    ]
+    return BatchEligibilityRequest(name="test-batch", items=items)
+
+
+class TestBatchEligibility:
+    """Verify batch eligibility submission via Manager API."""
+
+    def test_submit_batch_request_mapping(self) -> None:
+        """Items are translated to Stedi batch JSON format."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B1", "status": "queued", "totalChecks": 1}
+            )
+
+        client = _make_batch_client(handler)
+        req = _sample_batch_request(1)
+        client.submit_eligibility_batch(req)
+
+        assert len(captured) == 1
+        body = json.loads(captured[0].content)
+        assert body["name"] == "test-batch"
+        assert len(body["items"]) == 1
+        item = body["items"][0]
+        assert item["tradingPartnerServiceId"] == "PAYER0"
+        assert item["provider"]["npi"] == "NPI0000000000"
+        assert item["provider"]["organizationName"] == "Org0"
+        assert item["subscriber"]["memberId"] == "SUB000"
+        assert item["subscriber"]["firstName"] == "First0"
+        assert item["subscriber"]["lastName"] == "Last0"
+        assert item["subscriber"]["dateOfBirth"] == "1990-01-15"
+        assert item["subscriber"]["gender"] == "M"
+        assert item["encounter"]["serviceTypeCodes"] == ["30"]
+        assert item["encounter"]["dateOfService"] == "20260301"
+        assert item["submitterTransactionIdentifier"] == "TXN000"
+        assert item["externalPatientId"] == "EXT000"
+
+    def test_submit_batch_posts_to_correct_path(self) -> None:
+        """POST goes to the Manager API batch eligibility endpoint."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B1", "status": "queued", "totalChecks": 1}
+            )
+
+        client = _make_batch_client(handler)
+        client.submit_eligibility_batch(_sample_batch_request(1))
+        assert (
+            captured[0].url.path
+            == "/2024-04-01/eligibility-manager/batch-eligibility"
+        )
+
+    def test_submit_batch_response_parsing(self) -> None:
+        """BatchEligibilityResponse is returned with correct fields."""
+        stedi_response = {
+            "batchId": "BATCH-123",
+            "status": "queued",
+            "totalChecks": 5,
+        }
+        client = _make_batch_client(_ok_handler(stedi_response))
+        result = client.submit_eligibility_batch(_sample_batch_request(1))
+
+        assert isinstance(result, BatchEligibilityResponse)
+        assert result.batch_id == "BATCH-123"
+        assert result.status == "queued"
+        assert result.total_items == 5
+        assert result.raw_response == stedi_response
+
+    def test_submit_batch_multiple_items(self) -> None:
+        """Multiple items are all included in the request payload."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"batchId": "B2", "status": "queued", "totalChecks": 3}
+            )
+
+        client = _make_batch_client(handler)
+        client.submit_eligibility_batch(_sample_batch_request(3))
+
+        body = json.loads(captured[0].content)
+        assert len(body["items"]) == 3
+        payer_ids = [item["tradingPartnerServiceId"] for item in body["items"]]
+        assert payer_ids == ["PAYER0", "PAYER1", "PAYER2"]
+
+    def test_submit_batch_auth_error(self) -> None:
+        """401 from Manager API raises ClearinghouseAuthError."""
+        client = _make_batch_client(
+            _error_handler(401, {"message": "Invalid API key"})
+        )
+        with pytest.raises(ClearinghouseAuthError, match="Invalid API key"):
+            client.submit_eligibility_batch(_sample_batch_request(1))
+
+    def test_get_batch_status(self) -> None:
+        """Poll batch status returns progress info."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={
+                "batchId": "batch_abc", "status": "processing",
+                "totalChecks": 10, "completedChecks": 4,
+            })
+
+        client = _make_batch_client(handler)
+        result = client.get_batch_eligibility_status("batch_abc")
+        assert isinstance(result, BatchEligibilityResponse)
+        assert result.batch_id == "batch_abc"
+        assert result.status == "processing"
+        assert result.total_items == 10
+        assert result.completed_items == 4
+
+    def test_get_batch_status_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"batchId": "batch_abc", "status": "complete"})
+
+        client = _make_batch_client(handler)
+        client.get_batch_eligibility_status("batch_abc")
+        assert captured[0].url.path == "/2024-04-01/eligibility-manager/batch/batch_abc"
+
+    def test_get_batch_results(self) -> None:
+        """Retrieve completed batch item results."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={
+                "items": [
+                    {
+                        "submitterTransactionIdentifier": "TXN1",
+                        "status": "complete",
+                        "eligibilityCheck": {"statusCode": "active", "benefitsInformation": []},
+                    },
+                    {
+                        "submitterTransactionIdentifier": "TXN2",
+                        "status": "error",
+                        "errors": [{"message": "Payer unavailable"}],
+                    },
+                ]
+            })
+
+        client = _make_batch_client(handler)
+        result = client.get_batch_eligibility_results("batch_abc")
+        assert len(result) == 2
+        assert result[0].submitter_transaction_id == "TXN1"
+        assert result[0].status == "complete"
+        assert result[0].eligibility_response["statusCode"] == "active"
+        assert result[1].status == "error"
+        assert "Payer unavailable" in result[1].errors[0]
+
+    def test_get_batch_results_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"items": []})
+
+        client = _make_batch_client(handler)
+        client.get_batch_eligibility_results("batch_abc")
+        assert captured[0].url.path == "/2024-04-01/eligibility-manager/batch/batch_abc/items"
+
+    def test_get_batch_status_auth_error(self) -> None:
+        client = _make_batch_client(_error_handler(401, {"message": "Invalid API key"}))
+        with pytest.raises(ClearinghouseAuthError):
+            client.get_batch_eligibility_status("batch_abc")

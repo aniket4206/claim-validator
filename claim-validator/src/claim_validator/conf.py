@@ -30,6 +30,17 @@ DEFAULT_RULE_VALIDATORS: list[str] = [
 ]
 
 
+# Default eligibility AI validators
+DEFAULT_ELIG_AI_VALIDATORS: list[str] = [
+    "claim_validator.eligibility.validators.ai.interpreter.EligibilityInterpreterAI",
+]
+
+# Default PA AI validators
+DEFAULT_PA_AI_VALIDATORS: list[str] = [
+    "claim_validator.prior_auth.validators.ai.interpreter.PriorAuthInterpreterAI",
+]
+
+
 # Default eligibility rule-based validators
 DEFAULT_ELIG_RULE_VALIDATORS: list[str] = [
     "claim_validator.eligibility.validators.rule_based.date.EligibilityDateValidator",
@@ -60,10 +71,15 @@ class ClaimValidatorSettings(BaseSettings):
 
     # Prior authorization settings
     pa_rule_validators: list[str] = DEFAULT_PA_RULE_VALIDATORS
-    pa_ai_validators: list[str] = []
+    pa_ai_validators: list[str] = DEFAULT_PA_AI_VALIDATORS
     pa_skip_ai: bool = False
+    pa_skip_ai_on_rule_failure: bool = True
 
     # Eligibility settings
     eligibility_rule_validators: list[str] = DEFAULT_ELIG_RULE_VALIDATORS
-    eligibility_ai_validators: list[str] = []
+    eligibility_ai_validators: list[str] = DEFAULT_ELIG_AI_VALIDATORS
     eligibility_skip_ai: bool = False
+    eligibility_skip_ai_on_rule_failure: bool = True
+
+    # Clearinghouse settings
+    clearinghouse_config: dict[str, Any] | None = None

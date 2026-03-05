@@ -8,6 +8,12 @@ except ImportError:
     __version__ = "0.0.0.dev0"
 
 from claim_validator._api import validate
+from claim_validator.clearinghouse import (
+    BaseClearinghouseClient,
+    ClearinghouseError,
+    build_clearinghouse_client,
+    get_clearinghouse_client,
+)
 from claim_validator.conf import ClaimValidatorSettings
 from claim_validator.constants import ClaimType, Severity
 from claim_validator.deidentifier import ClaimDeidentifier
@@ -44,13 +50,19 @@ from claim_validator.models import (
     PipelineResult,
     ValidatorOutput,
 )
+from claim_validator.models.workflow import PreClaimResult
+from claim_validator.orchestrator import pre_claim_check
 from claim_validator.prior_auth import (
     CertificationActionCode,
     CertificationTypeCode,
+    DeidentifiedPriorAuthError,
     DeidentifiedPriorAuthResponse,
+    DeidentifiedServiceLineDecision,
     PADeterminationResult,
     PatientInfo,
+    PriorAuthDeidentifier,
     PriorAuthError,
+    PriorAuthInterpreterAI,
     PriorAuthPipeline,
     PriorAuthRequest,
     PriorAuthResponse,
@@ -63,18 +75,28 @@ from claim_validator.prior_auth import (
     parse_278_response,
     submit_prior_auth,
 )
+from claim_validator.shared.pipeline.context import ValidationContext
 from claim_validator.validators import (
     BaseAIValidator,
     BaseValidator,
     ValidationPipeline,
     ValidatorRegistry,
 )
+from claim_validator.workflow import (
+    ClaimRequest,
+    Stage,
+    StageResult,
+    WorkflowResult,
+    process_claim,
+)
 
 __all__ = [
     "__version__",
     "AAAError",
     "BaseAIValidator",
+    "BaseClearinghouseClient",
     "BaseLLMClient",
+    "build_clearinghouse_client",
     "BaseValidator",
     "BenefitInfo",
     "CertificationActionCode",
@@ -85,6 +107,7 @@ __all__ = [
     "ClaimType",
     "ClaimValidatorError",
     "ClaimValidatorSettings",
+    "ClearinghouseError",
     "check_eligibility",
     "CodeTableError",
     "ConfigurationError",
@@ -95,7 +118,9 @@ __all__ = [
     "DeidentifiedCoverageInfo",
     "DeidentifiedEligibilityResponse",
     "DeidentifiedLineData",
+    "DeidentifiedPriorAuthError",
     "DeidentifiedPriorAuthResponse",
+    "DeidentifiedServiceLineDecision",
     "EligibilityDeidentifier",
     "determine_pa_required",
     "DiagnosisCode",
@@ -104,6 +129,7 @@ __all__ = [
     "EligibilityResponse",
     "EligibilityResult",
     "Finding",
+    "get_clearinghouse_client",
     "get_llm_client",
     "LLMError",
     "Message",
@@ -111,6 +137,10 @@ __all__ = [
     "parse_278_response",
     "PatientInfo",
     "PipelineResult",
+    "pre_claim_check",
+    "PreClaimResult",
+    "PriorAuthDeidentifier",
+    "PriorAuthInterpreterAI",
     "PriorAuthError",
     "PriorAuthPipeline",
     "PriorAuthRequest",
@@ -122,9 +152,15 @@ __all__ = [
     "Severity",
     "submit_prior_auth",
     "SubscriberInfo",
+    "ClaimRequest",
+    "process_claim",
+    "Stage",
+    "StageResult",
     "validate",
+    "ValidationContext",
     "ValidationError",
     "ValidationPipeline",
     "ValidatorOutput",
     "ValidatorRegistry",
+    "WorkflowResult",
 ]

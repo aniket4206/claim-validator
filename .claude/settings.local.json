@@ -25,7 +25,32 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(/home/lnv-20/Documents/claim-validator/claim-validator/.venv/bin/pytest:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(.venv/bin/pip3 install:*)",
+      "Bash(.venv/bin/pip list:*)",
+      "Bash(../.venv/bin/pytest:*)",
+      "Bash(/home/lnv-20/Documents/claim-validator/.venv/bin/pytest:*)",
+      "Bash(uv run:*)",
+      "Bash(git:*)",
+      "Bash(do echo:*)",
+      "WebFetch(domain:developer.waystar.com)",
+      "WebFetch(domain:tateeda.com)",
+      "WebFetch(domain:help.ezclaim.com)",
+      "WebFetch(domain:developer.patientco.com)",
+      "WebFetch(domain:www.stedi.com)",
+      "WebFetch(domain:docs.claim.md)",
+      "WebFetch(domain:api.claim.md)",
+      "WebFetch(domain:github.com)",
+      "Bash(ruff check:*)",
+      "Bash(sed:*)",
+      "WebFetch(domain:general.zirmed.com)",
+      "WebFetch(domain:developer.zirmed.com)",
+      "WebFetch(domain:sur.ly)",
+      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/pip install:*)",
+      "Bash(/home/lnv-20/Documents/chatbot/venv/bin/python:*)",
+      "Bash(/home/lnv-20/Documents/claude/claim-validator/.venv/bin/pip install:*)",
+      "Bash(/home/lnv-20/Documents/claude/claim-validator/.venv/bin/python:*)",
+      "mcp__plugin_superpowers-chrome_chrome__use_browser"
     ]
   }
 }

@@ -6,7 +6,7 @@ import pydantic
 import pytest
 
 from claim_validator import ClaimValidatorSettings
-from claim_validator.conf import DEFAULT_PA_RULE_VALIDATORS
+from claim_validator.conf import DEFAULT_PA_AI_VALIDATORS, DEFAULT_PA_RULE_VALIDATORS
 
 
 class TestPASettingsDefaults:
@@ -15,13 +15,19 @@ class TestPASettingsDefaults:
         assert settings.pa_rule_validators == DEFAULT_PA_RULE_VALIDATORS
         assert len(settings.pa_rule_validators) == 7
 
-    def test_default_pa_ai_validators_empty(self) -> None:
+    def test_default_pa_ai_validators_one(self) -> None:
         settings = ClaimValidatorSettings()
-        assert settings.pa_ai_validators == []
+        assert settings.pa_ai_validators == DEFAULT_PA_AI_VALIDATORS
+        assert len(settings.pa_ai_validators) == 1
+        assert "PriorAuthInterpreterAI" in settings.pa_ai_validators[0]
 
     def test_default_pa_skip_ai(self) -> None:
         settings = ClaimValidatorSettings()
         assert settings.pa_skip_ai is False
+
+    def test_default_pa_skip_ai_on_rule_failure(self) -> None:
+        settings = ClaimValidatorSettings()
+        assert settings.pa_skip_ai_on_rule_failure is True
 
 
 class TestPASettingsEnvVars:

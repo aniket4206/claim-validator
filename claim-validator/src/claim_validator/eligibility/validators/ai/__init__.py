@@ -1,3 +1,11 @@
-"""AI-powered eligibility validators — populated in Elig Epic 3."""
+"""AI-powered eligibility validators."""
 
 from __future__ import annotations
+
+from claim_validator.eligibility.validators.ai.interpreter import (
+    EligibilityInterpreterAI,
+)
+
+__all__ = [
+    "EligibilityInterpreterAI",
+]
