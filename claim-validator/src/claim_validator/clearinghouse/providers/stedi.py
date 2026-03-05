@@ -325,9 +325,13 @@ class StediClient(BaseClearinghouseClient):
         if "place_of_service" in claim_data:
             claim_info["placeOfServiceCode"] = claim_data["place_of_service"]
         if "diagnosis_codes" in claim_data:
+            codes = claim_data["diagnosis_codes"]
             claim_info["healthCareCodeInformation"] = [
-                {"diagnosisTypeCode": "ABK", "diagnosisCode": code}
-                for code in claim_data["diagnosis_codes"]
+                {
+                    "diagnosisTypeCode": "ABK" if i == 0 else "ABF",
+                    "diagnosisCode": code,
+                }
+                for i, code in enumerate(codes)
             ]
         if "lines" in claim_data:
             claim_info["serviceLines"] = [

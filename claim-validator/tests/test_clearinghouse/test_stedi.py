@@ -453,6 +453,28 @@ class TestSubmitClaim:
         assert result.accepted is True
         assert result.reference_id == "REF-456"
 
+    def test_diagnosis_codes_use_abk_then_abf(self) -> None:
+        """First diagnosis should be ABK (principal), rest ABF (secondary)."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(
+                200, json={"status": "accepted", "controlNumber": "REF-1"}
+            )
+
+        client = _make_client(handler)
+        client.submit_claim({
+            "payer_id": "TEST",
+            "diagnosis_codes": ["J06.9", "E11.65", "I10"],
+        })
+
+        body = json.loads(captured[0].content)
+        codes = body["claimInformation"]["healthCareCodeInformation"]
+        assert codes[0] == {"diagnosisTypeCode": "ABK", "diagnosisCode": "J06.9"}
+        assert codes[1] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "E11.65"}
+        assert codes[2] == {"diagnosisTypeCode": "ABF", "diagnosisCode": "I10"}
+
     def test_submission_rejected(self) -> None:
         client = _make_client(
             _ok_handler({"status": "rejected", "errors": ["Invalid NPI"]})
