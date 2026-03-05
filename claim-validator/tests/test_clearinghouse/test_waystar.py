@@ -23,6 +23,7 @@ from claim_validator.clearinghouse.exceptions import (
 from claim_validator.clearinghouse.models import (
     ClaimStatusResponse,
     ClearinghouseEligibilityResponse,
+    SubmissionResult,
 )
 from claim_validator.clearinghouse.providers.waystar import (
     CLAIM_HISTORY_PATH,
@@ -501,12 +502,19 @@ class TestClaimHistory:
 
 
 class TestSubmitClaim:
-    """Verify submit_claim raises until endpoint is confirmed."""
+    """Verify submit_claim returns a SubmissionResult."""
 
-    def test_submit_claim_raises(self) -> None:
-        client = _make_client(_ok_json_handler({}))
-        with pytest.raises(ClearinghouseError, match="not yet configured"):
-            client.submit_claim({"payer_id": "00520"})
+    def test_submit_claim_returns_result(self) -> None:
+        handler = _ok_json_handler({
+            "Status": "Accepted",
+            "ReferenceId": "REF-999",
+            "ErrorMessage": "",
+        })
+        client = _make_client(handler)
+        result = client.submit_claim({"payer_id": "00520"})
+        assert isinstance(result, SubmissionResult)
+        assert result.accepted is True
+        assert result.reference_id == "REF-999"
 
 
 # ---------------------------------------------------------------------------

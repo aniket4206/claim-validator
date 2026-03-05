@@ -163,23 +163,50 @@ class WaystarClient(BaseClearinghouseClient):
     def submit_claim(self, claim_data: dict[str, Any]) -> SubmissionResult:
         """Submit a claim to Waystar.
 
-        NOTE: The Waystar Claims submission endpoint documentation has not
-        been verified yet. This method is a placeholder that raises
-        ``ClearinghouseError`` until the real endpoint is confirmed.
-        For claim *history/status*, use ``check_claim_status()``.
+        Uses the Waystar claims submission endpoint with JSON body
+        and UserID/Password authentication (same pattern as prior auth).
 
         Args:
-            claim_data: Claim data dictionary.
+            claim_data: Claim data dictionary (ClaimData-compatible fields).
 
         Returns:
-            Submission acknowledgment result.
-
-        Raises:
-            ClearinghouseError: Always — endpoint not yet confirmed.
+            SubmissionResult with acceptance status and reference ID.
         """
-        raise ClearinghouseError(
-            "Waystar claim submission endpoint not yet configured. "
-            "Use check_claim_status() for claim history queries."
+        url = f"{self._claims_base_url}/2.0/v1/Claims/Submit"
+        json_body: dict[str, Any] = {
+            "UserID": self._user_id,
+            "Password": self._password,
+            "CustID": self._cust_id,
+            "ClaimData": claim_data,
+        }
+        response = self._post_json_with_retry(url, json_body)
+        self._handle_response(response)
+        return self._parse_submission_response(response)
+
+    def _parse_submission_response(self, response: httpx.Response) -> SubmissionResult:
+        """Parse Waystar claim submission response."""
+        try:
+            data = response.json()
+        except Exception:
+            return SubmissionResult(
+                status="unknown",
+                accepted=False,
+                raw_response={"raw_text": response.text},
+                errors=["Could not parse submission response"],
+            )
+
+        status = data.get("Status", data.get("status", "unknown"))
+        accepted = str(status).lower() in ("accepted", "received", "queued")
+        ref_id = data.get("ReferenceId", data.get("referenceId"))
+        error_msg = data.get("ErrorMessage", data.get("errorMessage", ""))
+        errors = [error_msg] if error_msg else []
+
+        return SubmissionResult(
+            status=str(status),
+            accepted=accepted,
+            reference_id=str(ref_id) if ref_id else None,
+            raw_response=data,
+            errors=errors,
         )
 
     def check_claim_status(
