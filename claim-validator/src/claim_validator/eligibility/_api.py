@@ -60,3 +60,43 @@ def check_eligibility(
 
     pipeline = EligibilityPipeline.from_settings(settings)
     return pipeline.run(request_model, response=response)
+
+
+def check_eligibility_batch(
+    *,
+    name: str,
+    items: list[dict[str, Any]],
+    settings: ClaimValidatorSettings | None = None,
+) -> "BatchEligibilityResponse":
+    """Submit a batch eligibility check via the configured clearinghouse.
+
+    Args:
+        name: Batch name for tracking.
+        items: List of eligibility check items as dicts.
+        settings: Optional settings override.
+
+    Returns:
+        Batch response with batch_id for polling.
+
+    Raises:
+        ValueError: If clearinghouse_config is not set in settings.
+    """
+    if settings is None:
+        settings = ClaimValidatorSettings()
+    if not settings.clearinghouse_config:
+        raise ValueError("clearinghouse_config is required for batch eligibility")
+
+    from claim_validator.clearinghouse.factory import get_clearinghouse_client
+    from claim_validator.clearinghouse.models.batch_eligibility import (
+        BatchEligibilityItem,
+        BatchEligibilityRequest,
+        BatchEligibilityResponse,
+    )
+
+    ch_config = dict(settings.clearinghouse_config)
+    provider = ch_config.pop("provider")
+    client = get_clearinghouse_client(provider, **ch_config)
+
+    batch_items = [BatchEligibilityItem(**item) for item in items]
+    request = BatchEligibilityRequest(name=name, items=batch_items)
+    return client.submit_eligibility_batch(request)
