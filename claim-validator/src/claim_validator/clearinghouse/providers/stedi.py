@@ -144,16 +144,69 @@ class StediClient(BaseClearinghouseClient):
             subscriber["lastName"] = request["last_name"]
         if "dob" in request:
             subscriber["dateOfBirth"] = _strip_dashes(request["dob"])
+        if "gender" in request:
+            subscriber["gender"] = request["gender"]
+
+        provider: dict[str, Any] = {"npi": request.get("npi", "")}
+        if "organization_name" in request:
+            provider["organizationName"] = request["organization_name"]
+        if "provider_first_name" in request:
+            provider["firstName"] = request["provider_first_name"]
+        if "provider_last_name" in request:
+            provider["lastName"] = request["provider_last_name"]
+        if "tax_id" in request:
+            provider["taxId"] = request["tax_id"]
 
         payload: dict[str, Any] = {
             "tradingPartnerServiceId": request.get("payer_id", ""),
-            "provider": {"npi": request.get("npi", "")},
+            "provider": provider,
             "subscriber": subscriber,
         }
-        if "service_type" in request:
-            payload["encounter"] = {
-                "serviceTypeCodes": [request["service_type"]],
-            }
+
+        # Encounter: service types + date of service
+        encounter: dict[str, Any] = {}
+        if "service_types" in request:
+            stc = request["service_types"]
+            encounter["serviceTypeCodes"] = stc if isinstance(stc, list) else [stc]
+        elif "service_type" in request:
+            encounter["serviceTypeCodes"] = [request["service_type"]]
+        if "date_of_service" in request:
+            encounter["dateOfService"] = _strip_dashes(
+                request["date_of_service"]
+            )
+        if encounter:
+            payload["encounter"] = encounter
+
+        # Optional top-level fields
+        if "external_patient_id" in request:
+            payload["externalPatientId"] = request["external_patient_id"]
+        if "submitter_transaction_id" in request:
+            payload["submitterTransactionIdentifier"] = request[
+                "submitter_transaction_id"
+            ]
+        if "trading_partner_name" in request:
+            payload["tradingPartnerName"] = request["trading_partner_name"]
+
+        # Dependent (max 1 per Stedi API)
+        if (
+            "dependent_first_name" in request
+            or "dependent_last_name" in request
+        ):
+            dependent: dict[str, Any] = {}
+            if "dependent_first_name" in request:
+                dependent["firstName"] = request["dependent_first_name"]
+            if "dependent_last_name" in request:
+                dependent["lastName"] = request["dependent_last_name"]
+            if "dependent_dob" in request:
+                dependent["dateOfBirth"] = _strip_dashes(
+                    request["dependent_dob"]
+                )
+            if "dependent_relationship" in request:
+                dependent["individualRelationshipCode"] = request[
+                    "dependent_relationship"
+                ]
+            payload["dependents"] = [dependent]
+
         return payload
 
     @staticmethod

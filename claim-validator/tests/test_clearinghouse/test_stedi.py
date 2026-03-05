@@ -163,6 +163,138 @@ class TestEligibility:
         result = client.check_eligibility({"payer_id": "00520", "npi": "123"})
         assert result.eligible is False
 
+    def test_eligibility_maps_organization_name(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "organization_name": "ACME Health Services",
+            "subscriber_id": "123456789", "first_name": "Jane",
+            "last_name": "Doe", "dob": "1900-01-01", "service_type": "MH",
+        })
+        body = json.loads(captured[0].content)
+        assert body["provider"]["organizationName"] == "ACME Health Services"
+
+    def test_eligibility_maps_external_patient_id(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "external_patient_id": "UAA111222333",
+        })
+        body = json.loads(captured[0].content)
+        assert body["externalPatientId"] == "UAA111222333"
+
+    def test_eligibility_maps_multiple_service_type_codes(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "service_types": ["MH", "78"],
+        })
+        body = json.loads(captured[0].content)
+        assert body["encounter"]["serviceTypeCodes"] == ["MH", "78"]
+
+    def test_eligibility_maps_dependent(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789",
+            "dependent_first_name": "Bobby", "dependent_last_name": "Doe",
+            "dependent_dob": "2010-05-15", "dependent_relationship": "19",
+        })
+        body = json.loads(captured[0].content)
+        assert len(body["dependents"]) == 1
+        dep = body["dependents"][0]
+        assert dep["firstName"] == "Bobby"
+        assert dep["lastName"] == "Doe"
+        assert dep["dateOfBirth"] == "20100515"
+        assert dep["individualRelationshipCode"] == "19"
+
+    def test_eligibility_maps_all_optional_provider_and_subscriber_fields(self) -> None:
+        """All optional provider/subscriber fields are mapped correctly."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS",
+            "npi": "1999999984",
+            "organization_name": "ACME Health",
+            "provider_first_name": "Dr",
+            "provider_last_name": "Smith",
+            "tax_id": "123456789",
+            "subscriber_id": "MBR123",
+            "first_name": "Jane",
+            "last_name": "Doe",
+            "dob": "1990-01-01",
+            "gender": "F",
+            "trading_partner_name": "Aetna",
+        })
+        body = json.loads(captured[0].content)
+        assert body["provider"]["organizationName"] == "ACME Health"
+        assert body["provider"]["firstName"] == "Dr"
+        assert body["provider"]["lastName"] == "Smith"
+        assert body["provider"]["taxId"] == "123456789"
+        assert body["subscriber"]["gender"] == "F"
+        assert body["tradingPartnerName"] == "Aetna"
+
+    def test_eligibility_maps_encounter_date_of_service(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789", "service_type": "30",
+            "date_of_service": "2026-03-15",
+        })
+        body = json.loads(captured[0].content)
+        assert body["encounter"]["dateOfService"] == "20260315"
+
+    def test_eligibility_maps_submitter_transaction_identifier(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "active"})
+
+        client = _make_client(handler)
+        client.check_eligibility({
+            "payer_id": "AHS", "npi": "1999999984",
+            "subscriber_id": "123456789",
+            "submitter_transaction_id": "ABC123456789",
+        })
+        body = json.loads(captured[0].content)
+        assert body["submitterTransactionIdentifier"] == "ABC123456789"
+
 
 # ---------------------------------------------------------------------------
 # AC-3: Professional claims submission (837P)
