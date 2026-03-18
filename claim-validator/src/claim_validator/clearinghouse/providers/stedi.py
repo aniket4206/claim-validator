@@ -66,7 +66,7 @@ class StediClient(BaseClearinghouseClient):
             base_url=base_url,
             timeout=httpx.Timeout(timeout, connect=10.0),
             headers={
-                "Authorization": api_key,
+                "Authorization": f"Key {api_key}" if not api_key.startswith(("Key ", "Bearer ")) else api_key,
                 "Content-Type": "application/json",
             },
         )
@@ -145,9 +145,37 @@ class StediClient(BaseClearinghouseClient):
         if "dob" in request:
             subscriber["dateOfBirth"] = _strip_dashes(request["dob"])
 
+        # Build provider with name (required by Stedi)
+        provider: dict[str, Any] = {"npi": request.get("npi", "")}
+        prov_org = request.get("provider_organization", "")
+        prov_last = request.get("provider_last_name", "")
+        prov_first = request.get("provider_first_name", "")
+        if prov_org:
+            # Explicit organization name
+            provider["organizationName"] = prov_org
+        elif prov_last:
+            provider["lastName"] = prov_last
+            if prov_first:
+                provider["firstName"] = prov_first
+        elif request.get("provider_name"):
+            name = request["provider_name"].strip()
+            parts = name.split()
+            # Heuristic: if name has 3+ words or contains org keywords, treat as org
+            org_keywords = {"health", "services", "medical", "clinic", "hospital",
+                           "group", "center", "associates", "inc", "llc", "corp",
+                           "foundation", "network", "acme", "practice"}
+            is_org = len(parts) >= 3 or any(w.lower() in org_keywords for w in parts)
+            if is_org:
+                provider["organizationName"] = name
+            elif len(parts) == 2:
+                provider["firstName"] = parts[0]
+                provider["lastName"] = parts[1]
+            elif parts:
+                provider["organizationName"] = parts[0]
+
         payload: dict[str, Any] = {
             "tradingPartnerServiceId": request.get("payer_id", ""),
-            "provider": {"npi": request.get("npi", "")},
+            "provider": provider,
             "subscriber": subscriber,
         }
         if "service_type" in request:
@@ -220,7 +248,14 @@ class StediClient(BaseClearinghouseClient):
         eligible: bool | None = None
         plan_status = data.get("planStatus")
         if plan_status:
-            eligible = plan_status.lower() in ("active", "active - full")
+            # planStatus can be a string or a list of status objects
+            if isinstance(plan_status, str):
+                ps_lower = plan_status.lower()
+                eligible = "active" in ps_lower and "inactive" not in ps_lower
+            elif isinstance(plan_status, list) and plan_status:
+                # Check first status entry
+                first = plan_status[0] if isinstance(plan_status[0], str) else plan_status[0].get("status", "")
+                eligible = first.lower() in ("active", "active - full") if isinstance(first, str) else None
         elif status.lower() == "active":
             eligible = True
 
@@ -267,7 +302,13 @@ class StediClient(BaseClearinghouseClient):
             return
         try:
             body = response.json()
-            error_msg = body.get("message", f"HTTP {response.status_code}")
+            # Extract error details from Stedi response
+            errors = body.get("errors", [])
+            if errors and isinstance(errors, list):
+                err_descs = [e.get("description", "") for e in errors if isinstance(e, dict)]
+                error_msg = "; ".join(d for d in err_descs if d) or body.get("message", f"HTTP {response.status_code}")
+            else:
+                error_msg = body.get("message", f"HTTP {response.status_code}")
         except Exception:
             error_msg = f"HTTP {response.status_code}"
 

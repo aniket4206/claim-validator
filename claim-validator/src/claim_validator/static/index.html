@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ThinkAI - Eligibility &amp; Benefits Verification</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <link rel="stylesheet" href="/static/css/style.css?v=20260312a" />
+</head>
+<body>
+  <div id="app-shell">
+
+    <!-- ============ SIDEBAR ============ -->
+    <nav id="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-text">Think<span class="logo-accent">AI</span></span>
+      </div>
+      <ul class="sidebar-nav">
+        <li class="nav-item active" data-page="dashboard">
+          <span class="nav-icon">&#127968;</span> Dashboard
+        </li>
+        <li class="nav-item" data-page="new-check">
+          <span class="nav-icon">&#43;</span> New Check
+        </li>
+        <li class="nav-item" data-page="batch-upload">
+          <span class="nav-icon">&#8613;</span> Batch Upload
+        </li>
+        <li class="nav-item" data-page="pa-requests">
+          <span class="nav-icon">&#9711;</span> PA Requests
+        </li>
+        <li class="nav-item" data-page="settings">
+          <span class="nav-icon">&#9881;</span> Settings
+        </li>
+      </ul>
+    </nav>
+
+    <!-- ============ MAIN CONTENT ============ -->
+    <div id="main-content">
+
+      <!-- Top Bar -->
+      <header id="topbar">
+        <div class="topbar-left">
+          <span id="env-badge" class="env-badge" style="display:none;">TEST ENV</span>
+        </div>
+        <div class="topbar-right">
+          <button class="topbar-icon" title="Notifications">&#128276;</button>
+          <div class="user-info">
+            <span class="user-name">Dr. Portal</span>
+            <span class="user-role">Administrator</span>
+          </div>
+          <div class="user-menu-wrapper">
+            <div class="user-avatar" id="user-avatar-btn" onclick="toggleUserMenu(event)">DP</div>
+            <div class="user-dropdown" id="user-dropdown">
+              <div class="user-dropdown-header">
+                <div class="dropdown-avatar" id="dropdown-avatar">DP</div>
+                <div class="dropdown-user-info">
+                  <div class="dropdown-user-name" id="dropdown-user-name">Dr. Portal</div>
+                  <div class="dropdown-user-email" id="dropdown-user-role">Administrator</div>
+                </div>
+              </div>
+              <div class="user-dropdown-divider"></div>
+              <div class="user-dropdown-item" onclick="navigateTo('profile'); closeUserMenu();">
+                <span class="dropdown-icon">&#128100;</span> My Profile
+              </div>
+              <div class="user-dropdown-item" onclick="navigateTo('settings'); closeUserMenu();">
+                <span class="dropdown-icon">&#9881;</span> Settings
+              </div>
+              <div class="user-dropdown-divider"></div>
+              <div class="user-dropdown-item user-dropdown-item-danger" onclick="logout()">
+                <span class="dropdown-icon">&#9211;</span> Sign Out
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- ============ PAGE: DASHBOARD ============ -->
+      <div id="page-dashboard" class="page active">
+        <h1 class="page-title">Dashboard</h1>
+        <button class="btn btn-morning-brief" id="btn-morning-brief">
+          <span>&#10024;</span> View Morning Brief
+        </button>
+
+        <!-- Stats Cards -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Total Checks</div>
+            <div class="stat-value" id="stat-total-checks">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Eligible Patients</div>
+            <div class="stat-value" id="stat-eligible">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">PA Submitted</div>
+            <div class="stat-value" id="stat-pa-submitted">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Response Time</div>
+            <div class="stat-value" id="stat-avg-time">--</div>
+          </div>
+        </div>
+
+        <!-- Recent Eligibility Checks -->
+        <div class="card">
+          <h2 class="card-title">Recent Eligibility Checks</h2>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>PATIENT</th>
+                  <th>PAYER</th>
+                  <th>SOURCE</th>
+                  <th>STATUS</th>
+                  <th>PA REQUIRED</th>
+                  <th>CHECKED AT</th>
+                </tr>
+              </thead>
+              <tbody id="recent-checks-body">
+                <!-- Filled by JS -->
+              </tbody>
+            </table>
+            <div id="empty-state" class="empty-state" style="display:none;">
+              No eligibility checks yet. Run your first check from the New Check page.
+            </div>
+          </div>
+        </div>
+
+        <!-- PA Pipeline -->
+        <div class="card">
+          <h2 class="card-title">PA Pipeline</h2>
+          <div class="pipeline-board">
+            <div class="pipeline-col">
+              <div class="pipeline-header">Pending <span class="pipeline-count" id="pipe-pending-count">0</span></div>
+              <div class="pipeline-list" id="pipe-pending"></div>
+            </div>
+            <div class="pipeline-col">
+              <div class="pipeline-header">Submitted <span class="pipeline-count" id="pipe-submitted-count">0</span></div>
+              <div class="pipeline-list" id="pipe-submitted"></div>
+            </div>
+            <div class="pipeline-col">
+              <div class="pipeline-header">Approved <span class="pipeline-count" id="pipe-approved-count">0</span></div>
+              <div class="pipeline-list" id="pipe-approved"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+          <h2 class="card-title" style="text-transform:uppercase;font-size:13px;letter-spacing:0.05em;color:var(--text-secondary);">Quick Actions</h2>
+          <div class="quick-actions-row">
+            <button class="btn btn-quick" onclick="navigateTo('batch-upload')">
+              <span>&#8613;</span> Upload CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: NEW CHECK ============ -->
+      <div id="page-new-check" class="page">
+        <h1 class="page-title">New Eligibility Check</h1>
+        <p class="page-subtitle">Verify patient insurance eligibility and coverage in real-time</p>
+
+        <div class="new-check-layout">
+          <div class="new-check-form-area">
+
+            <!-- Patient Information -->
+            <div class="card">
+              <h2 class="card-title">
+                <span class="section-icon patient-icon">&#128100;</span> Patient Information
+              </h2>
+              <form id="eligibility-form" autocomplete="off">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="patient_first_name">First Name <span class="req">*</span></label>
+                    <input type="text" id="patient_first_name" placeholder="John" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="patient_last_name">Last Name <span class="req">*</span></label>
+                    <input type="text" id="patient_last_name" placeholder="Doe" required />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="patient_dob">Date of Birth <span class="req">*</span></label>
+                    <input type="date" id="patient_dob" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="patient_gender">Gender</label>
+                    <select id="patient_gender">
+                      <option value="">Select</option>
+                      <option value="M">Male</option>
+                      <option value="F">Female</option>
+                      <option value="O">Other</option>
+                    </select>
+                  </div>
+                </div>
+            </div>
+
+            <!-- Insurance Information -->
+            <div class="card">
+              <h2 class="card-title">
+                <span class="section-icon insurance-icon">&#128196;</span> Insurance Information
+              </h2>
+                <div class="form-row">
+                  <div class="form-group combo-group">
+                    <label for="payer_search">Insurance Payer <span class="req">*</span></label>
+                    <input type="text" id="payer_search" placeholder="Search payer name or ID..." autocomplete="off" required />
+                    <input type="hidden" id="payer_id" />
+                    <input type="hidden" id="payer_name_hidden" />
+                    <div id="payer-dropdown" class="combo-dropdown"></div>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="member_id">Member ID <span class="req">*</span></label>
+                    <input type="text" id="member_id" placeholder="ABC123456789" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="group_number">Group Number</label>
+                    <input type="text" id="group_number" placeholder="GRP987654" />
+                  </div>
+                </div>
+            </div>
+
+            <!-- Service Information -->
+            <div class="card">
+              <h2 class="card-title">
+                <span class="section-icon service-icon">&#9889;</span> Service Information
+              </h2>
+                <div class="form-row">
+                  <div class="form-group combo-group">
+                    <label for="service_type_search">CPT Code</label>
+                    <input type="text" id="service_type_search" placeholder="Search service type..." autocomplete="off" value="30 - Health Benefit Plan Coverage" />
+                    <input type="hidden" id="service_type_code" value="30" />
+                    <div id="service-type-dropdown" class="combo-dropdown"></div>
+                  </div>
+                  <div class="form-group">
+                    <label for="service_date">Date of Service</label>
+                    <input type="date" id="service_date" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="provider_npi">Provider NPI</label>
+                    <input type="text" id="provider_npi" placeholder="1234567890" maxlength="10" />
+                  </div>
+                  <div class="form-group">
+                    <label for="provider_name">Provider Name</label>
+                    <input type="text" id="provider_name" placeholder="e.g. Dr. Smith" />
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="button" class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
+                  <button type="button" class="btn btn-test" id="btn-load-test" style="display:none;" onclick="loadTestData()">
+                    &#9881; Load Test Data
+                  </button>
+                  <button type="submit" class="btn btn-primary btn-full" id="submit-btn">
+                    <span>&#128269;</span> Run Eligibility Check
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Right Sidebar -->
+          <div class="new-check-sidebar">
+            <div class="card">
+              <h3 class="card-title" style="text-transform:uppercase;font-size:12px;letter-spacing:0.05em;">Today's Stats</h3>
+              <div class="sidebar-stat">
+                <div class="sidebar-stat-label">Checks Completed</div>
+                <div class="sidebar-stat-value" id="sidebar-checks-count">0</div>
+              </div>
+              <div class="sidebar-stat">
+                <div class="sidebar-stat-label">Avg Response Time</div>
+                <div class="sidebar-stat-value accent" id="sidebar-avg-time">--</div>
+              </div>
+              <div class="sidebar-stat">
+                <div class="sidebar-stat-label">Eligibility Rate</div>
+                <div class="sidebar-stat-value accent" id="sidebar-elig-rate">--</div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title" style="text-transform:uppercase;font-size:12px;letter-spacing:0.05em;">Common CPT Codes</h3>
+              <div class="cpt-list">
+                <div class="cpt-item" onclick="document.getElementById('service_type_search').value='99213 - Office Visit - Established Patient'; document.getElementById('service_type_code').value='99213';">
+                  <span class="cpt-code">99213</span>
+                  <span class="cpt-name">Office Visit - Established Patient</span>
+                </div>
+                <div class="cpt-item" onclick="document.getElementById('service_type_search').value='99214 - Office Visit - Detailed'; document.getElementById('service_type_code').value='99214';">
+                  <span class="cpt-code">99214</span>
+                  <span class="cpt-name">Office Visit - Detailed</span>
+                </div>
+                <div class="cpt-item" onclick="document.getElementById('service_type_search').value='90837 - Psychotherapy 60 min'; document.getElementById('service_type_code').value='90837';">
+                  <span class="cpt-code">90837</span>
+                  <span class="cpt-name">Psychotherapy 60 min</span>
+                </div>
+                <div class="cpt-item" onclick="document.getElementById('service_type_search').value='97110 - Therapeutic Exercise'; document.getElementById('service_type_code').value='97110';">
+                  <span class="cpt-code">97110</span>
+                  <span class="cpt-name">Therapeutic Exercise</span>
+                </div>
+                <div class="cpt-item" onclick="document.getElementById('service_type_search').value='99285 - Emergency Department Visit'; document.getElementById('service_type_code').value='99285';">
+                  <span class="cpt-code">99285</span>
+                  <span class="cpt-name">Emergency Department Visit</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card card-realtime">
+              <div class="realtime-icon">&#128197;</div>
+              <div class="realtime-title">Real-Time Verification</div>
+              <div class="realtime-desc">Results typically return in under 2 seconds via direct clearinghouse connection.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: BATCH UPLOAD ============ -->
+      <div id="page-batch-upload" class="page">
+        <div class="batch-header-row">
+          <h1 class="page-title">Batch Eligibility Check</h1>
+          <button class="btn btn-outline-small" id="btn-csv-mode">Use Case: Standalone CSV Mode</button>
+        </div>
+
+        <!-- Step Indicator -->
+        <div class="stepper">
+          <div class="step active" id="step-1-indicator">
+            <div class="step-circle">1</div>
+            <div class="step-label">Upload CSV</div>
+          </div>
+          <div class="step-line" id="step-line-1"></div>
+          <div class="step" id="step-2-indicator">
+            <div class="step-circle">2</div>
+            <div class="step-label">Review &amp; Map</div>
+          </div>
+          <div class="step-line" id="step-line-2"></div>
+          <div class="step" id="step-3-indicator">
+            <div class="step-circle">3</div>
+            <div class="step-label">Run Agent</div>
+          </div>
+        </div>
+
+        <!-- Step 1: Upload -->
+        <div id="batch-step-1" class="batch-step active">
+          <div class="card upload-card">
+            <div class="upload-zone" id="upload-zone">
+              <div class="upload-icon">&#9729;</div>
+              <div class="upload-text">Drag &amp; drop your CSV file here</div>
+              <div class="upload-sub">Supports: Patient Name, DOB, Insurance ID, Payer, Group#, NPI, CPT Codes</div>
+              <button type="button" class="btn btn-primary" onclick="document.getElementById('csv-file-input').click()">Browse Files</button>
+              <input type="file" id="csv-file-input" accept=".csv" style="display:none;" />
+            </div>
+            <div class="upload-sample">
+              <a href="#" id="download-sample-csv" class="sample-link">
+                <span>&#8615;</span> Download Sample CSV Template
+              </a>
+            </div>
+          </div>
+
+          <!-- Column Mapping (shown after file upload) -->
+          <div class="card" id="column-mapping-card" style="display:none;">
+            <h2 class="card-title">Required Columns Mapping</h2>
+            <p class="card-subtitle">Map your CSV headers to system fields for accurate eligibility checks</p>
+            <div class="mapping-table">
+              <div class="mapping-header">
+                <span>CSV HEADER</span>
+                <span>MAPS TO SYSTEM FIELD</span>
+              </div>
+              <div id="mapping-rows">
+                <!-- Filled by JS after CSV parse -->
+              </div>
+              <button type="button" class="btn-add-mapping" id="btn-add-mapping">+ Add Custom Mapping</button>
+            </div>
+          </div>
+
+          <div class="batch-actions" id="batch-step1-actions" style="display:none;">
+            <button class="btn btn-primary" onclick="proceedToStep2()">Continue to Review</button>
+          </div>
+        </div>
+
+        <!-- Step 2: Review -->
+        <div id="batch-step-2" class="batch-step">
+          <div class="card">
+            <h2 class="card-title">Review Data</h2>
+            <p class="card-subtitle" id="review-summary">0 records found. 0 valid, 0 with errors.</p>
+            <div class="table-wrapper">
+              <table id="review-table">
+                <thead id="review-thead"><tr></tr></thead>
+                <tbody id="review-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="batch-actions">
+            <button class="btn btn-secondary" onclick="goToStep(1)">Back</button>
+            <button class="btn btn-primary" id="btn-run-batch" onclick="runBatchChecks()">Run Eligibility Checks</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Results -->
+        <div id="batch-step-3" class="batch-step">
+          <div class="card">
+            <h2 class="card-title">Batch Results</h2>
+            <div class="batch-progress-bar" id="batch-progress-wrap" style="display:none;">
+              <div class="batch-progress-fill" id="batch-progress-fill" style="width:0%"></div>
+            </div>
+            <p class="card-subtitle" id="batch-results-summary"></p>
+            <div class="table-wrapper">
+              <table id="results-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>PATIENT</th>
+                    <th>PAYER</th>
+                    <th>MEMBER ID</th>
+                    <th>STATUS</th>
+                    <th>DETAILS</th>
+                  </tr>
+                </thead>
+                <tbody id="results-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="batch-actions">
+            <button class="btn btn-secondary" onclick="goToStep(1)">Start New Batch</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: RESULTS ============ -->
+      <div id="page-results" class="page">
+        <header class="results-header">
+          <button class="btn-back" onclick="navigateTo('dashboard')">
+            <span>&larr;</span> Back
+          </button>
+          <div class="results-header-info">
+            <div class="results-patient-row">
+              <h1 id="r-patient-name">--</h1>
+              <span id="r-status-badge" class="badge badge-eligible">Eligible</span>
+            </div>
+            <p id="r-subtitle" class="subtitle">--</p>
+          </div>
+          <div class="results-header-actions">
+            <button class="btn btn-secondary" onclick="window.print()">
+              <span class="btn-icon">&#128438;</span> Print
+            </button>
+            <button class="btn btn-primary" id="btn-proceed-pa" style="display:none;" onclick="runPriorAuth()">
+              Proceed to Prior Auth
+            </button>
+          </div>
+        </header>
+
+        <div class="results-grid">
+          <div class="results-left">
+            <!-- Financial Summary -->
+            <div class="card" id="financial-card">
+              <h2 class="card-title">Financial Summary</h2>
+              <div class="financial-row">
+                <div class="financial-box">
+                  <div class="financial-label">Annual Deductible</div>
+                  <div class="financial-value">
+                    <span id="r-deductible" class="big-number">--</span>
+                    <span id="r-deductible-max" class="small-number"></span>
+                  </div>
+                  <div class="progress-bar"><div id="r-deductible-bar" class="progress-fill" style="width:0%"></div></div>
+                  <div id="r-deductible-remaining" class="financial-remaining"></div>
+                </div>
+                <div class="financial-box">
+                  <div class="financial-label">Out-of-Pocket Maximum</div>
+                  <div class="financial-value">
+                    <span id="r-oop" class="big-number">--</span>
+                    <span id="r-oop-max" class="small-number"></span>
+                  </div>
+                  <div class="progress-bar"><div id="r-oop-bar" class="progress-fill oop" style="width:0%"></div></div>
+                  <div id="r-oop-remaining" class="financial-remaining"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Payer Response -->
+            <div class="card" id="payer-response-card" style="display:none;">
+              <h2 class="card-title"><span class="icon-payer">&#127973;</span> Payer Response Details</h2>
+              <div class="payer-details-grid">
+                <div class="detail-row"><span class="detail-label">Carrier</span><span id="r-carrier-name" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Coverage Status</span><span id="r-coverage-status" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Subscriber</span><span id="r-subscriber-name" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Relationship</span><span id="r-relationship" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Patient (from payer)</span><span id="r-payer-patient" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">DOB (from payer)</span><span id="r-payer-dob" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Gender</span><span id="r-payer-gender" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Member ID</span><span id="r-payer-member-id" class="detail-value">--</span></div>
+                <div class="detail-row"><span class="detail-label">Claims Address</span><span id="r-claims-address" class="detail-value">--</span></div>
+              </div>
+            </div>
+
+            <!-- Coverage Details -->
+            <div class="card">
+              <h2 class="card-title">Coverage Details</h2>
+              <div class="coverage-grid">
+                <div class="coverage-item blue"><div class="coverage-label">Patient Copay</div><div id="r-copay" class="coverage-value">--</div></div>
+                <div class="coverage-item purple"><div class="coverage-label">Coinsurance</div><div id="r-coinsurance" class="coverage-value">--</div></div>
+                <div class="coverage-item orange"><div class="coverage-label">Prior Authorization</div><div id="r-prior-auth" class="coverage-value">--</div></div>
+                <div class="coverage-item teal"><div class="coverage-label">Plan Name</div><div id="r-plan-name" class="coverage-value">--</div></div>
+                <div class="coverage-item gray"><div class="coverage-label">Coverage Effective Dates</div><div id="r-coverage-dates" class="coverage-value">--</div></div>
+                <div class="coverage-item gray"><div class="coverage-label">Group / Plan Number</div><div id="r-group-number" class="coverage-value">--</div></div>
+              </div>
+            </div>
+
+            <!-- Findings -->
+            <div class="card" id="findings-card" style="display:none;">
+              <h2 class="card-title">
+                <span class="icon-warning">&#9888;</span> Validation Findings
+                <span id="r-findings-count" class="findings-count">0</span>
+              </h2>
+              <p class="findings-subtitle">Issues found that may cause claim denial.</p>
+              <div id="findings-list" class="findings-list"></div>
+            </div>
+          </div>
+
+          <div class="results-right">
+            <!-- AI Prediction -->
+            <div class="card ai-card">
+              <h2 class="card-title"><span class="icon-ai">&#10024;</span> AI Coverage Prediction</h2>
+              <div class="ai-gauge-wrapper">
+                <svg class="ai-gauge" viewBox="0 0 120 120">
+                  <circle class="gauge-bg" cx="60" cy="60" r="50" />
+                  <circle id="r-gauge-fill" class="gauge-fill" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314" />
+                </svg>
+                <div class="gauge-text">
+                  <span id="r-ai-pct" class="gauge-pct">--%</span>
+                  <span class="gauge-label">Approval Probability</span>
+                </div>
+              </div>
+              <div id="r-ai-confidence" class="confidence-badge">--</div>
+              <div class="contributing-factors">
+                <div class="factor-title">Contributing Factors:</div>
+                <div id="r-factors" class="factor-list"></div>
+              </div>
+            </div>
+
+            <!-- Recommendation -->
+            <div id="recommendation-card" class="card recommendation-card">
+              <h3><span class="icon-check">&#10003;</span> Recommendation</h3>
+              <p id="r-recommendation">--</p>
+            </div>
+
+            <!-- Tips -->
+            <div class="card tips-card">
+              <h3><span class="icon-doc">&#128196;</span> Documentation Tips</h3>
+              <ul id="r-tips"><li>--</li></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: PA REQUESTS ============ -->
+      <div id="page-pa-requests" class="page">
+        <h1 class="page-title">PA Requests</h1>
+        <div class="card">
+          <div class="empty-state">Prior Authorization requests will appear here after eligibility checks.</div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: PROFILE ============ -->
+      <div id="page-profile" class="page">
+        <h1 class="page-title">My Profile</h1>
+        <p class="page-subtitle">Manage your account details and preferences</p>
+
+        <div class="profile-layout">
+          <!-- Profile Card -->
+          <div class="card profile-card">
+            <div class="profile-header">
+              <div class="profile-avatar-lg" id="profile-avatar-lg">DP</div>
+              <div class="profile-header-info">
+                <h2 class="profile-display-name" id="profile-display-name">Dr. Portal</h2>
+                <span class="profile-role-badge" id="profile-role-badge">Administrator</span>
+              </div>
+            </div>
+            <div class="profile-details">
+              <div class="profile-field">
+                <label>Username</label>
+                <div class="profile-field-value" id="profile-username">admin</div>
+              </div>
+              <div class="profile-field">
+                <label>Display Name</label>
+                <input type="text" id="profile-name-input" class="profile-input" placeholder="Display Name" />
+              </div>
+              <div class="profile-field">
+                <label>Email</label>
+                <input type="email" id="profile-email-input" class="profile-input" placeholder="email@example.com" />
+              </div>
+              <div class="profile-field">
+                <label>Role</label>
+                <div class="profile-field-value" id="profile-role">Administrator</div>
+              </div>
+            </div>
+            <div class="profile-actions">
+              <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+            </div>
+          </div>
+
+          <!-- Change Password Card -->
+          <div class="card">
+            <h2 class="card-title">Change Password</h2>
+            <div class="profile-details">
+              <div class="profile-field">
+                <label>Current Password</label>
+                <input type="password" id="profile-current-pw" class="profile-input" placeholder="Enter current password" />
+              </div>
+              <div class="profile-field">
+                <label>New Password</label>
+                <input type="password" id="profile-new-pw" class="profile-input" placeholder="Enter new password" />
+              </div>
+              <div class="profile-field">
+                <label>Confirm New Password</label>
+                <input type="password" id="profile-confirm-pw" class="profile-input" placeholder="Confirm new password" />
+              </div>
+            </div>
+            <div class="profile-actions">
+              <button class="btn btn-secondary" onclick="changePassword()">Update Password</button>
+            </div>
+            <div id="pw-msg" class="profile-msg" style="display:none;"></div>
+          </div>
+
+          <!-- Session Info Card -->
+          <div class="card">
+            <h2 class="card-title">Session Info</h2>
+            <div class="profile-details">
+              <div class="profile-field">
+                <label>Logged in as</label>
+                <div class="profile-field-value" id="profile-session-user">--</div>
+              </div>
+              <div class="profile-field">
+                <label>Login time</label>
+                <div class="profile-field-value" id="profile-login-time">--</div>
+              </div>
+            </div>
+            <div class="profile-actions">
+              <button class="btn btn-secondary" style="color:var(--error);border-color:var(--error);" onclick="logout()">Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: SETTINGS ============ -->
+      <div id="page-settings" class="page">
+        <h1 class="page-title">Settings</h1>
+        <div class="card"><div class="empty-state">Application settings coming soon.</div></div>
+      </div>
+
+    </div><!-- /main-content -->
+
+    <!-- Prior Auth Result Modal -->
+    <div id="pa-modal" class="pa-modal" style="display:none;">
+      <div class="pa-modal-content">
+        <div class="pa-modal-header">
+          <h2>Prior Authorization Result</h2>
+          <button class="btn-close" onclick="closePAModal()">&times;</button>
+        </div>
+        <div class="pa-modal-body">
+          <div class="pa-status-row"><span class="pa-label">PA ID:</span><span id="pa-id" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Status:</span><span id="pa-status" class="pa-value badge">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Reference ID:</span><span id="pa-ref-id" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Status Message:</span><span id="pa-status-msg" class="pa-value">--</span></div>
+          <div class="pa-status-row" id="pa-auth-row" style="display:none;"><span class="pa-label">Auth Number:</span><span id="pa-auth-number" class="pa-value" style="color:var(--success);font-weight:700;">--</span></div>
+          <div class="pa-status-row" id="pa-error-row" style="display:none;"><span class="pa-label">Error:</span><span id="pa-error-msg" class="pa-value" style="color:var(--error);">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Execution Time:</span><span id="pa-exec-time" class="pa-value">--</span></div>
+        </div>
+        <div class="pa-modal-footer">
+          <button class="btn btn-secondary" onclick="closePAModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display:none;">
+      <div class="spinner"></div>
+      <p>Running eligibility check...</p>
+      <p class="loading-sub">Validating inputs &amp; contacting payer</p>
+    </div>
+
+  </div><!-- /app-shell -->
+
+  <script src="/static/js/app.js?v=20260312a"></script>
+</body>
+</html>

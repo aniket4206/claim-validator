@@ -13598,5 +13598,41 @@
   "ZENWC": {
     "name": "Zenith Workers Comp",
     "type": "workers_comp"
+  },
+  "22222": {
+    "name": "ZirMed Test Payer",
+    "type": "commercial"
+  },
+  "AETNA": {
+    "name": "Aetna (Stedi)",
+    "type": "commercial"
+  },
+  "CIGNA": {
+    "name": "Cigna (Stedi)",
+    "type": "commercial"
+  },
+  "HUMANA": {
+    "name": "Humana (Stedi)",
+    "type": "commercial"
+  },
+  "UHC": {
+    "name": "UnitedHealthcare (Stedi)",
+    "type": "commercial"
+  },
+  "CMS": {
+    "name": "CMS Medicare (Stedi)",
+    "type": "government"
+  },
+  "AMBETTER": {
+    "name": "Ambetter (Stedi)",
+    "type": "commercial"
+  },
+  "KAISER_NORCAL": {
+    "name": "Kaiser Permanente NorCal (Stedi)",
+    "type": "commercial"
+  },
+  "STEDITEST": {
+    "name": "Stedi Test Payer",
+    "type": "test"
   }
 }

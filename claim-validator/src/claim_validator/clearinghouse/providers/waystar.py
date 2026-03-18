@@ -36,9 +36,9 @@ from claim_validator.clearinghouse.models import (
 )
 
 # -- Default base URLs per service ------------------------------------------
-DEFAULT_CLAIMS_BASE_URL = "https://claimsapi.zirmed.com"
-DEFAULT_ELIGIBILITY_BASE_URL = "https://eligibilityapi.zirmed.com"
-DEFAULT_PRIOR_AUTH_BASE_URL = "https://priorauthorizationapi.waystar.com"
+DEFAULT_CLAIMS_BASE_URL = "https://sandbox.claimsapi.zirmed.com"
+DEFAULT_ELIGIBILITY_BASE_URL = "https://sandbox.eligibilityapi.zirmed.com"
+DEFAULT_PRIOR_AUTH_BASE_URL = "https://sandbox.priorauthorizationapi.waystar.com"
 
 # Keep legacy alias for backwards compat with factory / tests
 DEFAULT_BASE_URL = DEFAULT_CLAIMS_BASE_URL
@@ -360,6 +360,10 @@ class WaystarClient(BaseClearinghouseClient):
         first_name = request.get("first_name", "").upper()
         last_name = request.get("last_name", "").upper()
 
+        # Provider name for NM1*1P segment (required by many payers)
+        provider_last = request.get("provider_last_name", "").upper()
+        provider_first = request.get("provider_first_name", "").upper()
+
         # Support multiple service types via list or comma-separated string
         raw_st = request.get("service_types", request.get("service_type", "30"))
         if isinstance(raw_st, str):
@@ -374,6 +378,12 @@ class WaystarClient(BaseClearinghouseClient):
         # Pad ISA fields to required widths
         sender_id = f"{npi:<15}" if npi else "SENDER         "
 
+        # Build NM1*1P with provider name if available
+        if provider_last:
+            nm1_1p = f"NM1*1P*1*{provider_last}*{provider_first}****XX*{npi}"
+        else:
+            nm1_1p = f"NM1*1P*2******XX*{npi}"
+
         segments = [
             f"ISA*00*          *00*          "
             f"*ZZ*{sender_id}*ZZ*ZIRMED         "
@@ -385,7 +395,7 @@ class WaystarClient(BaseClearinghouseClient):
             "HL*1**20*1",
             f"NM1*PR*2*{payer_id}*****PI*{payer_id}",
             "HL*2*1*21*1",
-            f"NM1*1P*2******XX*{npi}",
+            nm1_1p,
             "HL*3*2*22*0",
             "TRN*1*REQ001*9SENDER",
             f"NM1*IL*1*{last_name}*{first_name}****MI*{subscriber_id}",

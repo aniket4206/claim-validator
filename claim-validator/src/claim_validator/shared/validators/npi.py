@@ -25,6 +25,35 @@ def _check_luhn_npi(npi: str) -> bool:
         return False
 
 
+def _compute_correct_npi(npi: str) -> str | None:
+    """Compute the correct check digit for a 10-digit NPI.
+
+    Takes the first 9 digits, calculates the proper Luhn check digit
+    using the '80840' healthcare prefix, and returns the corrected NPI.
+    """
+    try:
+        base9 = npi[:9]
+        if len(base9) != 9 or not base9.isdigit():
+            return None
+
+        # Prefix + 9 base digits + placeholder check digit (0)
+        prefixed = "80840" + base9 + "0"
+        total = 0
+        for i, ch in enumerate(reversed(prefixed)):
+            digit = int(ch)
+            if i % 2 == 1:
+                digit *= 2
+                if digit > 9:
+                    digit -= 9
+            total += digit
+
+        # Check digit is what makes total a multiple of 10
+        check_digit = (10 - (total % 10)) % 10
+        return base9 + str(check_digit)
+    except (ValueError, TypeError):
+        return None
+
+
 def validate_npi(
     npi: str | None,
     field_name: str = "npi",
@@ -66,15 +95,22 @@ def validate_npi(
         ))
         return findings
 
-    # Luhn check
+    # Luhn check — WARNING (not error) so user can still proceed
     if not _check_luhn_npi(cleaned):
+        corrected = _compute_correct_npi(cleaned)
+        suggestion = (
+            f"NPI check digit appears incorrect. "
+            f"Did you mean {corrected}? "
+            f"Verify at {_NPI_REGISTRY_URL}"
+        ) if corrected else f"Verify the NPI at {_NPI_REGISTRY_URL}"
+
         findings.append(Finding(
             code=f"{code_prefix}INVALID_NPI",
-            message=f"NPI in '{field_name}' fails Luhn check-digit validation",
-            severity=Severity.ERROR,
+            message=f"NPI '{cleaned}' fails Luhn check-digit validation",
+            severity=Severity.WARNING,
             field_name=field_name,
-            suggestion=f"Verify the NPI at {_NPI_REGISTRY_URL}",
-            context={"check": "luhn"},
+            suggestion=suggestion,
+            context={"check": "luhn", "suggested_npi": corrected},
         ))
 
     return findings
