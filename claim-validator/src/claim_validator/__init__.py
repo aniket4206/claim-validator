@@ -84,10 +84,12 @@ from claim_validator.validators import (
 )
 from claim_validator.workflow import (
     ClaimRequest,
+    FullWorkflowResult,
     Stage,
     StageResult,
     WorkflowResult,
     process_claim,
+    process_claim_full,
 )
 
 __all__ = [
@@ -153,7 +155,9 @@ __all__ = [
     "submit_prior_auth",
     "SubscriberInfo",
     "ClaimRequest",
+    "FullWorkflowResult",
     "process_claim",
+    "process_claim_full",
     "Stage",
     "StageResult",
     "validate",

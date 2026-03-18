@@ -72,6 +72,24 @@ class BaseClearinghouseClient(ABC):
         """
         ...
 
+    def submit_prior_auth(
+        self, request: dict[str, Any]
+    ) -> SubmissionResult:
+        """Submit a prior authorization request (278 transaction).
+
+        Args:
+            request: Prior authorization request fields as a dictionary.
+
+        Returns:
+            Submission acknowledgment result.
+
+        Raises:
+            NotImplementedError: If provider does not support PA.
+        """
+        raise NotImplementedError(
+            f"{self.provider_name} does not support prior authorization submission"
+        )
+
     @abstractmethod
     def check_claim_status(self, claim_ref: str) -> ClaimStatusResponse:
         """Check claim adjudication status (276/277 transaction).

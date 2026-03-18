@@ -24,5 +24,5 @@ class TestEligibilitySettings:
     def test_existing_pa_settings_unchanged(self) -> None:
         """PA settings still work after eligibility extension."""
         settings = ClaimValidatorSettings()
-        assert settings.pa_skip_ai is False
+        assert settings.pa_skip_ai is True  # PA is rule-based only
         assert len(settings.pa_rule_validators) == 7

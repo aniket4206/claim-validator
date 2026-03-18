@@ -44,7 +44,11 @@ def get_llm_client(
         )
 
         return OpenAICompatibleClient(model=model, api_key=api_key, **kwargs)
+    if provider == "groq":
+        from claim_validator.llm.providers.groq import GroqClient
+
+        return GroqClient(model=model, api_key=api_key, **kwargs)
     raise ConfigurationError(
         f"Unknown LLM provider: {provider!r}. "
-        f"Supported: 'anthropic', 'openai', 'openai_compatible'."
+        f"Supported: 'anthropic', 'openai', 'openai_compatible', 'groq'."
     )

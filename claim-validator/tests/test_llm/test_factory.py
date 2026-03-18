@@ -78,6 +78,27 @@ class TestFactoryDispatch:
                 sys.modules[mod_key] = saved
 
 
+    def test_groq_provider(self) -> None:
+        mock_httpx = _make_mock_httpx()
+        mod_key = "claim_validator.llm.providers.groq"
+        saved = sys.modules.pop(mod_key, None)
+        try:
+            with patch.dict(
+                "sys.modules", {"groq": None, "httpx": mock_httpx}
+            ):
+                result = get_llm_client(
+                    "groq",
+                    api_key="gsk-test",
+                    model="llama-3.3-70b-versatile",
+                )
+            assert isinstance(result, BaseLLMClient)
+            assert result.provider_name == "groq"
+            assert result.model == "llama-3.3-70b-versatile"
+        finally:
+            if saved is not None:
+                sys.modules[mod_key] = saved
+
+
 class TestFactoryErrors:
     """Test error handling in get_llm_client."""
 
@@ -90,6 +111,12 @@ class TestFactoryErrors:
     def test_error_message_lists_supported_providers(self) -> None:
         with pytest.raises(
             ConfigurationError, match="anthropic"
+        ):
+            get_llm_client("bad", api_key="k", model="m")
+
+    def test_error_message_lists_groq(self) -> None:
+        with pytest.raises(
+            ConfigurationError, match="groq"
         ):
             get_llm_client("bad", api_key="k", model="m")
 

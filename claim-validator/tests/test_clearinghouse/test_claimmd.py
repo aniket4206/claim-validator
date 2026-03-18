@@ -289,6 +289,147 @@ class TestCheckClaimStatus:
 
 
 # ---------------------------------------------------------------------------
+# AC-4b: Prior Authorization (278)
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitPriorAuth:
+    """Verify prior auth submission and response parsing."""
+
+    def test_prior_auth_posts_to_correct_path(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "approved"})
+
+        client = _make_client(handler)
+        client.submit_prior_auth({"payer_id": "00520", "requester_npi": "1234567893"})
+        assert captured[0].url.path == "/services/preauth/"
+
+    def test_prior_auth_includes_account_key(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "approved"})
+
+        client = _make_client(handler)
+        client.submit_prior_auth({"payer_id": "00520", "requester_npi": "123"})
+        form = _parse_form_body(captured[0])
+        assert form["AccountKey"] == "test-account-key"
+        assert form["ResponseType"] == "json"
+
+    def test_prior_auth_request_mapping_flat_keys(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "approved"})
+
+        client = _make_client(handler)
+        client.submit_prior_auth(
+            {
+                "payer_id": "00520",
+                "npi": "1245319599",
+                "subscriber_id": "SUB123",
+                "first_name": "Alice",
+                "last_name": "Williams",
+                "dob": "1980-07-22",
+                "diagnosis_codes": ["M79.3", "G89.29"],
+                "service_lines": [
+                    {"cpt_code": "72148", "from_date": "2026-04-01", "quantity": 1},
+                ],
+            }
+        )
+
+        form = _parse_form_body(captured[0])
+        assert form["PayerID"] == "00520"
+        assert form["ProviderNPI"] == "1245319599"
+        assert form["InsuredID"] == "SUB123"
+        assert form["InsuredFirstName"] == "Alice"
+        assert form["InsuredLastName"] == "Williams"
+        assert form["InsuredDOB"] == "07/22/1980"
+        assert form["DiagnosisCode1"] == "M79.3"
+        assert form["DiagnosisCode2"] == "G89.29"
+        assert form["ProcedureCode1"] == "72148"
+        assert form["ServiceDate1"] == "04/01/2026"
+        assert form["Quantity1"] == "1"
+
+    def test_prior_auth_request_mapping_nested_subscriber(self) -> None:
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.append(request)
+            return httpx.Response(200, json={"status": "approved"})
+
+        client = _make_client(handler)
+        client.submit_prior_auth(
+            {
+                "payer_id": "00520",
+                "requester_npi": "1245319599",
+                "subscriber": {
+                    "member_id": "SUB456",
+                    "first_name": "Bob",
+                    "last_name": "Smith",
+                    "dob": "1975-03-15",
+                },
+            }
+        )
+
+        form = _parse_form_body(captured[0])
+        assert form["ProviderNPI"] == "1245319599"
+        assert form["InsuredID"] == "SUB456"
+        assert form["InsuredFirstName"] == "Bob"
+        assert form["InsuredLastName"] == "Smith"
+        assert form["InsuredDOB"] == "03/15/1975"
+
+    def test_prior_auth_response_approved(self) -> None:
+        client = _make_client(
+            _ok_handler(
+                {
+                    "status": "approved",
+                    "authorizationNumber": "AUTH-789",
+                }
+            )
+        )
+        result = client.submit_prior_auth({"payer_id": "00520", "npi": "123"})
+        assert isinstance(result, SubmissionResult)
+        assert result.accepted is True
+        assert result.reference_id == "AUTH-789"
+
+    def test_prior_auth_response_denied(self) -> None:
+        client = _make_client(
+            _ok_handler(
+                {
+                    "status": "denied",
+                    "errors": ["Service not covered"],
+                }
+            )
+        )
+        result = client.submit_prior_auth({"payer_id": "00520", "npi": "123"})
+        assert result.accepted is False
+        assert result.errors == ["Service not covered"]
+
+    def test_prior_auth_response_certified(self) -> None:
+        client = _make_client(
+            _ok_handler({"status": "certified", "responseID": "R-100"})
+        )
+        result = client.submit_prior_auth({"payer_id": "00520", "npi": "123"})
+        assert result.accepted is True
+        assert result.reference_id == "R-100"
+
+    def test_stedi_does_not_support_prior_auth(self) -> None:
+        """Verify non-ClaimMD providers raise NotImplementedError."""
+        from claim_validator.clearinghouse.providers.stedi import StediClient
+
+        client = StediClient(api_key="test-key")
+        with pytest.raises(NotImplementedError, match="does not support"):
+            client.submit_prior_auth({"payer_id": "00520"})
+        client.close()
+
+
+# ---------------------------------------------------------------------------
 # AC-5: Authentication
 # ---------------------------------------------------------------------------
 

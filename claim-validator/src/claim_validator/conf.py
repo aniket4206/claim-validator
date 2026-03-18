@@ -69,10 +69,11 @@ class ClaimValidatorSettings(BaseSettings):
     skip_ai_on_rule_failure: bool = True
     ai_config: dict[str, Any] | None = None
 
-    # Prior authorization settings
+    # Prior authorization settings (rule-based only by default — PA is a
+    # deterministic lookup, not an interpretation problem)
     pa_rule_validators: list[str] = DEFAULT_PA_RULE_VALIDATORS
-    pa_ai_validators: list[str] = DEFAULT_PA_AI_VALIDATORS
-    pa_skip_ai: bool = False
+    pa_ai_validators: list[str] = []
+    pa_skip_ai: bool = True
     pa_skip_ai_on_rule_failure: bool = True
 
     # Eligibility settings
@@ -83,3 +84,11 @@ class ClaimValidatorSettings(BaseSettings):
 
     # Clearinghouse settings
     clearinghouse_config: dict[str, Any] | None = None
+
+    # Per-stage AI provider overrides for process_claim_full().
+    # Each is a dict with keys: provider, api_key, model (+ provider extras).
+    # When set, overrides the global ai_config for that specific stage.
+    # Example: use Groq for fast summaries, Claude for clinical reasoning.
+    ai_claim_analysis_config: dict[str, Any] | None = None
+    ai_rejection_summary_config: dict[str, Any] | None = None
+    ai_pre_submission_config: dict[str, Any] | None = None

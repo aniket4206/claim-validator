@@ -27,6 +27,7 @@ DEFAULT_BASE_URL = "https://svc.claim.md"
 _ELIGIBILITY_PATH = "/services/eligdata/"
 _UPLOAD_PATH = "/services/upload/"
 _RESPONSE_PATH = "/services/response/"
+_PRIOR_AUTH_PATH = "/services/preauth/"
 
 
 def _to_claimmd_date(date_str: str) -> str:
@@ -107,6 +108,24 @@ class ClaimMDClient(BaseClearinghouseClient):
         data = self._handle_response(response)
         return self._parse_submission_response(data)
 
+    def submit_prior_auth(
+        self, request: dict[str, Any]
+    ) -> SubmissionResult:
+        """Submit a prior authorization request via Claim.MD (278).
+
+        Args:
+            request: Prior auth request with keys ``payer_id``, ``npi``,
+                ``subscriber_id``, ``first_name``, ``last_name``, ``dob``,
+                ``diagnosis_codes``, ``service_lines``, etc.
+
+        Returns:
+            Submission result with Claim.MD batch reference.
+        """
+        form_data = self._to_claimmd_prior_auth(request)
+        response = self._post_form_with_retry(_PRIOR_AUTH_PATH, form_data)
+        data = self._handle_response(response)
+        return self._parse_prior_auth_response(data)
+
     def check_claim_status(self, claim_ref: str) -> ClaimStatusResponse:
         """Check claim status / retrieve responses from Claim.MD.
 
@@ -150,6 +169,79 @@ class ClaimMDClient(BaseClearinghouseClient):
         if "service_date" in request:
             form["ServiceDate"] = _to_claimmd_date(request["service_date"])
         return form
+
+    def _to_claimmd_prior_auth(
+        self, request: dict[str, Any]
+    ) -> dict[str, str]:
+        """Translate library PA request dict to Claim.MD form data."""
+        form: dict[str, str] = {
+            "AccountKey": self._account_key,
+            "ResponseType": "json",
+        }
+        if "payer_id" in request:
+            form["PayerID"] = request["payer_id"]
+        if "npi" in request or "requester_npi" in request:
+            form["ProviderNPI"] = request.get("npi") or request.get(
+                "requester_npi", ""
+            )
+        if "subscriber_id" in request:
+            form["InsuredID"] = request["subscriber_id"]
+        elif "subscriber" in request and isinstance(request["subscriber"], dict):
+            form["InsuredID"] = request["subscriber"].get("member_id", "")
+        if "first_name" in request:
+            form["InsuredFirstName"] = request["first_name"]
+        elif "subscriber" in request and isinstance(request["subscriber"], dict):
+            form["InsuredFirstName"] = request["subscriber"].get(
+                "first_name", ""
+            )
+        if "last_name" in request:
+            form["InsuredLastName"] = request["last_name"]
+        elif "subscriber" in request and isinstance(request["subscriber"], dict):
+            form["InsuredLastName"] = request["subscriber"].get(
+                "last_name", ""
+            )
+        if "dob" in request:
+            form["InsuredDOB"] = _to_claimmd_date(request["dob"])
+        elif "subscriber" in request and isinstance(request["subscriber"], dict):
+            dob = request["subscriber"].get("dob", "")
+            if dob:
+                form["InsuredDOB"] = _to_claimmd_date(str(dob))
+        # Diagnosis codes
+        diag_codes = request.get("diagnosis_codes", [])
+        for i, code in enumerate(diag_codes[:4], start=1):
+            form[f"DiagnosisCode{i}"] = str(code)
+        # Service lines
+        service_lines = request.get("service_lines", [])
+        for i, line in enumerate(service_lines[:6], start=1):
+            if isinstance(line, dict):
+                if "cpt_code" in line:
+                    form[f"ProcedureCode{i}"] = line["cpt_code"]
+                if "from_date" in line and line["from_date"]:
+                    form[f"ServiceDate{i}"] = _to_claimmd_date(
+                        str(line["from_date"])
+                    )
+                if "quantity" in line:
+                    form[f"Quantity{i}"] = str(line["quantity"])
+        return form
+
+    @staticmethod
+    def _parse_prior_auth_response(data: dict[str, Any]) -> SubmissionResult:
+        """Parse Claim.MD prior auth response to library model."""
+        status = data.get("status", "unknown")
+        accepted = status.lower() in (
+            "ok", "accepted", "success", "approved", "certified",
+        )
+        return SubmissionResult(
+            status=status,
+            accepted=accepted,
+            reference_id=(
+                data.get("authorizationNumber")
+                or data.get("batchID")
+                or data.get("responseID")
+            ),
+            raw_response=data,
+            errors=data.get("errors", []),
+        )
 
     def _to_claimmd_upload(
         self, claim_data: dict[str, Any]
