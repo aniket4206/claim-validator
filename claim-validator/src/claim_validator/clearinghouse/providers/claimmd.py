@@ -149,25 +149,32 @@ class ClaimMDClient(BaseClearinghouseClient):
     def _to_claimmd_eligibility(
         self, request: dict[str, Any]
     ) -> dict[str, str]:
-        """Translate library eligibility dict to Claim.MD form data."""
+        """Translate library eligibility dict to Claim.MD eligdata form data.
+
+        Uses ClaimMD's native field names: ``prov_npi``, ``prov_taxid``,
+        ``payerid``, ``ins_number``, ``pat_name_f``, ``pat_name_l``,
+        ``ins_dob``, ``fdos``.
+        """
         form: dict[str, str] = {
             "AccountKey": self._account_key,
             "ResponseType": "json",
         }
         if "payer_id" in request:
-            form["PayerID"] = request["payer_id"]
+            form["payerid"] = request["payer_id"]
         if "npi" in request:
-            form["ProviderNPI"] = request["npi"]
+            form["prov_npi"] = request["npi"]
+        if "tax_id" in request:
+            form["prov_taxid"] = request["tax_id"]
         if "subscriber_id" in request:
-            form["InsuredID"] = request["subscriber_id"]
+            form["ins_number"] = request["subscriber_id"]
         if "first_name" in request:
-            form["InsuredFirstName"] = request["first_name"]
+            form["pat_name_f"] = request["first_name"]
         if "last_name" in request:
-            form["InsuredLastName"] = request["last_name"]
+            form["pat_name_l"] = request["last_name"]
         if "dob" in request:
-            form["InsuredDOB"] = _to_claimmd_date(request["dob"])
+            form["ins_dob"] = _to_claimmd_date(request["dob"])
         if "service_date" in request:
-            form["ServiceDate"] = _to_claimmd_date(request["service_date"])
+            form["fdos"] = _to_claimmd_date(request["service_date"])
         return form
 
     def _to_claimmd_prior_auth(
@@ -184,6 +191,8 @@ class ClaimMDClient(BaseClearinghouseClient):
             form["ProviderNPI"] = request.get("npi") or request.get(
                 "requester_npi", ""
             )
+        if "tax_id" in request:
+            form["ProviderTaxID"] = request["tax_id"]
         if "subscriber_id" in request:
             form["InsuredID"] = request["subscriber_id"]
         elif "subscriber" in request and isinstance(request["subscriber"], dict):
@@ -347,11 +356,13 @@ class ClaimMDClient(BaseClearinghouseClient):
     def _parse_xml_response(body: str) -> dict[str, Any]:
         """Parse Claim.MD XML response into a dict.
 
-        Handles the common XML error format:
-        ``<result><error error_code="..." error_mesg="..." /></result>``
+        Handles:
+        - Error format: ``<result><error error_code="..." error_mesg="..." /></result>``
+        - Eligibility format: ``<result><elig ... benefit_coverage_code="1" ...>``
         """
         import re
 
+        # Check for errors first
         errors: list[str] = []
         for match in re.finditer(
             r'error_code="([^"]*)"[^>]*error_mesg="([^"]*)"', body,
@@ -364,6 +375,39 @@ class ClaimMDClient(BaseClearinghouseClient):
                 "status": "error",
                 "message": "; ".join(errors),
                 "errors": errors,
+                "raw_xml": body,
+            }
+
+        # Check for eligibility response
+        elig_match = re.search(r"<elig\s+([^>]+)>", body)
+        if elig_match:
+            attrs: dict[str, str] = dict(
+                re.findall(r'(\w+)="([^"]*)"', elig_match.group(1))
+            )
+            # Extract coverage status from benefit elements
+            coverage_code = None
+            for bmatch in re.finditer(
+                r'benefit_coverage_code="([^"]*)"', body,
+            ):
+                coverage_code = bmatch.group(1)
+                break  # first benefit is primary
+
+            status = "active" if coverage_code == "1" else (
+                "inactive" if coverage_code == "6" else attrs.get("status", "unknown")
+            )
+            return {
+                "status": status,
+                "responseID": attrs.get("eligid"),
+                "plan": {
+                    "group_number": attrs.get("group_number"),
+                    "plan_number": attrs.get("plan_number"),
+                    "plan_begin_date": attrs.get("plan_begin_date"),
+                },
+                "subscriber": {
+                    "ins_number": attrs.get("ins_number"),
+                    "ins_dob": attrs.get("ins_dob"),
+                    "ins_sex": attrs.get("ins_sex"),
+                },
                 "raw_xml": body,
             }
 

@@ -153,9 +153,10 @@ def test_claimmd_eligibility() -> bool:
         client = ClaimMDClient(account_key=api_key, base_url=base_url)
 
         result = client.check_eligibility({
-            "payer_id": "00520",
-            "npi": "1245319599",
-            "subscriber_id": "TEST123",
+            "payer_id": "60054",
+            "npi": "1111111112",
+            "tax_id": "999999999",
+            "subscriber_id": "W999999999",
             "first_name": "John",
             "last_name": "Doe",
             "dob": "1980-01-15",
@@ -197,9 +198,10 @@ def test_claimmd_prior_auth() -> bool:
         client = ClaimMDClient(account_key=api_key, base_url=base_url)
 
         result = client.submit_prior_auth({
-            "payer_id": "00520",
-            "npi": "1245319599",
-            "subscriber_id": "TEST123",
+            "payer_id": "60054",
+            "npi": "1111111112",
+            "tax_id": "999999999",
+            "subscriber_id": "W999999999",
             "first_name": "John",
             "last_name": "Doe",
             "dob": "1980-01-15",

@@ -128,13 +128,13 @@ class TestEligibility:
         form = _parse_form_body(captured[0])
         assert form["AccountKey"] == "test-account-key"
         assert form["ResponseType"] == "json"
-        assert form["PayerID"] == "00520"
-        assert form["ProviderNPI"] == "1245319599"
-        assert form["InsuredID"] == "SUB123"
-        assert form["InsuredFirstName"] == "Alice"
-        assert form["InsuredLastName"] == "Williams"
-        assert form["InsuredDOB"] == "07/22/1980"  # MM/DD/YYYY
-        assert form["ServiceDate"] == "03/04/2026"  # MM/DD/YYYY
+        assert form["payerid"] == "00520"
+        assert form["prov_npi"] == "1245319599"
+        assert form["ins_number"] == "SUB123"
+        assert form["pat_name_f"] == "Alice"
+        assert form["pat_name_l"] == "Williams"
+        assert form["ins_dob"] == "07/22/1980"  # MM/DD/YYYY
+        assert form["fdos"] == "03/04/2026"  # MM/DD/YYYY
 
     def test_eligibility_posts_to_correct_path(self) -> None:
         captured: list[httpx.Request] = []
@@ -445,7 +445,7 @@ class TestAuthentication:
             return httpx.Response(200, json={"status": "ok"})
 
         client = _make_client(handler)
-        client.check_eligibility({"payer_id": "00520", "npi": "123"})
+        client.check_eligibility({"payer_id": "00520", "npi": "123", "tax_id": "999"})
         form = _parse_form_body(captured[0])
         assert form["AccountKey"] == "test-account-key"
 
