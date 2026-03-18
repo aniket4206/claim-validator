@@ -311,19 +311,26 @@ class ClaimMDClient(BaseClearinghouseClient):
     def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
         """Map HTTP errors and body-level errors to exceptions.
 
-        Claim.MD may return errors in the response body JSON even with
-        HTTP 200, so both HTTP status and body ``status`` field are checked.
+        Claim.MD may return XML error responses even when JSON is
+        requested, so the parser handles both content types.
         """
         if response.status_code in (401, 403):
             raise ClearinghouseAuthError("Invalid AccountKey")
         if response.status_code >= 500:
             raise ClearinghouseServerError(f"HTTP {response.status_code}")
 
-        try:
-            data: dict[str, Any] = response.json()
-        except Exception:
-            msg = f"HTTP {response.status_code}"
-            raise ClearinghouseError(msg) from None
+        content_type = response.headers.get("content-type", "")
+        body_text = response.text
+
+        # Claim.MD sometimes returns XML errors despite ResponseType=json
+        if "xml" in content_type or body_text.lstrip().startswith("<"):
+            data = self._parse_xml_response(body_text)
+        else:
+            try:
+                data = response.json()
+            except Exception:
+                msg = f"HTTP {response.status_code}: unparseable response"
+                raise ClearinghouseError(msg) from None
 
         if response.status_code >= 400:
             error_msg = data.get("message", f"HTTP {response.status_code}")
@@ -335,6 +342,32 @@ class ClaimMDClient(BaseClearinghouseClient):
             raise ClearinghouseValidationError(error_msg)
 
         return data
+
+    @staticmethod
+    def _parse_xml_response(body: str) -> dict[str, Any]:
+        """Parse Claim.MD XML response into a dict.
+
+        Handles the common XML error format:
+        ``<result><error error_code="..." error_mesg="..." /></result>``
+        """
+        import re
+
+        errors: list[str] = []
+        for match in re.finditer(
+            r'error_code="([^"]*)"[^>]*error_mesg="([^"]*)"', body,
+        ):
+            code, msg = match.group(1), match.group(2)
+            errors.append(f"{code}: {msg}")
+
+        if errors:
+            return {
+                "status": "error",
+                "message": "; ".join(errors),
+                "errors": errors,
+                "raw_xml": body,
+            }
+
+        return {"status": "unknown", "raw_xml": body}
 
     def _post_form_with_retry(
         self,
