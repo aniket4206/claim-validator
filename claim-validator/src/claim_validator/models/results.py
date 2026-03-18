@@ -61,7 +61,12 @@ class PipelineResult(BaseModel):
     @property
     def passed(self) -> bool:
         """True only if zero ERROR-severity findings. WARNINGs do not fail."""
-        return not any(f.severity == Severity.ERROR for f in self.findings)
+        return not any(
+            f.severity == Severity.ERROR
+            for pr in self.phase_results
+            for vo in pr.validator_outputs
+            for f in vo.findings
+        )
 
     @property
     def findings(self) -> list[Finding]:
@@ -74,10 +79,22 @@ class PipelineResult(BaseModel):
 
     @property
     def errors(self) -> list[Finding]:
-        """All ERROR-severity findings."""
-        return [f for f in self.findings if f.severity == Severity.ERROR]
+        """All ERROR-severity findings (without rebuilding full findings list)."""
+        return [
+            f
+            for pr in self.phase_results
+            for vo in pr.validator_outputs
+            for f in vo.findings
+            if f.severity == Severity.ERROR
+        ]
 
     @property
     def warnings(self) -> list[Finding]:
-        """All WARNING-severity findings."""
-        return [f for f in self.findings if f.severity == Severity.WARNING]
+        """All WARNING-severity findings (without rebuilding full findings list)."""
+        return [
+            f
+            for pr in self.phase_results
+            for vo in pr.validator_outputs
+            for f in vo.findings
+            if f.severity == Severity.WARNING
+        ]

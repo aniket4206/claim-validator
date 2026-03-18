@@ -171,9 +171,32 @@ def process_claim_full(
         "pa_request": request.pa_request,
     }
 
+    # Pre-build pooled resources to avoid per-stage creation overhead.
+    # Stages check workflow_context for these before creating their own.
     wf_ctx: dict[str, Any] = {}
+    if settings:
+        # Pool clearinghouse client (reused by elig, PA, submission, status)
+        if settings.clearinghouse_config:
+            from claim_validator.clearinghouse import build_clearinghouse_client
+
+            wf_ctx["_pooled_ch_client"] = build_clearinghouse_client(
+                settings.clearinghouse_config,
+            )
+        # Pre-compute stage-specific settings (avoids model_copy per stage)
+        wf_ctx["_settings_rule_only"] = settings.model_copy(
+            update={"ai_validators": [], "skip_ai_on_rule_failure": True},
+        )
+        wf_ctx["_settings_pa_rule_only"] = settings.model_copy(
+            update={"pa_ai_validators": [], "pa_skip_ai": True},
+        )
+
     orchestrator = WorkflowOrchestrator(stages)
     wf_result = orchestrator.execute(input_data, workflow_context=wf_ctx)
+
+    # Close pooled clearinghouse client
+    pooled_ch = wf_ctx.get("_pooled_ch_client")
+    if pooled_ch is not None:
+        pooled_ch.close()
 
     return FullWorkflowResult(
         rule_based_claim=wf_ctx.get("rule_based_claim_result"),

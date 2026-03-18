@@ -122,13 +122,15 @@ class RuleBasedClaimStage:
             )
 
         # Build pipeline with rule-based validators only (no AI)
+        # Use pre-computed settings from workflow_context if available
         from claim_validator.conf import ClaimValidatorSettings
 
-        rule_settings = self._settings or ClaimValidatorSettings()
-        # Force no AI for this stage
-        rule_settings = rule_settings.model_copy(
-            update={"ai_validators": [], "skip_ai_on_rule_failure": True},
-        )
+        wf = workflow_context or {}
+        rule_settings = wf.get("_settings_rule_only")
+        if rule_settings is None:
+            rule_settings = (self._settings or ClaimValidatorSettings()).model_copy(
+                update={"ai_validators": [], "skip_ai_on_rule_failure": True},
+            )
         pipeline = ValidationPipeline.from_settings(rule_settings)
         result = pipeline.run(claim_data, validation_context=validation_context)
 
@@ -415,14 +417,16 @@ class PriorAuthGateStage:
                 detail=pa_det,
             )
 
-        # Force rule-based only
+        # Force rule-based only — use pre-computed settings if available
         from claim_validator.conf import ClaimValidatorSettings
         from claim_validator.prior_auth.pipeline import PriorAuthPipeline
 
-        pa_settings = self._settings or ClaimValidatorSettings()
-        pa_settings = pa_settings.model_copy(
-            update={"pa_ai_validators": [], "pa_skip_ai": True},
-        )
+        wf = workflow_context or {}
+        pa_settings = wf.get("_settings_pa_rule_only")
+        if pa_settings is None:
+            pa_settings = (self._settings or ClaimValidatorSettings()).model_copy(
+                update={"pa_ai_validators": [], "pa_skip_ai": True},
+            )
         pipeline = PriorAuthPipeline.from_settings(pa_settings)
         pa_result = pipeline.run(pa_request, validation_context=validation_context)
 
@@ -467,11 +471,15 @@ class PriorAuthGateStage:
         """Submit PA to clearinghouse and return any findings."""
         findings: list[Finding] = []
         try:
-            from claim_validator.clearinghouse import build_clearinghouse_client
+            # Use pooled client from workflow_context if available
+            wf = workflow_context or {}
+            ch_client = wf.get("_pooled_ch_client")
+            if ch_client is None:
+                from claim_validator.clearinghouse import build_clearinghouse_client
 
-            ch_client = build_clearinghouse_client(
-                self._settings.clearinghouse_config,
-            )
+                ch_client = build_clearinghouse_client(
+                    self._settings.clearinghouse_config,
+                )
             if ch_client is None:
                 return findings
 
@@ -508,7 +516,7 @@ class PriorAuthGateStage:
                         context={"reference_id": result.reference_id},
                     ),
                 )
-            ch_client.close()
+            # Don't close pooled client — it's managed by process_claim_full
         except NotImplementedError:
             findings.append(
                 Finding(
@@ -692,11 +700,15 @@ class ClaimSubmissionStage:
             )
 
         try:
-            from claim_validator.clearinghouse import build_clearinghouse_client
+            # Use pooled client from workflow_context if available
+            wf = workflow_context or {}
+            ch_client = wf.get("_pooled_ch_client")
+            if ch_client is None:
+                from claim_validator.clearinghouse import build_clearinghouse_client
 
-            ch_client = build_clearinghouse_client(
-                self._settings.clearinghouse_config,
-            )
+                ch_client = build_clearinghouse_client(
+                    self._settings.clearinghouse_config,
+                )
             if ch_client is None:
                 return StageResult(
                     stage_name=self.name,
@@ -718,7 +730,6 @@ class ClaimSubmissionStage:
                 else dict(claim_data)
             )
             result = ch_client.submit_claim(claim_dict)
-            ch_client.close()
 
             if workflow_context is not None:
                 workflow_context["submission_result"] = result
@@ -807,11 +818,14 @@ class ClaimStatusStage:
         submission = wf.get("submission_result")
 
         try:
-            from claim_validator.clearinghouse import build_clearinghouse_client
+            # Use pooled client from workflow_context if available
+            ch_client = wf.get("_pooled_ch_client")
+            if ch_client is None:
+                from claim_validator.clearinghouse import build_clearinghouse_client
 
-            ch_client = build_clearinghouse_client(
-                self._settings.clearinghouse_config if self._settings else None,
-            )
+                ch_client = build_clearinghouse_client(
+                    self._settings.clearinghouse_config if self._settings else None,
+                )
             if ch_client is None:
                 return StageResult(
                     stage_name=self.name,
@@ -822,7 +836,6 @@ class ClaimStatusStage:
                 )
 
             result = ch_client.check_claim_status(submission.reference_id)
-            ch_client.close()
 
             if workflow_context is not None:
                 workflow_context["claim_status_result"] = result
