@@ -1,0 +1,62 @@
+STEDI LIVE PROFESSIONAL CLAIMS TEST
+Date: 2026-03-05
+API Key: test_9gz3t4N.OT... (test key)
+
+======================================================================
+CASE: 1. Minimal professional claim — STEDITEST payer
+======================================================================
+STATUS: ERROR (ClearinghouseAuthError)
+MESSAGE: Access Denied - This functionality is not available in Test Mode.
+TRACEBACK:
+Traceback (most recent call last):
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 32, in run_case
+    result = fn()
+             ^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 52, in <lambda>
+    lambda: client.submit_claim({
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 138, in submit_claim
+    self._handle_response(response)
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 631, in _handle_response
+    raise ClearinghouseAuthError(error_msg)
+claim_validator.clearinghouse.exceptions.ClearinghouseAuthError: Access Denied - This functionality is not available in Test Mode.
+
+
+======================================================================
+CASE: 2. Multi-line claim with modifiers and diagnosis pointers
+======================================================================
+STATUS: ERROR (ClearinghouseAuthError)
+MESSAGE: Access Denied - This functionality is not available in Test Mode.
+TRACEBACK:
+Traceback (most recent call last):
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 32, in run_case
+    result = fn()
+             ^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 91, in <lambda>
+    lambda: client.submit_claim({
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 138, in submit_claim
+    self._handle_response(response)
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 631, in _handle_response
+    raise ClearinghouseAuthError(error_msg)
+claim_validator.clearinghouse.exceptions.ClearinghouseAuthError: Access Denied - This functionality is not available in Test Mode.
+
+
+======================================================================
+CASE: 3. Claim with prior authorization number
+======================================================================
+STATUS: ERROR (ClearinghouseAuthError)
+MESSAGE: Access Denied - This functionality is not available in Test Mode.
+TRACEBACK:
+Traceback (most recent call last):
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 32, in run_case
+    result = fn()
+             ^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/test_stedi_claims_live.py", line 143, in <lambda>
+    lambda: client.submit_claim({
+            ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 138, in submit_claim
+    self._handle_response(response)
+  File "/home/lnv-20/Documents/claim-validator/claim-validator/src/claim_validator/clearinghouse/providers/stedi.py", line 631, in _handle_response
+    raise ClearinghouseAuthError(error_msg)
+claim_validator.clearinghouse.exceptions.ClearinghouseAuthError: Access Denied - This functionality is not available in Test Mode.

@@ -1,0 +1,139 @@
+
+############################################################
+#  claim-validator LIVE TEST
+#  AI: ENABLED (openai/gpt-4o)
+############################################################
+
+============================================================
+  1a. Valid Claim (should PASS)
+============================================================
+  Passed: True  |  Findings: 0  |  Time: 0.0020s
+  (no findings)
+
+============================================================
+  1b. Invalid NPI (should FAIL)
+============================================================
+  Passed: False  |  Findings: 1  |  Time: 0.0001s
+  [ERROR] INVALID_NPI: NPI in 'billing_provider_npi' fails Luhn check-digit validation
+         field: billing_provider_npi
+         fix:   Verify the NPI at https://npiregistry.cms.hhs.gov
+
+============================================================
+  1c. Missing Fields (should FAIL)
+============================================================
+  Passed: False  |  Findings: 9  |  Time: 0.0001s
+  [ERROR] MISSING_FIELD: Required field 'billing_provider_npi' is missing or empty
+         field: billing_provider_npi
+         fix:   Billing provider NPI is required (CMS-1500 Box 33a)
+  [ERROR] MISSING_FIELD: Required field 'subscriber_id' is missing or empty
+         field: subscriber_id
+         fix:   Subscriber/insurance ID is required (CMS-1500 Box 1a)
+  [ERROR] MISSING_FIELD: Required field 'patient_first_name' is missing or empty
+         field: patient_first_name
+         fix:   Patient first name is required (CMS-1500 Box 2)
+  [ERROR] MISSING_FIELD: Required field 'patient_last_name' is missing or empty
+         field: patient_last_name
+         fix:   Patient last name is required (CMS-1500 Box 2)
+  [ERROR] MISSING_FIELD: Required field 'patient_dob' is missing or empty
+         field: patient_dob
+         fix:   Patient date of birth is required (CMS-1500 Box 3)
+  [ERROR] MISSING_FIELD: Required field 'patient_gender' is missing or empty
+         field: patient_gender
+         fix:   Patient gender is required (CMS-1500 Box 3)
+  [ERROR] MISSING_FIELD: Required field 'payer_id' is missing or empty
+         field: payer_id
+         fix:   Payer ID is required (CMS-1500 Box 11)
+  [ERROR] MISSING_FIELD: At least one diagnosis code is required
+         field: diagnosis_codes
+         fix:   Add at least one ICD-10 diagnosis code (CMS-1500 Box 21)
+  [ERROR] MISSING_FIELD: At least one service line is required
+         field: lines
+         fix:   Add at least one service line (CMS-1500 Box 24)
+
+============================================================
+  1d. Monetary Mismatch (total != sum of lines)
+============================================================
+  Passed: False  |  Findings: 1  |  Time: 0.0001s
+  [ERROR] CHARGE_TOTAL_MISMATCH: Total in 'total_charge' does not match sum of line charges
+         field: total_charge
+         fix:   Ensure total charge equals the sum of all line (charge_amount * units) (CMS-1500 Box 28)
+
+============================================================
+  1e. Claim + AI Validation (OpenAI GPT-4o)
+============================================================
+  Passed: True  |  Findings: 0  |  Phases: ['rule_based', 'ai']
+  Time: 0.8937s
+  (no findings)
+
+============================================================
+  2a. Eligibility Check (valid request)
+============================================================
+  Passed: True  |  Findings: 0  |  Time: 0.0053s
+  (no findings)
+
+============================================================
+  2b. Eligibility Check (invalid NPI)
+============================================================
+  Passed: False  |  Findings: 2  |  Time: 0.0001s
+  [ERROR] ELIG_MISSING_DATE: Date of service is required for eligibility verification
+         field: date_of_service
+         fix:   Provide the date of service for the eligibility check
+  [ERROR] ELIG_INVALID_NPI: Provider NPI fails Luhn check-digit validation
+         field: provider_npi
+         fix:   Verify the NPI at https://npiregistry.cms.hhs.gov
+
+============================================================
+  2c. Eligibility + AI Interpretation
+============================================================
+  Passed: True  |  Findings: 0  |  Time: 1.3659s
+  AI Summary: ```json
+{
+  "summary": "The coverage is active with an effective year of 2025.",
+  "findings": []
+}
+```...
+  (no findings)
+
+============================================================
+  3a. Prior Auth (valid request)
+============================================================
+  Passed: True  |  Findings: 0  |  Time: 0.0001s
+  (no findings)
+
+============================================================
+  3b. Prior Auth (invalid data)
+============================================================
+  Passed: False  |  Findings: 2  |  Time: 0.0001s
+  [ERROR] PA_MISSING_MEMBER_ID: Subscriber member ID in 'subscriber.member_id' is required and must not be empty
+         field: subscriber.member_id
+         fix:   Provide the subscriber's member ID from their insurance card
+  [ERROR] PA_INVALID_NPI: NPI in 'requester_npi' fails Luhn check-digit validation
+         field: requester_npi
+         fix:   Verify the NPI at https://npiregistry.cms.hhs.gov
+
+============================================================
+  4. Pre-Claim Check (full orchestrator)
+============================================================
+  Ready to submit: True
+  Passed: True  |  Findings: 0  |  Time: 0.0009s
+  Eligibility passed: True
+  (no findings)
+
+============================================================
+  SUMMARY
+============================================================
+  [+] 1a Valid claim: PASS
+  [+] 1b Invalid NPI: PASS
+  [+] 1c Missing fields: PASS
+  [+] 1d Monetary mismatch: PASS
+  [+] 1e Claim + AI: PASS
+  [+] 2a Eligibility valid: PASS
+  [+] 2b Eligibility bad NPI: PASS
+  [+] 2c Eligibility + AI: PASS
+  [+] 3a Prior auth valid: PASS
+  [+] 3b Prior auth invalid: PASS
+  [+] 4  Pre-claim check: PASS
+
+  Total time: 2.95s
+
+  All tests passed as expected!

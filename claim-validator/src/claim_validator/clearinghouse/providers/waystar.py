@@ -412,7 +412,7 @@ class WaystarClient(BaseClearinghouseClient):
             f"*{date6}*{time4}*^*00501*000000001*0*P*:",
             f"GS*HS*SENDER*ZIRMED*{date8}*{time4}"
             f"*1*X*005010X279A1",
-            f"ST*270*0001*005010X279A1",
+            "ST*270*0001*005010X279A1",
             f"BHT*0022*13*REQ001*{date8}*{time4}",
             "HL*1**20*1",
             f"NM1*PR*2*{payer_id}*****PI*{payer_id}",

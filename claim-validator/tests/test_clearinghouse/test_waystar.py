@@ -15,7 +15,6 @@ import pytest
 
 from claim_validator.clearinghouse.exceptions import (
     ClearinghouseAuthError,
-    ClearinghouseError,
     ClearinghouseServerError,
     ClearinghouseTimeoutError,
     ClearinghouseValidationError,

@@ -30,7 +30,6 @@ from claim_validator.prior_auth.determination import determine_pa_required
 from claim_validator.prior_auth.models.request import PriorAuthRequest
 from claim_validator.prior_auth.pipeline import PriorAuthPipeline
 
-
 _SEVERITY_ORDER: dict[Severity, int] = {Severity.ERROR: 0, Severity.WARNING: 1}
 
 

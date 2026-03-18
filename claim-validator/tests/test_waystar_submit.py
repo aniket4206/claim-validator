@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from claim_validator.clearinghouse.providers.waystar import WaystarClient
+
+import pytest
+
 from claim_validator.clearinghouse.models import SubmissionResult
+from claim_validator.clearinghouse.providers.waystar import WaystarClient
 
 
 @pytest.fixture
