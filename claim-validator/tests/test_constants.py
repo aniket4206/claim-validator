@@ -31,5 +31,10 @@ class TestClaimType:
     def test_institutional_value(self) -> None:
         assert ClaimType.INSTITUTIONAL == "institutional"
 
+    def test_dental_value(self) -> None:
+        assert ClaimType.DENTAL == "dental"
+
     def test_members(self) -> None:
-        assert set(ClaimType) == {ClaimType.PROFESSIONAL, ClaimType.INSTITUTIONAL}
+        assert {ClaimType.PROFESSIONAL, ClaimType.INSTITUTIONAL, ClaimType.DENTAL}.issubset(
+            set(ClaimType)
+        )

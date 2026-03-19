@@ -48,8 +48,22 @@ def get_clearinghouse_client(
 
         return WaystarClient(**config)
 
+    if provider_lower == "availity":
+        from claim_validator.clearinghouse.providers.availity import (
+            AvailityClient,
+        )
+
+        return AvailityClient(**config)
+
+    if provider_lower == "change":
+        from claim_validator.clearinghouse.providers.change_healthcare import (
+            ChangeHealthcareClient,
+        )
+
+        return ChangeHealthcareClient(**config)
+
     msg = (
         f"Unknown clearinghouse provider: {provider!r}. "
-        f"Supported providers: stedi, claimmd, waystar"
+        f"Supported providers: stedi, claimmd, waystar, change, availity"
     )
     raise ConfigurationError(msg)

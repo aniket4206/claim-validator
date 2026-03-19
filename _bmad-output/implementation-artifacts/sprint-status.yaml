@@ -1,4 +1,4 @@
-# generated: 2026-03-03
+# generated: 2026-03-19
 # project: healthcare-claim-analyzer
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,16 +35,20 @@
 #
 # SCOPE:
 # ======
-# v3.0 Refactoring — Shared modules, de-duplication, unified workflow pipeline
-# Prior cycle (v1.0-v2.x claims/eligibility/PA) completed and archived
+# v3.0 Refactoring — Shared modules, de-duplication, unified workflow pipeline (Epics 1-5)
+# Platform Extension — D44-D63, open-core + platform (PE Epics 1-9)
 
-generated: 2026-03-03
+generated: 2026-03-19
 project: healthcare-claim-analyzer
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
+  # ============================================================
+  # v3.0 REFACTORING (epics.md)
+  # ============================================================
+
   # ============================================================
   # Epic 1: Shared Validation & Code Tables (FR1-FR9, FR18-FR20)
   # ============================================================
@@ -100,3 +104,119 @@ development_status:
   5-4-waystar-client: done
   5-5-pipeline-integration-orchestrator-wiring: done
   epic-5-retrospective: optional
+
+  # ============================================================
+  # PLATFORM EXTENSION (epics-platform-extension.md, D44-D63)
+  # ============================================================
+
+  # ============================================================
+  # PE Epic 1: Route Claims to the Right Clearinghouse
+  #            (PFR1-PFR5, D44-D47) — Open-source
+  # ============================================================
+
+  pe-epic-1: in-progress
+  pe-1-1-payer-route-model-and-default-mapping-data: done
+  pe-1-2-payer-router-with-route-and-fallback: done
+  pe-1-3-clearinghouse-client-pool-with-lazy-client-management: done
+  pe-1-4-settings-integration-and-backward-compatibility: done
+  pe-1-5-update-package-extras-for-new-clearinghouses: done
+  pe-epic-1-retrospective: optional
+
+  # ============================================================
+  # PE Epic 2: Reach 40% More of the US Market via Change Healthcare
+  #            (PFR6-PFR8, D48) — Open-source
+  # ============================================================
+
+  pe-epic-2: done
+  pe-2-1-change-healthcare-oauth2-authentication: done
+  pe-2-2-change-healthcare-eligibility-check: done
+  pe-2-3-change-healthcare-claims-submission: done
+  pe-2-4-change-healthcare-claim-status: done
+  pe-epic-2-retrospective: optional
+
+  # ============================================================
+  # PE Epic 3: Reach BCBS/Humana/Cigna via Availity
+  #            (PFR9-PFR11, D49) — Open-source
+  # ============================================================
+
+  pe-epic-3: done
+  pe-3-1-availity-oauth2-authentication: done
+  pe-3-2-availity-eligibility-with-payer-specific-variations: done
+  pe-3-3-availity-claims-submission: done
+  pe-3-4-availity-async-response-polling: done
+  pe-epic-3-retrospective: optional
+
+  # ============================================================
+  # PE Epic 4: Complete Waystar Claim Submission
+  #            (PFR12, D50) — Open-source
+  # ============================================================
+
+  pe-epic-4: done
+  pe-4-1-waystar-claim-submission: done
+  pe-4-2-waystar-claim-status-check: done
+  pe-epic-4-retrospective: optional
+
+  # ============================================================
+  # PE Epic 5: Validate Institutional (Hospital) Claims
+  #            (PFR13-PFR19, D51-D53) — Open-source
+  # ============================================================
+
+  pe-epic-5: done
+  pe-5-1-institutional-claim-data-models: done
+  pe-5-2-revenue-codes-code-table: done
+  pe-5-3-bill-type-and-revenue-code-validators: done
+  pe-5-4-admission-and-institutional-completeness-validators: done
+  pe-5-5-pipeline-claim-type-detection-and-routing: done
+  pe-epic-5-retrospective: optional
+
+  # ============================================================
+  # PE Epic 6: Resilient Clearinghouse Communication
+  #            (PNFR6, D59-D61) — Open-source
+  # ============================================================
+
+  pe-epic-6: done
+  pe-6-1-retry-decorator-with-tenacity: done
+  pe-6-2-circuit-breaker-per-clearinghouse: done
+  pe-6-3-integrate-resilience-into-baseclearinghouseclient: done
+  pe-6-4-fallback-routing-on-circuit-open: done
+  pe-epic-6-retrospective: optional
+
+  # ============================================================
+  # PE Epic 7: Platform — Async Claim Processing Engine
+  #            (PFR20-PFR32, D54-D58) — Platform repo
+  # ============================================================
+
+  pe-epic-7: backlog
+  pe-7-1-platform-repository-scaffolding: backlog
+  pe-7-2-postgresql-schema-and-alembic-setup: backlog
+  pe-7-3-persistence-query-functions: backlog
+  pe-7-4-celery-and-redis-configuration: backlog
+  pe-7-5-claim-processing-task-and-job-lifecycle: backlog
+  pe-7-6-job-status-api-endpoint: backlog
+  pe-epic-7-retrospective: optional
+
+  # ============================================================
+  # PE Epic 8: Platform — Multi-Tenant API with Isolation
+  #            (PFR33-PFR37, PFR46-PFR50, D62-D63) — Platform repo
+  # ============================================================
+
+  pe-epic-8: backlog
+  pe-8-1-tenant-model-and-api-key-generation: backlog
+  pe-8-2-authentication-middleware: backlog
+  pe-8-3-credential-encryption: backlog
+  pe-8-4-platform-api-routes: backlog
+  pe-8-5-rate-limiting-and-usage-metering: backlog
+  pe-epic-8-retrospective: optional
+
+  # ============================================================
+  # PE Epic 9: Platform — Webhooks & Monitoring
+  #            (PFR25, PFR42-PFR44, D55-D56) — Platform repo
+  # ============================================================
+
+  pe-epic-9: backlog
+  pe-9-1-webhook-delivery-with-hmac-signing: backlog
+  pe-9-2-structured-logging: backlog
+  pe-9-3-prometheus-metrics: backlog
+  pe-9-4-health-check-endpoints: backlog
+  pe-9-5-celery-beat-response-polling: backlog
+  pe-epic-9-retrospective: optional

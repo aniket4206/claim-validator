@@ -21,3 +21,7 @@ class LLMError(ClaimValidatorError):
 
 class CodeTableError(ClaimValidatorError):
     """Code table loading or lookup failure."""
+
+
+class PayerRoutingError(ClaimValidatorError):
+    """Payer routing resolution failure (unknown payer ID, no routes available)."""

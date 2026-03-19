@@ -22,6 +22,14 @@ from claim_validator.shared.code_tables.payer_directory import (
     get_payer_directory_table,
     lookup_payer,
 )
+from claim_validator.shared.code_tables.payer_routing import (
+    get_payer_routing_table,
+    load_default_mapping,
+)
+from claim_validator.shared.code_tables.revenue_codes import (
+    get_revenue_codes_table,
+    lookup_revenue_code,
+)
 from claim_validator.shared.code_tables.pos import get_pos_table, lookup_pos
 from claim_validator.shared.code_tables.service_types import (
     get_service_types_table,
@@ -40,6 +48,7 @@ __all__ = [
     "get_hcr_action_codes_table",
     "get_icd10_table",
     "get_payer_directory_table",
+    "get_payer_routing_table",
     "get_pos_table",
     "get_service_types_table",
     "get_taxonomy_table",
@@ -48,7 +57,10 @@ __all__ = [
     "lookup_hcpcs",
     "lookup_hcr_action",
     "lookup_icd10",
+    "get_revenue_codes_table",
+    "load_default_mapping",
     "lookup_payer",
+    "lookup_revenue_code",
     "lookup_pos",
     "lookup_service_type",
     "lookup_taxonomy",

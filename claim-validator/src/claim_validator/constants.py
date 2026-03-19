@@ -13,7 +13,13 @@ class Severity(StrEnum):
 
 
 class ClaimType(StrEnum):
-    """Type of healthcare claim."""
+    """Type of healthcare claim (X12 transaction set)."""
 
     PROFESSIONAL = "professional"
     INSTITUTIONAL = "institutional"
+    DENTAL = "dental"
+
+    # X12 aliases
+    EDI_837P = "professional"
+    EDI_837I = "institutional"
+    EDI_837D = "dental"

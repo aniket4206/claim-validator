@@ -124,6 +124,80 @@ class TestClaimValidatorSettingsValidation:
             ClaimValidatorSettings(ai_config="not-a-dict")  # type: ignore[arg-type]
 
 
+class TestMultiClearinghouseSettings:
+    """Tests for multi-clearinghouse routing settings (PE-1.4)."""
+
+    def test_default_clearinghouse_configs_none(self) -> None:
+        settings = ClaimValidatorSettings()
+        assert settings.clearinghouse_configs is None
+
+    def test_default_payer_routing_overrides_none(self) -> None:
+        settings = ClaimValidatorSettings()
+        assert settings.payer_routing_overrides is None
+
+    def test_existing_clearinghouse_config_still_works(self) -> None:
+        """Backward compat — single provider config unchanged."""
+        settings = ClaimValidatorSettings(
+            clearinghouse_config={"provider": "stedi", "api_key": "test-key"},
+        )
+        assert settings.clearinghouse_config is not None
+        assert settings.clearinghouse_config["provider"] == "stedi"
+
+    def test_clearinghouse_configs_explicit(self) -> None:
+        configs = {
+            "stedi": {"api_key": "k1"},
+            "claimmd": {"account_key": "k2"},
+        }
+        settings = ClaimValidatorSettings(clearinghouse_configs=configs)
+        assert settings.clearinghouse_configs is not None
+        assert "stedi" in settings.clearinghouse_configs
+        assert "claimmd" in settings.clearinghouse_configs
+        assert settings.clearinghouse_configs["stedi"]["api_key"] == "k1"
+
+    def test_payer_routing_overrides_explicit(self) -> None:
+        overrides = {
+            "60054": [
+                {
+                    "clearinghouse": "claimmd",
+                    "payer_id_at_clearinghouse": "AETNA",
+                    "priority": 1,
+                    "supports": ["837P"],
+                },
+            ],
+        }
+        settings = ClaimValidatorSettings(payer_routing_overrides=overrides)
+        assert settings.payer_routing_overrides is not None
+        assert "60054" in settings.payer_routing_overrides
+        assert len(settings.payer_routing_overrides["60054"]) == 1
+
+    def test_clearinghouse_configs_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "CLAIM_VALIDATOR_CLEARINGHOUSE_CONFIGS",
+            '{"stedi": {"api_key": "env-key"}}',
+        )
+        settings = ClaimValidatorSettings()
+        assert settings.clearinghouse_configs is not None
+        assert settings.clearinghouse_configs["stedi"]["api_key"] == "env-key"
+
+    def test_payer_routing_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(
+            "CLAIM_VALIDATOR_PAYER_ROUTING_OVERRIDES",
+            '{"TEST1": [{"clearinghouse": "stedi", "payer_id_at_clearinghouse": "T", "priority": 1, "supports": ["837P"]}]}',
+        )
+        settings = ClaimValidatorSettings()
+        assert settings.payer_routing_overrides is not None
+        assert "TEST1" in settings.payer_routing_overrides
+
+    def test_both_single_and_multi_can_coexist(self) -> None:
+        """Both clearinghouse_config and clearinghouse_configs can be set."""
+        settings = ClaimValidatorSettings(
+            clearinghouse_config={"provider": "stedi", "api_key": "single"},
+            clearinghouse_configs={"stedi": {"api_key": "pool"}, "claimmd": {"account_key": "pool2"}},
+        )
+        assert settings.clearinghouse_config is not None
+        assert settings.clearinghouse_configs is not None
+
+
 class TestClaimValidatorSettingsDefaultValidatorPaths:
     """Verify the default validator paths follow naming conventions."""
 

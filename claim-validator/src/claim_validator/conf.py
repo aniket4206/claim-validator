@@ -82,8 +82,26 @@ class ClaimValidatorSettings(BaseSettings):
     eligibility_skip_ai: bool = False
     eligibility_skip_ai_on_rule_failure: bool = True
 
-    # Clearinghouse settings
+    # Clearinghouse settings (single provider — existing, backward compat)
     clearinghouse_config: dict[str, Any] | None = None
+
+    # Multi-clearinghouse routing (opt-in)
+    # Format: {"stedi": {"api_key": "..."}, "claimmd": {"account_key": "..."}}
+    clearinghouse_configs: dict[str, dict[str, Any]] | None = None
+
+    # Payer routing overrides — custom payer-to-clearinghouse mappings
+    # Format: {"PAYER_ID": [{"clearinghouse": "...", "payer_id_at_clearinghouse": "...",
+    #           "priority": 1, "supports": ["837P"]}]}
+    payer_routing_overrides: dict[str, list[dict[str, Any]]] | None = None
+
+    # Institutional (837I) claim validators
+    institutional_rule_validators: list[str] = [
+        "claim_validator.validators.institutional.bill_type.BillTypeValidator",
+        "claim_validator.validators.institutional.revenue_code.RevenueCodeValidator",
+        "claim_validator.validators.institutional.admission.AdmissionValidator",
+        "claim_validator.validators.institutional.completeness.InstitutionalCompletenessValidator",
+    ]
+    institutional_ai_validators: list[str] = []
 
     # Per-stage AI provider overrides for process_claim_full().
     # Each is a dict with keys: provider, api_key, model (+ provider extras).
