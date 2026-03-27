@@ -88,6 +88,8 @@ function logout() {
   if (pUsername) pUsername.textContent = user.email || '';
   if (pRoleField) pRoleField.textContent = user.role || '';
   if (pNameInput) pNameInput.value = displayName;
+  const pEmailInput = document.getElementById('profile-email-input');
+  if (pEmailInput) pEmailInput.value = user.email || '';
   if (pSessionUser) pSessionUser.textContent = user.email || '';
   if (pLoginTime) pLoginTime.textContent = new Date().toLocaleString();
 })();
