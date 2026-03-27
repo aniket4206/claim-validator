@@ -255,30 +255,30 @@ def lookup_service_types() -> list[dict[str, str]]:
 # ── Clearinghouse Providers ───────────────────────────────────
 
 _PROVIDER_META = {
-    "stedi": {
-        "name": "Stedi",
-        "label": "Stedi Healthcare API",
-        "supports": ["eligibility", "claims", "claim_status"],
-        "fields": [
-            {"key": "api_key", "label": "API Key", "required": True, "secret": True},
-        ],
-        "test_url": "https://healthcare.us.stedi.com/2024-04-01",
-    },
-    "waystar": {
-        "name": "Waystar",
-        "label": "Waystar / Zirmed",
-        "supports": ["eligibility", "prior_auth", "claim_status"],
-        "fields": [
-            {"key": "api_key", "label": "API Key (HMAC)", "required": True, "secret": True},
-            {"key": "user_id", "label": "User ID", "required": True, "secret": False},
-            {"key": "password", "label": "Password", "required": True, "secret": True},
-            {"key": "cust_id", "label": "Customer ID", "required": True, "secret": False},
-            {"key": "eligibility_base_url", "label": "Eligibility URL", "required": False, "secret": False, "placeholder": "https://eligibilityapi.zirmed.com"},
-            {"key": "prior_auth_base_url", "label": "Prior Auth URL", "required": False, "secret": False, "placeholder": "https://priorauthorizationapi.waystar.com"},
-            {"key": "base_url", "label": "Claims API URL", "required": False, "secret": False, "placeholder": "https://claimsapi.zirmed.com"},
-        ],
-        "test_url": "https://eligibilityapi.zirmed.com",
-    },
+    # "stedi": {
+    #     "name": "Stedi",
+    #     "label": "Stedi Healthcare API",
+    #     "supports": ["eligibility", "claims", "claim_status"],
+    #     "fields": [
+    #         {"key": "api_key", "label": "API Key", "required": True, "secret": True},
+    #     ],
+    #     "test_url": "https://healthcare.us.stedi.com/2024-04-01",
+    # },
+    # "waystar": {
+    #     "name": "Waystar",
+    #     "label": "Waystar / Zirmed",
+    #     "supports": ["eligibility", "prior_auth", "claim_status"],
+    #     "fields": [
+    #         {"key": "api_key", "label": "API Key (HMAC)", "required": True, "secret": True},
+    #         {"key": "user_id", "label": "User ID", "required": True, "secret": False},
+    #         {"key": "password", "label": "Password", "required": True, "secret": True},
+    #         {"key": "cust_id", "label": "Customer ID", "required": True, "secret": False},
+    #         {"key": "eligibility_base_url", "label": "Eligibility URL", "required": False, "secret": False, "placeholder": "https://eligibilityapi.zirmed.com"},
+    #         {"key": "prior_auth_base_url", "label": "Prior Auth URL", "required": False, "secret": False, "placeholder": "https://priorauthorizationapi.waystar.com"},
+    #         {"key": "base_url", "label": "Claims API URL", "required": False, "secret": False, "placeholder": "https://claimsapi.zirmed.com"},
+    #     ],
+    #     "test_url": "https://eligibilityapi.zirmed.com",
+    # },
     "claimmd": {
         "name": "ClaimMD",
         "label": "Claim.MD",

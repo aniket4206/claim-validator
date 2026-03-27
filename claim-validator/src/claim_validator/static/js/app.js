@@ -1698,7 +1698,9 @@ const SYSTEM_FIELDS = [
   { key: 'group_number', label: 'Group Number' },
   { key: 'provider_npi', label: 'Provider NPI' },
   { key: 'provider_name', label: 'Provider Name' },
+  { key: 'provider_tax_id', label: 'Provider Tax ID' },
   { key: 'service_type', label: 'Service Type' },
+  { key: 'clearinghouse', label: 'Clearinghouse' },
   { key: '', label: '-- Skip --' },
 ];
 
@@ -1716,7 +1718,9 @@ function autoMapColumn(header) {
     'groupnumber': 'group_number', 'groupnum': 'group_number', 'group': 'group_number',
     'providernpi': 'provider_npi', 'npi': 'provider_npi',
     'providername': 'provider_name', 'provider': 'provider_name', 'doctorname': 'provider_name',
-    'servicetype': 'service_type', 'cptcode': 'service_type', 'cpt': 'service_type',
+    'providertaxid': 'provider_tax_id', 'taxid': 'provider_tax_id', 'providertax': 'provider_tax_id', 'tin': 'provider_tax_id',
+    'servicetype': 'service_type', 'servicetypecode': 'service_type', 'cptcode': 'service_type', 'cpt': 'service_type',
+    'clearinghouse': 'clearinghouse', 'clearinghouseprovider': 'clearinghouse',
   };
   return map[h] || '';
 }
@@ -2066,7 +2070,9 @@ async function runBatchChecks() {
       payer_name: payer,
       provider_npi: npi || '',
       provider_name: getMappedValue(row, 'provider_name') || '',
+      provider_tax_id: getMappedValue(row, 'provider_tax_id') || '',
       service_type_code: getMappedValue(row, 'service_type') || '30',
+      clearinghouse: getMappedValue(row, 'clearinghouse') || '',
       source: 'batch',
     };
 
@@ -2141,12 +2147,12 @@ async function runBatchChecks() {
   link.addEventListener('click', (e) => {
     e.preventDefault();
     const csv = [
-      'first_name,last_name,date_of_birth,insurance_member_id,payer_name,group_number,provider_npi,provider_name,service_type',
-      'Jane,Doe,2004-04-04,AETNA12345,Aetna,GRP001,1234567893,Dr. Smith,30',
-      'John,Smith,1985-06-15,UHC98765,UnitedHealthcare,GRP002,1234567893,Dr. Smith,30',
-      'Sarah,Johnson,1990-03-22,BCBS55555,Blue Cross Blue Shield,GRP003,1234567893,Dr. Smith,30',
-      'Michael,Chen,1978-11-08,CIGNA44444,Cigna,GRP004,1234567893,Dr. Smith,30',
-      'Emily,Rodriguez,2001-01-30,HUM33333,Humana,,1234567893,Dr. Smith,30',
+      'first_name,last_name,date_of_birth,insurance_member_id,payer_id,payer_name,group_number,provider_npi,provider_name,provider_tax_id,service_type,clearinghouse',
+      'Jane,Doe,2004-04-04,AETNA12345,60054,Aetna,GRP001,1111111112,ACME Health Services,999999999,30,claimmd',
+      'John,Smith,1985-06-15,UHC98765,87726,UnitedHealthcare,GRP002,1111111112,ACME Health Services,999999999,30,claimmd',
+      'Sarah,Johnson,1990-03-22,BCBS55555,BCBS1,Blue Cross Blue Shield,GRP003,1111111112,ACME Health Services,999999999,30,stedi',
+      'Michael,Chen,1978-11-08,CIGNA44444,62308,Cigna,GRP004,1111111112,ACME Health Services,999999999,30,claimmd',
+      'Emily,Rodriguez,2001-01-30,HUM33333,61101,Humana,,1111111112,ACME Health Services,999999999,30,claimmd',
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
