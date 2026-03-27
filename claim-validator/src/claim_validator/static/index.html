@@ -924,6 +924,34 @@
     </div><!-- /main-content -->
 
     <!-- Prior Auth Result Modal -->
+    <!-- Prior Auth Request Preview Modal -->
+    <div id="pa-preview-modal" class="pa-modal" style="display:none;">
+      <div class="pa-modal-content">
+        <div class="pa-modal-header">
+          <h2>Prior Authorization Request Preview</h2>
+          <button class="btn-close" onclick="closePAPreview()">&times;</button>
+        </div>
+        <div class="pa-modal-body">
+          <p style="color:var(--text-secondary);margin-bottom:16px;font-size:13px;">Review the request data below before submitting to the clearinghouse.</p>
+          <div class="pa-status-row"><span class="pa-label">Patient Name:</span><span id="pa-pre-patient" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Date of Birth:</span><span id="pa-pre-dob" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Member ID:</span><span id="pa-pre-member" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Payer:</span><span id="pa-pre-payer" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Payer ID:</span><span id="pa-pre-payer-id" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Provider NPI:</span><span id="pa-pre-npi" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Provider Name:</span><span id="pa-pre-provider" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Provider Tax ID:</span><span id="pa-pre-taxid" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Service Type:</span><span id="pa-pre-service" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Clearinghouse:</span><span id="pa-pre-clearinghouse" class="pa-value">--</span></div>
+          <div class="pa-status-row"><span class="pa-label">Eligibility Check ID:</span><span id="pa-pre-eligid" class="pa-value">--</span></div>
+        </div>
+        <div class="pa-modal-footer">
+          <button class="btn btn-secondary" onclick="closePAPreview()">Cancel</button>
+          <button class="btn btn-primary" id="pa-confirm-btn" onclick="confirmPriorAuth()">Submit Prior Auth</button>
+        </div>
+      </div>
+    </div>
+
     <div id="pa-modal" class="pa-modal" style="display:none;">
       <div class="pa-modal-content">
         <div class="pa-modal-header">

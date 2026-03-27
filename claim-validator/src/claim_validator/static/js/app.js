@@ -1449,6 +1449,8 @@ function renderResultsWrapped(r) {
 // Actually, let's just store it in the submit handler
 // We'll set _lastEligResult in the submit handler and viewResult
 
+var _pendingPAPayload = null;
+
 async function runPriorAuth() {
   if (!_lastEligResult) {
     alert('No eligibility result to proceed with.');
@@ -1456,30 +1458,61 @@ async function runPriorAuth() {
   }
 
   const r = _lastEligResult;
-  const overlay = document.getElementById('loading-overlay');
-  overlay.querySelector('p').textContent = 'Submitting Prior Auth inquiry...';
-  // Use the clearinghouse from the eligibility result (not the form dropdown)
   const selectedProvider = r.clearinghouse_provider || document.getElementById('clearinghouse_select').value || document.getElementById('global_provider_select').value || '';
   const providerLabel = {'claimmd': 'Claim.MD', 'waystar': 'Waystar', 'stedi': 'Stedi'}[selectedProvider] || selectedProvider;
+
+  const payload = {
+    patient_first_name: r.patient_name.split(' ')[0] || '',
+    patient_last_name: r.patient_name.split(' ').slice(1).join(' ') || '',
+    patient_dob: document.getElementById('patient_dob').value || '',
+    member_id: document.getElementById('member_id').value || '',
+    payer_id: document.getElementById('payer_id').value || r.payer_name,
+    payer_name: r.payer_name,
+    provider_npi: document.getElementById('provider_npi').value || '',
+    provider_name: document.getElementById('provider_name').value || '',
+    provider_tax_id: document.getElementById('provider_tax_id').value || '',
+    service_type_code: document.getElementById('service_type_code').value || '30',
+    eligibility_check_id: r.check_id || '',
+    clearinghouse: selectedProvider,
+  };
+
+  _pendingPAPayload = payload;
+
+  // Populate preview modal
+  document.getElementById('pa-pre-patient').textContent = (payload.patient_first_name + ' ' + payload.patient_last_name).trim() || '--';
+  document.getElementById('pa-pre-dob').textContent = payload.patient_dob || '--';
+  document.getElementById('pa-pre-member').textContent = payload.member_id || '--';
+  document.getElementById('pa-pre-payer').textContent = payload.payer_name || '--';
+  document.getElementById('pa-pre-payer-id').textContent = payload.payer_id || '--';
+  document.getElementById('pa-pre-npi').textContent = payload.provider_npi || '--';
+  document.getElementById('pa-pre-provider').textContent = payload.provider_name || '--';
+  document.getElementById('pa-pre-taxid').textContent = payload.provider_tax_id || '--';
+  document.getElementById('pa-pre-service').textContent = payload.service_type_code || '--';
+  document.getElementById('pa-pre-clearinghouse').textContent = providerLabel || '--';
+  document.getElementById('pa-pre-eligid').textContent = payload.eligibility_check_id || '--';
+
+  document.getElementById('pa-preview-modal').style.display = 'flex';
+}
+
+function closePAPreview() {
+  document.getElementById('pa-preview-modal').style.display = 'none';
+  _pendingPAPayload = null;
+}
+
+async function confirmPriorAuth() {
+  if (!_pendingPAPayload) return;
+
+  const payload = _pendingPAPayload;
+  closePAPreview();
+
+  const overlay = document.getElementById('loading-overlay');
+  const selectedProvider = payload.clearinghouse;
+  const providerLabel = {'claimmd': 'Claim.MD', 'waystar': 'Waystar', 'stedi': 'Stedi'}[selectedProvider] || selectedProvider;
+  overlay.querySelector('p').textContent = 'Submitting Prior Auth inquiry...';
   overlay.querySelector('.loading-sub').textContent = 'Contacting ' + providerLabel + ' PA API (this may take 10-15 seconds)';
   overlay.style.display = 'flex';
 
   try {
-    const payload = {
-      patient_first_name: r.patient_name.split(' ')[0] || '',
-      patient_last_name: r.patient_name.split(' ').slice(1).join(' ') || '',
-      patient_dob: document.getElementById('patient_dob').value || '',
-      member_id: document.getElementById('member_id').value || '',
-      payer_id: document.getElementById('payer_id').value || r.payer_name,
-      payer_name: r.payer_name,
-      provider_npi: document.getElementById('provider_npi').value || '',
-      provider_name: document.getElementById('provider_name').value || '',
-      provider_tax_id: document.getElementById('provider_tax_id').value || '',
-      service_type_code: document.getElementById('service_type_code').value || '30',
-      eligibility_check_id: r.check_id || '',
-      clearinghouse: selectedProvider,
-    };
-
     console.log('PA payload:', payload);
 
     const res = await authFetch(API + '/api/v1/prior-auth/check', {
