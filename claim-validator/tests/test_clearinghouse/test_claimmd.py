@@ -127,14 +127,14 @@ class TestEligibility:
 
         form = _parse_form_body(captured[0])
         assert form["AccountKey"] == "test-account-key"
-        assert form["ResponseType"] == "json"
-        assert form["PayerID"] == "00520"
-        assert form["ProviderNPI"] == "1245319599"
-        assert form["InsuredID"] == "SUB123"
-        assert form["InsuredFirstName"] == "Alice"
-        assert form["InsuredLastName"] == "Williams"
-        assert form["InsuredDOB"] == "07/22/1980"  # MM/DD/YYYY
-        assert form["ServiceDate"] == "03/04/2026"  # MM/DD/YYYY
+        assert form["payerid"] == "00520"
+        assert form["prov_npi"] == "1245319599"
+        assert form["ins_number"] == "SUB123"
+        assert form["ins_name_f"] == "Alice"
+        assert form["ins_name_l"] == "Williams"
+        assert form["pat_dob"] == "19800722"  # YYYYMMDD
+        assert form["fdos"] == "20260304"  # YYYYMMDD
+        assert form["pat_rel"] == "18"
 
     def test_eligibility_posts_to_correct_path(self) -> None:
         captured: list[httpx.Request] = []
@@ -152,7 +152,7 @@ class TestEligibility:
             _ok_handler(
                 {
                     "status": "active",
-                    "responseID": "RESP-123",
+                    "eligid": "ELIG-123",
                     "plan": {"planName": "BCBS PPO"},
                 }
             )
@@ -162,8 +162,8 @@ class TestEligibility:
         assert isinstance(result, ClearinghouseEligibilityResponse)
         assert result.status == "active"
         assert result.eligible is True
-        assert result.reference_id == "RESP-123"
-        assert result.plan_info["planName"] == "BCBS PPO"
+        assert result.reference_id == "ELIG-123"
+        assert result.plan_info["plan"]["planName"] == "BCBS PPO"
 
     def test_eligibility_response_inactive(self) -> None:
         client = _make_client(_ok_handler({"status": "inactive"}))

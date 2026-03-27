@@ -13603,7 +13603,7 @@
     "name": "ZirMed Test Payer",
     "type": "commercial"
   },
-  "AETNA": {
+  "c": {
     "name": "Aetna (Stedi)",
     "type": "commercial"
   },
@@ -13633,6 +13633,14 @@
   },
   "STEDITEST": {
     "name": "Stedi Test Payer",
+    "type": "test"
+  },
+  "66666": {
+    "name": "ZIRMED",
+    "type": "test"
+  },
+  "22222": {
+    "name": "ZirMed Test Payer",
     "type": "test"
   }
 }

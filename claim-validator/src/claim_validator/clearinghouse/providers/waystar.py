@@ -361,8 +361,10 @@ class WaystarClient(BaseClearinghouseClient):
         last_name = request.get("last_name", "").upper()
 
         # Provider name for NM1*1P segment (required by many payers)
+        # Supports both organization names (entity type 2) and individual names (entity type 1)
         provider_last = request.get("provider_last_name", "").upper()
         provider_first = request.get("provider_first_name", "").upper()
+        provider_org = request.get("provider_name", "").upper()
 
         # Support multiple service types via list or comma-separated string
         raw_st = request.get("service_types", request.get("service_type", "30"))
@@ -379,7 +381,12 @@ class WaystarClient(BaseClearinghouseClient):
         sender_id = f"{npi:<15}" if npi else "SENDER         "
 
         # Build NM1*1P with provider name if available
-        if provider_last:
+        # Entity type 2 = organization, type 1 = individual person
+        if provider_org:
+            # Organization name: NM1*1P*2*ORG_NAME*****XX*NPI
+            nm1_1p = f"NM1*1P*2*{provider_org}*****XX*{npi}"
+        elif provider_last:
+            # Individual provider: NM1*1P*1*LAST*FIRST****XX*NPI
             nm1_1p = f"NM1*1P*1*{provider_last}*{provider_first}****XX*{npi}"
         else:
             nm1_1p = f"NM1*1P*2******XX*{npi}"

@@ -18,19 +18,25 @@
         <span class="logo-text">Think<span class="logo-accent">AI</span></span>
       </div>
       <ul class="sidebar-nav">
-        <li class="nav-item active" data-page="dashboard">
+        <li class="nav-item" data-page="morning-brief" tabindex="0">
+          <span class="nav-icon">&#9728;</span> Morning Brief
+        </li>
+        <li class="nav-item" data-page="dashboard" tabindex="0">
           <span class="nav-icon">&#127968;</span> Dashboard
         </li>
-        <li class="nav-item" data-page="new-check">
-          <span class="nav-icon">&#43;</span> New Check
+        <li class="nav-item" data-page="appointments" tabindex="0">
+          <span class="nav-icon">&#128197;</span> Appointments
         </li>
-        <li class="nav-item" data-page="batch-upload">
-          <span class="nav-icon">&#8613;</span> Batch Upload
-        </li>
-        <li class="nav-item" data-page="pa-requests">
+        <li class="nav-item" data-page="pa-requests" tabindex="0">
           <span class="nav-icon">&#9711;</span> PA Requests
         </li>
-        <li class="nav-item" data-page="settings">
+        <li class="nav-item" data-page="reports" tabindex="0">
+          <span class="nav-icon">&#128202;</span> Reports
+        </li>
+        <li class="nav-item" data-page="ehr-sync" tabindex="0">
+          <span class="nav-icon">&#128260;</span> EHR Sync
+        </li>
+        <li class="nav-item" data-page="settings" tabindex="0">
           <span class="nav-icon">&#9881;</span> Settings
         </li>
       </ul>
@@ -43,20 +49,37 @@
       <header id="topbar">
         <div class="topbar-left">
           <span id="env-badge" class="env-badge" style="display:none;">TEST ENV</span>
+          <div class="topbar-provider-selector">
+            <label class="topbar-provider-label">Provider:</label>
+            <select id="global_provider_select" onchange="onGlobalProviderChange(this.value)">
+              <option value="">Loading...</option>
+            </select>
+            <span id="global-provider-status" class="provider-status-dot" title="Not configured"></span>
+          </div>
+          <div class="topbar-shortcut-hint" onclick="toggleShortcuts()" title="Keyboard shortcuts">
+            <span class="kbd" style="margin:0;">?</span> Shortcuts
+          </div>
         </div>
         <div class="topbar-right">
+          <div class="new-check-dropdown-wrapper">
+            <button class="btn btn-primary btn-new-check" onclick="toggleNewCheckDropdown(event)">+ New Check <span style="font-size:10px;">&#9660;</span></button>
+            <div class="new-check-dropdown" id="new-check-dropdown" style="display:none;">
+              <div class="new-check-dropdown-item" onclick="navigateTo('new-check'); closeNewCheckDropdown();">&#128269; Single Eligibility Check</div>
+              <div class="new-check-dropdown-item" onclick="navigateTo('batch-upload'); closeNewCheckDropdown();">&#8613; Batch Upload</div>
+            </div>
+          </div>
           <button class="topbar-icon" title="Notifications">&#128276;</button>
           <div class="user-info">
-            <span class="user-name">Dr. Portal</span>
+            <span class="user-name">Dr. Sarah Portal</span>
             <span class="user-role">Administrator</span>
           </div>
           <div class="user-menu-wrapper">
-            <div class="user-avatar" id="user-avatar-btn" onclick="toggleUserMenu(event)">DP</div>
+            <div class="user-avatar" id="user-avatar-btn" onclick="toggleUserMenu(event)">SP</div>
             <div class="user-dropdown" id="user-dropdown">
               <div class="user-dropdown-header">
-                <div class="dropdown-avatar" id="dropdown-avatar">DP</div>
+                <div class="dropdown-avatar" id="dropdown-avatar">SP</div>
                 <div class="dropdown-user-info">
-                  <div class="dropdown-user-name" id="dropdown-user-name">Dr. Portal</div>
+                  <div class="dropdown-user-name" id="dropdown-user-name">Dr. Sarah Portal</div>
                   <div class="dropdown-user-email" id="dropdown-user-role">Administrator</div>
                 </div>
               </div>
@@ -76,12 +99,41 @@
         </div>
       </header>
 
+      <!-- ============ PAGE: MORNING BRIEF ============ -->
+      <div id="page-morning-brief" class="page">
+        <div class="page-header-row">
+          <div><h1 class="page-title" id="mb-greeting">Morning Brief</h1>
+          <p class="page-subtitle" id="mb-agent-status">Agent ran at 6:00 AM • 47 appointments processed • Completed in 4.2 seconds</p></div>
+        </div>
+        <div class="card">
+          <div class="card-header-row">
+            <h2 class="card-title">&#128737; PRIOR AUTHORIZATION REQUIREMENTS</h2>
+            <div class="mb-stats-badges">
+              <span class="mb-badge red">Action Required <strong>2</strong></span>
+              <span class="mb-badge orange">Pending Review <strong>2</strong></span>
+            </div>
+          </div>
+          <div class="table-wrapper"><table><thead><tr><th>TIME</th><th>PATIENT</th><th>PROVIDER</th><th>INSURANCE</th><th>SERVICE/CPT</th><th>STATUS</th><th>URGENCY</th><th>DAYS LEFT</th><th>ACTIONS</th></tr></thead><tbody id="mb-pa-tbody"></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-header-row">
+            <h2 class="card-title">&#128176; PATIENT COLLECTION SUMMARY</h2>
+            <div class="mb-stats-badges">
+              <span class="mb-badge blue">Total Copay <strong id="mb-total-copay">$0</strong></span>
+              <span class="mb-badge purple">Total Deductible <strong id="mb-total-ded">$0</strong></span>
+              <span class="mb-badge green">Total to Collect <strong id="mb-total-collect">$0</strong></span>
+            </div>
+          </div>
+          <div class="table-wrapper"><table><thead><tr><th>TIME</th><th>PATIENT</th><th>PROVIDER</th><th>INSURANCE</th><th>ELIGIBILITY</th><th>COPAY</th><th>DEDUCTIBLE</th><th>TOTAL DUE</th><th>NOTES</th><th>ACTIONS</th></tr></thead><tbody id="mb-collection-tbody"></tbody></table></div>
+        </div>
+      </div>
+
       <!-- ============ PAGE: DASHBOARD ============ -->
-      <div id="page-dashboard" class="page active">
-        <h1 class="page-title">Dashboard</h1>
-        <button class="btn btn-morning-brief" id="btn-morning-brief">
-          <span>&#10024;</span> View Morning Brief
-        </button>
+      <div id="page-dashboard" class="page">
+        <div class="page-header-row">
+          <h1 class="page-title">Dashboard</h1>
+          <button class="btn btn-secondary" onclick="navigateTo('morning-brief')">&#10024; View Morning Brief</button>
+        </div>
 
         <!-- Stats Cards -->
         <div class="stats-row">
@@ -112,8 +164,9 @@
                 <tr>
                   <th>PATIENT</th>
                   <th>PAYER</th>
-                  <th>SOURCE</th>
+                  <th>CLEARINGHOUSE</th>
                   <th>STATUS</th>
+                  <th>RESPONSE</th>
                   <th>PA REQUIRED</th>
                   <th>CHECKED AT</th>
                 </tr>
@@ -147,15 +200,6 @@
           </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="card">
-          <h2 class="card-title" style="text-transform:uppercase;font-size:13px;letter-spacing:0.05em;color:var(--text-secondary);">Quick Actions</h2>
-          <div class="quick-actions-row">
-            <button class="btn btn-quick" onclick="navigateTo('batch-upload')">
-              <span>&#8613;</span> Upload CSV
-            </button>
-          </div>
-        </div>
       </div>
 
       <!-- ============ PAGE: NEW CHECK ============ -->
@@ -252,10 +296,24 @@
                     <input type="text" id="provider_name" placeholder="e.g. Dr. Smith" />
                   </div>
                 </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="provider_tax_id">Provider Tax ID (EIN)</label>
+                    <input type="text" id="provider_tax_id" placeholder="123456789" maxlength="9" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="clearinghouse_select">Clearinghouse Provider</label>
+                    <select id="clearinghouse_select">
+                      <option value="">Default (from server config)</option>
+                    </select>
+                  </div>
+                </div>
 
                 <div class="form-actions">
                   <button type="button" class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
-                  <button type="button" class="btn btn-test" id="btn-load-test" style="display:none;" onclick="loadTestData()">
+                  <button type="button" class="btn btn-test" id="btn-load-test" onclick="loadTestDataForProvider()">
                     &#9881; Load Test Data
                   </button>
                   <button type="submit" class="btn btn-primary btn-full" id="submit-btn">
@@ -430,6 +488,46 @@
         </div>
       </div>
 
+      <!-- ============ PAGE: APPOINTMENTS ============ -->
+      <div id="page-appointments" class="page">
+        <div class="page-header-row">
+          <h1 class="page-title">Appointment Eligibility Monitor</h1>
+          <div class="appt-date-tabs">
+            <button class="appt-tab active" data-tab="today">Today <span class="tab-count">&#8226; 47</span></button>
+            <button class="appt-tab" data-tab="tomorrow">Tomorrow <span class="tab-count">&#8226; 31</span></button>
+            <button class="appt-tab" data-tab="week">This Week <span class="tab-count">&#8226; 184</span></button>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span class="auto-run-toggle">Auto-Run: <label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label> ON</span>
+            <button class="btn btn-primary" onclick="runAgentNow()">&#9889; Run Agent Now</button>
+          </div>
+        </div>
+        <div class="agent-status-bar">
+          <span>&#129302; Agent last ran: <strong>Today 6:00 AM</strong></span> &#8226;
+          <span class="appt-stat green">42 eligible</span> &#8226;
+          <span class="appt-stat orange">3 PA required</span> &#8226;
+          <span class="appt-stat red">2 action needed</span>
+          <span style="margin-left:auto;">Next auto-run: <strong>Tomorrow 6:00 AM</strong> <a href="#" onclick="runAgentNow();return false;">Run Now</a></span>
+        </div>
+        <div class="filter-bar">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="verified">&#9989; Verified</button>
+          <button class="filter-btn" data-filter="action">&#9888; Action Required</button>
+          <button class="filter-btn" data-filter="inactive">&#128308; Inactive</button>
+          <button class="filter-btn" data-filter="pa">&#128992; PA Required</button>
+          <button class="filter-btn" data-filter="pending">Pending Check</button>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+            <input type="text" class="appt-search-input" placeholder="Search patient or provider..." />
+            <select class="appt-filter-select"><option value="">Provider</option></select>
+            <select class="appt-filter-select"><option value="">Payer</option></select>
+          </div>
+        </div>
+        <div class="card"><div class="table-wrapper"><table>
+          <thead><tr><th>TIME</th><th>PATIENT</th><th>PROVIDER</th><th>PAYER</th><th>APPT TYPE</th><th>ELIGIBILITY STATUS</th><th>PA STATUS</th><th>ACTION</th></tr></thead>
+          <tbody id="appt-tbody"></tbody>
+        </table><div class="table-footer">Showing 1-10 of 47</div></div></div>
+      </div>
+
       <!-- ============ PAGE: RESULTS ============ -->
       <div id="page-results" class="page">
         <header class="results-header">
@@ -509,6 +607,25 @@
               </div>
             </div>
 
+            <!-- Raw Eligibility Response -->
+            <div class="card" id="raw-response-card" style="display:none;">
+              <h2 class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>&#128196; Eligibility Response</span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:4px 12px;" onclick="copyRawResponse()">&#128203; Copy</button>
+              </h2>
+              <div id="r-raw-response-info" style="margin-bottom:12px;">
+                <div class="coverage-grid">
+                  <div class="coverage-item"><div class="coverage-label">Clearinghouse</div><div id="r-clearinghouse" class="coverage-value">--</div></div>
+                  <div class="coverage-item"><div class="coverage-label">Response Time</div><div id="r-exec-time" class="coverage-value">--</div></div>
+                  <div class="coverage-item"><div class="coverage-label">Check ID</div><div id="r-check-id-display" class="coverage-value">--</div></div>
+                </div>
+              </div>
+              <details open>
+                <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);margin-bottom:8px;">Full Response JSON</summary>
+                <pre id="r-raw-json" style="font-size:11px;max-height:500px;overflow:auto;background:var(--bg);padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-all;border:1px solid var(--border);color:var(--text);line-height:1.4;">--</pre>
+              </details>
+            </div>
+
             <!-- Findings -->
             <div class="card" id="findings-card" style="display:none;">
               <h2 class="card-title">
@@ -559,8 +676,68 @@
       <!-- ============ PAGE: PA REQUESTS ============ -->
       <div id="page-pa-requests" class="page">
         <h1 class="page-title">PA Requests</h1>
+
+        <!-- PA Table -->
         <div class="card">
-          <div class="empty-state">Prior Authorization requests will appear here after eligibility checks.</div>
+          <div class="table-responsive">
+            <table class="results-table" id="pa-table">
+              <thead>
+                <tr>
+                  <th>PA ID</th>
+                  <th>DATE</th>
+                  <th>PATIENT</th>
+                  <th>PAYER</th>
+                  <th>PROVIDER</th>
+                  <th>STATUS</th>
+                  <th>AUTH #</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody id="pa-table-body">
+                <tr><td colspan="8" class="empty-state">No PA requests yet. Run an eligibility check and click "Proceed to Prior Auth".</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PA Detail Panel (shown when a row is clicked) -->
+        <div class="card" id="pa-detail-panel" style="display:none;">
+          <h2 class="card-title">PA Detail — <span id="pa-detail-id">--</span></h2>
+          <div class="results-grid" style="grid-template-columns:1fr 1fr;">
+            <!-- Request Info -->
+            <div class="card" style="background:var(--surface);border:1px solid var(--border);">
+              <h3 style="margin:0 0 12px 0;font-size:14px;color:var(--text-secondary);">Request</h3>
+              <div class="coverage-grid">
+                <div class="coverage-item"><div class="coverage-label">Patient</div><div id="pa-d-patient" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">DOB</div><div id="pa-d-dob" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Member ID</div><div id="pa-d-member" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Payer</div><div id="pa-d-payer" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Provider NPI</div><div id="pa-d-npi" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Provider Name</div><div id="pa-d-provname" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Service Type</div><div id="pa-d-svc" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Diagnosis</div><div id="pa-d-diag" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Procedure</div><div id="pa-d-proc" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Linked Elig Check</div><div id="pa-d-elig" class="coverage-value">--</div></div>
+              </div>
+            </div>
+            <!-- Response Info -->
+            <div class="card" style="background:var(--surface);border:1px solid var(--border);">
+              <h3 style="margin:0 0 12px 0;font-size:14px;color:var(--text-secondary);">Response</h3>
+              <div class="coverage-grid">
+                <div class="coverage-item"><div class="coverage-label">Status</div><div id="pa-d-status" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Auth Number</div><div id="pa-d-auth" class="coverage-value" style="color:var(--success);font-weight:700;">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Reference ID</div><div id="pa-d-ref" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Status Message</div><div id="pa-d-msg" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Error</div><div id="pa-d-error" class="coverage-value" style="color:var(--error);">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Execution Time</div><div id="pa-d-time" class="coverage-value">--</div></div>
+                <div class="coverage-item"><div class="coverage-label">Date</div><div id="pa-d-date" class="coverage-value">--</div></div>
+              </div>
+              <details style="margin-top:12px;">
+                <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);">Raw Response JSON</summary>
+                <pre id="pa-d-raw" style="font-size:11px;max-height:300px;overflow:auto;background:var(--bg);padding:8px;border-radius:6px;margin-top:8px;white-space:pre-wrap;word-break:break-all;">--</pre>
+              </details>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -573,9 +750,9 @@
           <!-- Profile Card -->
           <div class="card profile-card">
             <div class="profile-header">
-              <div class="profile-avatar-lg" id="profile-avatar-lg">DP</div>
+              <div class="profile-avatar-lg" id="profile-avatar-lg">SP</div>
               <div class="profile-header-info">
-                <h2 class="profile-display-name" id="profile-display-name">Dr. Portal</h2>
+                <h2 class="profile-display-name" id="profile-display-name">Dr. Sarah Portal</h2>
                 <span class="profile-role-badge" id="profile-role-badge">Administrator</span>
               </div>
             </div>
@@ -590,7 +767,7 @@
               </div>
               <div class="profile-field">
                 <label>Email</label>
-                <input type="email" id="profile-email-input" class="profile-input" placeholder="email@example.com" />
+                <input type="email" id="profile-email-input" class="profile-input" value="jyoti.varade@thinkitive.com" />
               </div>
               <div class="profile-field">
                 <label>Role</label>
@@ -645,10 +822,103 @@
         </div>
       </div>
 
+      <!-- ============ PAGE: REPORTS ============ -->
+      <div id="page-reports" class="page">
+        <div class="page-header-row">
+          <h1 class="page-title">Reports &amp; Analytics</h1>
+          <div style="display:flex;gap:8px;"><button class="btn btn-secondary">&#128197; Last 30 days</button><button class="btn btn-primary">&#128228; Export</button></div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-label">TOTAL CHECKS</div><div class="stat-value">--</div><div class="stat-sub">Last 30 days</div></div>
+          <div class="stat-card"><div class="stat-label">ELIGIBILITY RATE</div><div class="stat-value accent-green">--</div><div class="stat-sub green"></div></div>
+          <div class="stat-card"><div class="stat-label">PA REQUIRED RATE</div><div class="stat-value accent-orange">--</div><div class="stat-sub orange"></div></div>
+          <div class="stat-card"><div class="stat-label">PA AUTO-SUBMIT RATE</div><div class="stat-value">--</div><div class="stat-sub"></div></div>
+          <div class="stat-card"><div class="stat-label">AVG CHECK TIME</div><div class="stat-value">--</div><div class="stat-sub green"></div></div>
+        </div>
+        <div class="reports-grid">
+          <div class="card"><h2 class="card-title">Eligibility Check Volume</h2><div class="chart-container" id="chart-volume"></div></div>
+          <div class="card"><h2 class="card-title">PA Outcomes by Payer</h2><div class="chart-container" id="chart-pa-outcomes"></div></div>
+        </div>
+        <div class="reports-grid">
+          <div class="card"><h2 class="card-title">Top Denial Reasons</h2><table><thead><tr><th>REASON</th><th>COUNT</th><th>%</th><th>TREND</th></tr></thead><tbody id="denial-reasons-tbody"></tbody></table></div>
+          <div class="card"><h2 class="card-title">&#10024; AI Insights</h2><div id="ai-insights-list" class="ai-insights-list"></div></div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: EHR SYNC ============ -->
+      <div id="page-ehr-sync" class="page">
+        <h1 class="page-title">EHR Integration</h1>
+        <p class="page-subtitle">Connect your EHR to enable automated eligibility checks on scheduled appointments</p>
+        <div class="ehr-grid">
+          <div class="card">
+            <div class="ehr-card-header"><div class="ehr-icon fhir-icon">&#128196;</div><div><h2 class="card-title" style="margin:0;">FHIR R4 Integration <span class="badge-info">RECOMMENDED</span></h2><p class="ehr-card-sub">Modern API-based connection. Supports Epic, Cerner, Athena, eClinicalWorks</p></div></div>
+            <div class="form-group"><label>FHIR BASE URL</label><input type="text" placeholder="https://fhir.example.com/r4" /></div>
+            <div class="form-row"><div class="form-group"><label>CLIENT ID</label><input type="text" placeholder="client_id_here" /></div><div class="form-group"><label>TENANT ID</label><input type="text" placeholder="tenant_id" /></div></div>
+            <div class="form-group"><label>CLIENT SECRET</label><input type="password" value="password123456" /></div>
+            <div class="form-group"><label>REQUIRED SCOPES</label>
+              <div class="scope-list">
+                <label class="scope-item"><input type="checkbox" checked /> <div><strong>Patient.read</strong><br><small>Read patient demographics</small></div></label>
+                <label class="scope-item"><input type="checkbox" checked /> <div><strong>Coverage.read</strong><br><small>Read insurance information</small></div></label>
+                <label class="scope-item"><input type="checkbox" checked /> <div><strong>Appointment.read</strong><br><small>Read appointment data</small></div></label>
+                <label class="scope-item"><input type="checkbox" /> <div><strong>Encounter.read</strong><br><small>Read encounter details</small></div></label>
+              </div>
+            </div>
+            <div class="ehr-status-row"><span class="status-dot gray"></span> Not Connected <div style="margin-left:auto;display:flex;gap:8px;"><button class="btn btn-secondary">Test Connection</button><button class="btn btn-primary">Save &amp; Connect</button></div></div>
+          </div>
+          <div class="card">
+            <div class="ehr-card-header"><div class="ehr-icon hl7-icon">&#9889;</div><div><h2 class="card-title" style="margin:0;">HL7 v2.x / Direct</h2><p class="ehr-card-sub">Legacy interface for older EHR systems. Supports ADT, SIU message types</p></div></div>
+            <div class="form-row"><div class="form-group"><label>MLLP HOST</label><input type="text" placeholder="hl7.hospital.local" /></div><div class="form-group"><label>PORT</label><input type="text" placeholder="2575" /></div></div>
+            <div class="form-group"><label>SENDING APPLICATION</label><input type="text" value="THINKAI" /></div>
+            <div class="form-group"><label>RECEIVING APPLICATION</label><input type="text" value="EPIC_EHR" /></div>
+            <div class="ehr-alert">&#9432; <strong>HL7 Setup Required:</strong> Contact your EHR administrator to configure message routing and security certificates.</div>
+            <div class="ehr-status-row"><span class="status-dot gray"></span> Not Configured <button class="btn btn-secondary" style="margin-left:auto;">Configure</button></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:20px;">
+          <h2 class="card-title">Sync Settings</h2>
+          <div class="sync-settings-list">
+            <div class="sync-setting-row"><div><strong>Auto-check eligibility on appointment creation</strong><br><small>Automatically verify coverage when new appointments are scheduled</small></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+            <div class="sync-setting-row"><div><strong>Auto-check 48hrs before appointment</strong><br><small>Re-verify eligibility 2 days prior to scheduled visit</small></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+            <div class="sync-setting-row"><div><strong>Write results back to EHR</strong><br><small>Automatically update patient records with eligibility results</small></div><label class="toggle-switch"><input type="checkbox" checked /><span class="toggle-slider"></span></label></div>
+          </div>
+          <div class="form-row" style="margin-top:16px;">
+            <div class="form-group"><label>TRIGGER: CHECK ELIGIBILITY FOR</label><select><option>All appointments</option></select></div>
+            <div class="form-group"><label>CLEARINGHOUSE</label><select><option>Office Ally</option><option>Stedi</option><option>Waystar</option><option>Claim.MD</option></select></div>
+          </div>
+          <div style="text-align:right;margin-top:16px;"><button class="btn btn-primary">&#10003; Save Configuration</button></div>
+        </div>
+      </div>
+
       <!-- ============ PAGE: SETTINGS ============ -->
       <div id="page-settings" class="page">
         <h1 class="page-title">Settings</h1>
-        <div class="card"><div class="empty-state">Application settings coming soon.</div></div>
+        <p class="page-subtitle">Manage your EligibilityAI account and preferences</p>
+        <div class="settings-hub-grid">
+          <div class="settings-hub-card active-card" onclick="navigateTo('settings-automation')">
+            <div class="shc-icon blue">&#9889;</div>
+            <div><h3>Automation Settings <span class="badge-new">NEW</span></h3><p>Configure agent schedules, auto-run rules, and notification preferences</p></div>
+          </div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon purple">&#128101;</div><div><h3>User Management</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon red">&#128276;</div><div><h3>Notifications</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon green">&#128274;</div><div><h3>Security &amp; Privacy</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon orange">&#128179;</div><div><h3>Billing &amp; Subscription</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon teal">&#128268;</div><div><h3>Integrations</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon yellow">&#128274;</div><div><h3>HIPAA Compliance</h3><p class="coming-soon">Coming Soon</p></div></div>
+          <div class="settings-hub-card disabled-card"><div class="shc-icon gray">&#127760;</div><div><h3>General Settings</h3><p class="coming-soon">Coming Soon</p></div></div>
+        </div>
+      </div>
+
+      <!-- ============ PAGE: SETTINGS - AUTOMATION ============ -->
+      <div id="page-settings-automation" class="page">
+        <div class="page-header-row">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button class="btn-back" onclick="navigateTo('settings')"><span>&larr;</span> Back</button>
+            <h1 class="page-title">Automation Settings</h1>
+          </div>
+        </div>
+        <p class="page-subtitle">Configure clearinghouse providers and application preferences</p>
+        <div class="provider-tabs" id="provider-tabs"></div>
+        <div id="provider-panels"></div>
       </div>
 
     </div><!-- /main-content -->
@@ -671,6 +941,78 @@
         </div>
         <div class="pa-modal-footer">
           <button class="btn btn-secondary" onclick="closePAModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Keyboard Shortcuts Help -->
+    <div class="shortcuts-overlay" id="shortcuts-overlay">
+      <div class="shortcuts-panel">
+        <div class="shortcuts-title">Keyboard Shortcuts</div>
+        <div class="shortcuts-subtitle">Navigate faster with your keyboard</div>
+
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">Navigation</div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Dashboard</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">1</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">New Check</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">2</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Batch Upload</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">3</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">PA Requests</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">4</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Settings</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">5</span></div>
+          </div>
+        </div>
+
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">Actions</div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Focus patient name</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">N</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Focus payer search</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">P</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Run eligibility check</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">Enter</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Clear form</span>
+            <div class="shortcut-keys"><span class="kbd">Alt</span><span class="kbd">C</span></div>
+          </div>
+        </div>
+
+        <div class="shortcuts-section">
+          <div class="shortcuts-section-title">General</div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Show this help</span>
+            <div class="shortcut-keys"><span class="kbd">?</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Close dialog / cancel</span>
+            <div class="shortcut-keys"><span class="kbd">Esc</span></div>
+          </div>
+          <div class="shortcut-row">
+            <span class="shortcut-label">Navigate form fields</span>
+            <div class="shortcut-keys"><span class="kbd">Tab</span></div>
+          </div>
+        </div>
+
+        <div class="shortcuts-footer">
+          Press <span class="kbd" style="margin:0 2px;">Esc</span> or <span class="kbd" style="margin:0 2px;">?</span> to close
         </div>
       </div>
     </div>

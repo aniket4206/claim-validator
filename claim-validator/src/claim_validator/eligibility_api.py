@@ -66,8 +66,10 @@ class EligibilityCheckRequest(BaseModel):
     payer_name: str = ""
     provider_npi: str = ""
     provider_name: str = ""
+    provider_tax_id: str = ""
     service_type_code: str = "30"
     source: str = "single"  # "single" or "batch"
+    clearinghouse: str = ""  # "stedi", "waystar", "claimmd" — overrides env var
 
 
 class FindingOut(BaseModel):
@@ -107,6 +109,7 @@ class EligibilityCheckResponse(BaseModel):
     relationship: str | None = None
     coverage_status: str | None = None
     claims_address: str | None = None
+    clearinghouse_provider: str | None = None
     # Findings (errors/warnings for denial prevention)
     findings: list[FindingOut] = []
     total_errors: int = 0
@@ -126,59 +129,17 @@ class RecentCheckOut(BaseModel):
     status: str
     source: str = "single"
     prior_auth_required: bool | None = None
+    clearinghouse_provider: str | None = None
+    carrier_name: str | None = None
+    plan_name: str | None = None
+    copay: float | None = None
+    annual_deductible: float | None = None
+    coverage_status: str | None = None
 
 
 # ---------------------------------------------------------------------------
 # Core logic
 # ---------------------------------------------------------------------------
-
-def _build_demo_response(
-    check_id: str, req: EligibilityCheckRequest, run_date: str
-) -> EligibilityCheckResponse:
-    """Return a realistic mock eligibility response for demo purposes.
-
-    Triggered when member_id starts with 'DEMO' (case-insensitive).
-    """
-    patient_name = f"{req.patient_first_name} {req.patient_last_name}"
-    print(f"  [DEMO MODE] Returning mock eligibility data for {patient_name}")
-
-    return EligibilityCheckResponse(
-        check_id=check_id,
-        status="eligible",
-        patient_name=patient_name,
-        payer_name=req.payer_name or req.payer_id,
-        run_date=run_date,
-        annual_deductible=850.00,
-        annual_deductible_max=3000.00,
-        out_of_pocket=1200.00,
-        out_of_pocket_max=6500.00,
-        copay=30.00,
-        coinsurance=20.0,
-        prior_auth_required=True,
-        coverage_start="2025-01-01",
-        coverage_end="2025-12-31",
-        plan_name=f"{req.payer_name or 'Demo'} PPO Gold",
-        group_number="GRP-88421",
-        findings=[
-            FindingOut(
-                code="DEMO_MODE",
-                message="This is simulated demo data — not a live payer response.",
-                severity="warning",
-                suggestion="Use a real member ID to query the payer.",
-            ),
-        ],
-        total_errors=0,
-        total_warnings=1,
-        ai_summary=(
-            "Patient is eligible with active PPO coverage. "
-            "Individual deductible is $850 of $3,000 met. "
-            "Prior authorization is required for this service type. "
-            "Recommend verifying PA requirements before claim submission."
-        ),
-        execution_time=0.1,
-        raw_response=None,
-    )
-
 
 def run_eligibility_check(req: EligibilityCheckRequest, db: Session | None = None) -> EligibilityCheckResponse:
     """Run eligibility check: validate inputs → call clearinghouse → interpret."""
@@ -198,12 +159,6 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
     check_id = _next_check_id(db)
     patient_name = f"{req.patient_first_name} {req.patient_last_name}"
     run_date = datetime.now(UTC).strftime("%Y-%m-%d %I:%M %p")
-
-    # ── Demo mode: return mock data when member_id starts with DEMO ──
-    if req.member_id.upper().startswith("DEMO"):
-        result = _build_demo_response(check_id, req, run_date)
-        _save_check_to_db(db, result, req)
-        return result
 
     env = os.getenv("CLEARINGHOUSE_ENV", "production").upper()
     print("\n" + "=" * 70)
@@ -263,10 +218,14 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
         ))
 
     # ── Step 2: Call clearinghouse eligibility API ──────────────────
-    ch_provider = os.getenv("CLEARINGHOUSE_PROVIDER", "unknown")
     clearinghouse_resp = None
     eligible = None
     plan_info: dict[str, Any] = {}
+
+    # Use per-request clearinghouse override if provided
+    client, ch_provider = _get_clearinghouse_client(req.clearinghouse)
+    if not ch_provider:
+        ch_provider = "unknown"
 
     # Block API call if there are validation errors
     validation_errors = [f for f in all_findings if f.severity == "error"]
@@ -280,7 +239,6 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
 
     if not validation_errors:
         try:
-            client = _get_clearinghouse_client()
             if client:
                 print(f"  {ch_provider.upper()} client created:")
                 print(f"    Provider:    {ch_provider}")
@@ -290,6 +248,9 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
                 _prov_parts = req.provider_name.strip().split() if req.provider_name else []
                 _prov_first = _prov_parts[0] if _prov_parts else ""
                 _prov_last = " ".join(_prov_parts[1:]) if len(_prov_parts) > 1 else ""
+
+                # Resolve provider_tax_id from request or env var
+                _tax_id = req.provider_tax_id or os.getenv("PROVIDER_TAX_ID", "")
 
                 waystar_request = {
                     "npi": req.provider_npi or "0000000000",
@@ -301,7 +262,8 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
                     "service_type": req.service_type_code,
                     "provider_first_name": _prov_first,
                     "provider_last_name": _prov_last,
-                    "provider_name": req.provider_name or "",  # full name for JSON-based clearinghouses
+                    "provider_name": req.provider_name or "",
+                    "provider_tax_id": _tax_id,
                 }
                 print(f"  Sending to {ch_provider.upper()}: {waystar_request}")
 
@@ -444,6 +406,7 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
         relationship=financial.get("relationship"),
         coverage_status=financial.get("coverage_status"),
         claims_address=financial.get("claims_address"),
+        clearinghouse_provider=ch_provider,
         findings=all_findings,
         total_errors=len(errors),
         total_warnings=len(warnings),
@@ -455,7 +418,7 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
     )
 
     # Store in database
-    _save_check_to_db(db, result, req)
+    _save_check_to_db(db, result, req, ch_provider)
     return result
 
 
@@ -463,6 +426,7 @@ def _save_check_to_db(
     db: Session,
     result: EligibilityCheckResponse,
     req: EligibilityCheckRequest,
+    clearinghouse_provider: str = "",
 ) -> None:
     """Persist an eligibility check result to the database."""
     # Serialize findings list to dicts for JSON column
@@ -481,6 +445,7 @@ def _save_check_to_db(
         provider_npi=req.provider_npi,
         provider_name=req.provider_name,
         service_type_code=req.service_type_code,
+        clearinghouse_provider=clearinghouse_provider or "",
         status=result.status,
         annual_deductible=result.annual_deductible,
         annual_deductible_max=result.annual_deductible_max,
@@ -535,6 +500,12 @@ def get_recent_checks(db: Session | None = None) -> list[RecentCheckOut]:
                 status=r.status,
                 source=r.source or "single",
                 prior_auth_required=r.prior_auth_required,
+                clearinghouse_provider=r.clearinghouse_provider,
+                carrier_name=r.carrier_name,
+                plan_name=r.plan_name,
+                copay=r.copay,
+                annual_deductible=r.annual_deductible,
+                coverage_status=r.coverage_status,
             )
             for r in rows
         ]
@@ -572,49 +543,70 @@ def _get_ai_config() -> dict[str, Any] | None:
     return None
 
 
-def _get_clearinghouse_client():
+def _get_clearinghouse_client(override_provider: str = ""):
     """Create a clearinghouse client from env vars, or return None.
 
-    Supports: waystar, stedi, claimmd — configured via CLEARINGHOUSE_PROVIDER.
+    Supports: waystar, stedi, claimmd — configured via provider-specific
+    env vars (e.g. CLEARINGHOUSE_WAYSTAR_API_KEY) or generic CLEARINGHOUSE_
+    vars only when the provider matches CLEARINGHOUSE_PROVIDER.
     """
-    provider = os.getenv("CLEARINGHOUSE_PROVIDER", "").lower()
+    provider = (override_provider or os.getenv("CLEARINGHOUSE_PROVIDER", "")).lower()
     if not provider:
-        return None
-    api_key = os.getenv("CLEARINGHOUSE_API_KEY", "")
+        return None, ""
+
+    # Per-provider env var prefix: CLEARINGHOUSE_WAYSTAR_, CLEARINGHOUSE_STEDI_, etc.
+    prefix = f"CLEARINGHOUSE_{provider.upper()}_"
+    default_provider = os.getenv("CLEARINGHOUSE_PROVIDER", "").lower()
+
+    def _env(key: str, default: str = "") -> str:
+        # Always check provider-specific var first
+        val = os.getenv(f"{prefix}{key}", "")
+        if val:
+            return val
+        # Only fall back to generic CLEARINGHOUSE_ vars if this IS the default provider
+        # (avoids e.g. waystar picking up stedi's generic CLEARINGHOUSE_API_KEY)
+        if provider == default_provider:
+            return os.getenv(f"CLEARINGHOUSE_{key}", default)
+        return default
+
+    api_key = _env("API_KEY")
     if not api_key:
-        return None
+        print(f"  WARNING: No API key found for {provider} "
+              f"(checked {prefix}API_KEY)")
+        return None, provider
 
     from claim_validator.clearinghouse.factory import get_clearinghouse_client
 
     config: dict[str, Any] = {
         "api_key": api_key,
-        "base_url": os.getenv("CLEARINGHOUSE_BASE_URL", ""),
+        "base_url": _env("BASE_URL"),
     }
 
     if provider == "waystar":
         config.update({
-            "secret": os.getenv("CLEARINGHOUSE_SECRET", ""),
-            "user_id": os.getenv("CLEARINGHOUSE_USER_ID", ""),
-            "password": os.getenv("CLEARINGHOUSE_PASSWORD", ""),
-            "cust_id": os.getenv("CLEARINGHOUSE_CUST_ID", ""),
-            "eligibility_base_url": os.getenv("CLEARINGHOUSE_ELIGIBILITY_BASE_URL", ""),
-            "prior_auth_base_url": os.getenv("CLEARINGHOUSE_PRIOR_AUTH_BASE_URL", ""),
+            "secret": _env("SECRET"),
+            "user_id": _env("USER_ID"),
+            "password": _env("PASSWORD"),
+            "cust_id": _env("CUST_ID"),
+            "eligibility_base_url": _env("ELIGIBILITY_BASE_URL"),
+            "prior_auth_base_url": _env("PRIOR_AUTH_BASE_URL"),
         })
 
     # Remove empty strings so defaults in client constructors are used
     config = {k: v for k, v in config.items() if v}
 
+    print(f"  Creating {provider.upper()} client with config keys: {list(config.keys())}")
     try:
-        return get_clearinghouse_client(provider, **config)
+        return get_clearinghouse_client(provider, **config), provider
     except Exception as exc:
         print(f"  WARNING: Failed to create {provider} client: {exc}")
-        return None
+        return None, provider
 
 
 def _extract_financial(plan_info: dict[str, Any], raw_response: dict[str, Any] | None = None) -> dict[str, Any]:
     """Extract financial/coverage fields from clearinghouse response.
 
-    Supports both Waystar FullJSON (ParsedOutput) and Stedi JSON formats.
+    Supports Waystar FullJSON (ParsedOutput), Stedi JSON, and ClaimMD XML formats.
     """
     result: dict[str, Any] = {}
 
@@ -625,6 +617,10 @@ def _extract_financial(plan_info: dict[str, Any], raw_response: dict[str, Any] |
     raw = raw_response or {}
     if raw.get("planStatus") or raw.get("benefitsInformation") or raw.get("planDateInformation"):
         return _extract_financial_stedi(raw)
+
+    # Detect ClaimMD format (has "benefits" list from XML parse and "eligid")
+    if raw.get("benefits") and isinstance(raw.get("benefits"), list) and raw.get("eligid"):
+        return _extract_financial_claimmd(raw)
 
     if not plan_info:
         return result
@@ -679,21 +675,40 @@ def _extract_financial(plan_info: dict[str, Any], raw_response: dict[str, Any] |
             continue
         is_active = plan.get("IsActive", False)
         result["is_active"] = is_active
+        if plan.get("InsurancePlanName"):
+            result.setdefault("plan_name", plan["InsurancePlanName"])
+        if plan.get("ActiveDate"):
+            result.setdefault("coverage_start", plan["ActiveDate"])
         if plan.get("PatientTerminationBenefitDate"):
             result["termination_date"] = plan["PatientTerminationBenefitDate"]
         # Pick up plan-level deductible/copay/coinsurance if present
-        if plan.get("Deductible") is not None:
-            result.setdefault("deductible", _to_float(plan["Deductible"]))
-        if plan.get("DeductibleMax") is not None:
-            result.setdefault("deductible_max", _to_float(plan["DeductibleMax"]))
+        # Waystar uses DeductibleInNetwork / DeductibleOutNetwork
+        for ded_key in ("Deductible", "DeductibleInNetwork", "PlanBinDed"):
+            if plan.get(ded_key) is not None:
+                result.setdefault("deductible", _to_float(plan[ded_key]))
+                break
+        for ded_max_key in ("DeductibleMax", "DeductibleOutNetwork", "PlanBonDed"):
+            if plan.get(ded_max_key) is not None:
+                result.setdefault("deductible_max", _to_float(plan[ded_max_key]))
+                break
+        for ded_rem_key in ("PlanBinDedRem",):
+            if plan.get(ded_rem_key) is not None:
+                result.setdefault("deductible_remaining", _to_float(plan[ded_rem_key]))
+                break
         if plan.get("Copay") is not None:
             result.setdefault("copay", _to_float(plan["Copay"]))
-        if plan.get("Coinsurance") is not None:
-            result.setdefault("coinsurance", _to_float(plan["Coinsurance"]))
+        for coins_key in ("Coinsurance", "CoInsuranceInNetwork"):
+            if plan.get(coins_key) is not None:
+                result.setdefault("coinsurance", _to_float(plan[coins_key]))
+                break
         if plan.get("OutOfPocket") is not None:
             result.setdefault("oop", _to_float(plan["OutOfPocket"]))
         if plan.get("OutOfPocketMax") is not None:
             result.setdefault("oop_max", _to_float(plan["OutOfPocketMax"]))
+        for oop_rem_key in ("PlaoncenBinOopRem", "PlanBinOopRem"):
+            if plan.get(oop_rem_key) is not None:
+                result.setdefault("oop_remaining", _to_float(plan[oop_rem_key]))
+                break
 
     # ── Benefits dict (keyed by service type code) ───────────────
     benefits = plan_info.get("Benefits", {})
@@ -706,26 +721,43 @@ def _extract_financial(plan_info: dict[str, Any], raw_response: dict[str, Any] |
             if isinstance(ind, dict):
                 result["coverage_status"] = ind.get("CoverageStatus", "")
                 result.setdefault("plan_name", ind.get("PlanCoverageDescription"))
-                if ind.get("Deductible") is not None:
-                    result.setdefault("deductible", _to_float(ind["Deductible"]))
-                if ind.get("DeductibleRemaining") is not None:
-                    result["deductible_remaining"] = _to_float(ind["DeductibleRemaining"])
-                if ind.get("Copay") is not None:
-                    result.setdefault("copay", _to_float(ind["Copay"]))
-                if ind.get("Coinsurance") is not None:
-                    result.setdefault("coinsurance", _to_float(ind["Coinsurance"]))
-                if ind.get("OutOfPocket") is not None:
-                    result.setdefault("oop", _to_float(ind["OutOfPocket"]))
-                if ind.get("OutOfPocketRemaining") is not None:
-                    result["oop_remaining"] = _to_float(ind["OutOfPocketRemaining"])
+                # Waystar uses BinDed/BinDedRem/BinOop/BinOopRem
+                for dk in ("Deductible", "BinDed"):
+                    if ind.get(dk) is not None:
+                        result.setdefault("deductible", _to_float(ind[dk]))
+                        break
+                for drk in ("DeductibleRemaining", "BinDedRem"):
+                    if ind.get(drk) is not None:
+                        result.setdefault("deductible_remaining", _to_float(ind[drk]))
+                        break
+                for ck in ("Copay", "BinCopay1"):
+                    if ind.get(ck) is not None:
+                        result.setdefault("copay", _to_float(ind[ck]))
+                        break
+                for cik in ("Coinsurance", "BinCovgPerc"):
+                    if ind.get(cik) is not None:
+                        result.setdefault("coinsurance", ind[cik])
+                        break
+                for ok in ("OutOfPocket", "BinOop"):
+                    if ind.get(ok) is not None:
+                        result.setdefault("oop", _to_float(ind[ok]))
+                        break
+                for ork in ("OutOfPocketRemaining", "BinOopRem"):
+                    if ind.get(ork) is not None:
+                        result.setdefault("oop_remaining", _to_float(ind[ork]))
+                        break
 
             # Family benefits
             fam = svc_data.get("FAM", {})
             if isinstance(fam, dict):
-                if fam.get("Deductible") is not None:
-                    result["family_deductible"] = _to_float(fam["Deductible"])
-                if fam.get("OutOfPocket") is not None:
-                    result["family_oop"] = _to_float(fam["OutOfPocket"])
+                for fdk in ("Deductible", "BinDed"):
+                    if fam.get(fdk) is not None:
+                        result.setdefault("family_deductible", _to_float(fam[fdk]))
+                        break
+                for fok in ("OutOfPocket", "BinOop"):
+                    if fam.get(fok) is not None:
+                        result.setdefault("family_oop", _to_float(fam[fok]))
+                        break
 
     # ── Prior auth ───────────────────────────────────────────────
     pa_required = plan_info.get("PriorAuthRequired") or plan_info.get("authOrCertIndicator")
@@ -843,6 +875,142 @@ def _extract_financial_stedi(data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _extract_financial_claimmd(data: dict[str, Any]) -> dict[str, Any]:
+    """Extract financial/coverage fields from ClaimMD XML eligibility response.
+
+    ClaimMD returns an <elig> element with patient/plan attributes and nested
+    <benefit> elements with coverage codes:
+      1=Active Coverage, C=Deductible, G=Out of Pocket, A=Co-Insurance, B=Co-Payment
+    """
+    result: dict[str, Any] = {}
+
+    # Patient / plan info from <elig> attributes
+    result["subscriber_name"] = f"{data.get('ins_name_f', '')} {data.get('ins_name_l', '')}".strip()
+    result["patient_dob"] = _format_claimmd_date(data.get("ins_dob", ""))
+    result["patient_gender"] = data.get("ins_sex", "")
+    result["member_id"] = data.get("ins_number", "")
+    result["group_number"] = data.get("group_number", "")
+    result["plan_number"] = data.get("plan_number", "")
+
+    # Coverage dates from plan_begin_date (format: YYYYMMDD-YYYYMMDD)
+    plan_dates = data.get("plan_begin_date", "")
+    if "-" in plan_dates:
+        parts = plan_dates.split("-")
+        result["coverage_start"] = _format_claimmd_date(parts[0])
+        result["coverage_end"] = _format_claimmd_date(parts[1])
+    elif plan_dates:
+        result["coverage_start"] = _format_claimmd_date(plan_dates)
+
+    benefits = data.get("benefits", [])
+    has_active = False
+
+    for b in benefits:
+        coverage_code = b.get("benefit_coverage_code", "")
+        coverage_desc = b.get("benefit_coverage_description", "").lower()
+        level = b.get("benefit_level_code", "").upper()
+        amount = _to_float(b.get("benefit_amount"))
+        pct = _to_float(b.get("benefit_percent"))
+        period = b.get("benefit_period_description", "").lower()
+        network = b.get("inplan_network", "")  # Y=in-network, N=out, W=both
+
+        # Active Coverage
+        if coverage_code == "1" or "active" in coverage_desc:
+            has_active = True
+            # Extract plan name and carrier from the first active benefit
+            if b.get("insurance_plan"):
+                result.setdefault("plan_name", b["insurance_plan"])
+            if b.get("insurance_type_description"):
+                result.setdefault("insurance_type", b["insurance_type_description"])
+            # Extract payer entity info
+            for entity in b.get("entities", []):
+                if entity.get("entity_code") == "PR":  # Payer
+                    result.setdefault("carrier_name", entity.get("entity_name", ""))
+                    addr_parts = [entity.get("entity_name", "")]
+                    if entity.get("entity_addr_1"):
+                        addr_parts.append(entity["entity_addr_1"])
+                    city_st = f"{entity.get('entity_city', '')}, {entity.get('entity_state', '')} {entity.get('entity_zip', '')}"
+                    addr_parts.append(city_st.strip())
+                    result["claims_address"] = " | ".join(p for p in addr_parts if p)
+
+        # Deductible (C) — prefer in-network, calendar year
+        if coverage_code == "C" or "deductible" in coverage_desc:
+            if amount is not None:
+                if level == "IND":
+                    if "remaining" in period:
+                        result.setdefault("deductible", amount)
+                    elif "calendar" in period:
+                        if network == "Y" or network == "W":
+                            result.setdefault("deductible_max", amount)
+                        else:
+                            result.setdefault("deductible_max_oon", amount)
+                elif level == "FAM":
+                    if "calendar" in period and (network == "Y" or network == "W"):
+                        result.setdefault("family_deductible", amount)
+
+        # Out of Pocket (G)
+        if coverage_code == "G" or "out of pocket" in coverage_desc:
+            if amount is not None:
+                if level == "IND":
+                    if "remaining" in period:
+                        result.setdefault("oop", amount)
+                    elif "calendar" in period:
+                        if network == "Y" or network == "W":
+                            result.setdefault("oop_max", amount)
+                elif level == "FAM":
+                    if "calendar" in period and (network == "Y" or network == "W"):
+                        result.setdefault("family_oop", amount)
+
+        # Co-Payment (B) — prefer in-network
+        if coverage_code == "B" or "co-payment" in coverage_desc:
+            if amount is not None and (network == "Y" or network == "W"):
+                # Use the first in-network copay for general service type
+                stype = b.get("benefit_code", "")
+                if stype in ("30", "98"):  # Health Plan / Office Visit
+                    result.setdefault("copay", amount)
+                else:
+                    result.setdefault("copay", amount)
+
+        # Co-Insurance (A) — prefer in-network
+        if coverage_code == "A" or "co-insurance" in coverage_desc:
+            if pct is not None and (network == "Y" or network == "W"):
+                result.setdefault("coinsurance", pct)
+
+        # Prior Auth Required — benefit_coverage_code "CB" or description
+        # contains "authorization" or "precertification"
+        benefit_desc = b.get("benefit_description", "").lower()
+        benefit_notes = b.get("benefit_notes", "").lower()
+        if (
+            "authorization" in coverage_desc
+            or "precertification" in coverage_desc
+            or "authorization" in benefit_desc
+            or "precertification" in benefit_desc
+            or "auth required" in benefit_notes
+            or "prior auth" in benefit_notes
+        ):
+            result["prior_auth_required"] = True
+
+    # File status
+    if has_active:
+        result["file_status"] = 1
+        result["file_status_desc"] = "ACTIVE"
+        result["coverage_status"] = "Active Coverage"
+    else:
+        result["file_status"] = 2
+        result["file_status_desc"] = "INACTIVE"
+
+    return result
+
+
+def _format_claimmd_date(raw: str) -> str | None:
+    """Convert YYYYMMDD to YYYY-MM-DD for ClaimMD dates."""
+    if not raw:
+        return None
+    raw = raw.strip()
+    if len(raw) == 8 and raw.isdigit():
+        return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return raw
+
+
 def _format_stedi_date(raw: str) -> str | None:
     """Convert YYYYMMDD to YYYY-MM-DD for Stedi dates."""
     if not raw:
@@ -870,86 +1038,3 @@ def _to_float(val: Any) -> float | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Seed demo data into database
-# ---------------------------------------------------------------------------
-
-def seed_demo_data() -> None:
-    """Pre-populate demo checks into the database (if empty)."""
-    db = SessionLocal()
-    try:
-        count = db.query(EligibilityCheckDB).count()
-        if count > 0:
-            return  # Already seeded
-
-        demo_rows = [
-            EligibilityCheckDB(
-                check_id="CHK-1048", source="single", status="eligible",
-                patient_first_name="Sarah", patient_last_name="Johnson",
-                patient_name="Sarah Johnson", payer_name="Medicare",
-                run_date="2026-03-02 09:15 AM",
-                annual_deductible=850.0, annual_deductible_max=1500.0,
-                out_of_pocket=1200.0, out_of_pocket_max=3500.0,
-                copay=20.0, coinsurance=20.0, prior_auth_required=True,
-                coverage_start="2026-01-01", coverage_end="2026-12-31",
-                plan_name="Medicare Part B",
-                findings=[], total_errors=0, total_warnings=0, execution_time=1.234,
-            ),
-            EligibilityCheckDB(
-                check_id="CHK-1047", source="batch", status="eligible",
-                patient_first_name="Michael", patient_last_name="Chen",
-                patient_name="Michael Chen", payer_name="BlueCross BlueShield",
-                run_date="2026-03-02 08:42 AM",
-                annual_deductible=500.0, annual_deductible_max=1000.0,
-                out_of_pocket=2000.0, out_of_pocket_max=5000.0,
-                copay=30.0, coinsurance=15.0, prior_auth_required=False,
-                coverage_start="2026-01-01", coverage_end="2026-12-31",
-                plan_name="PPO Gold", group_number="GRP-44521",
-                findings=[], total_errors=0, total_warnings=0, execution_time=0.987,
-            ),
-            EligibilityCheckDB(
-                check_id="CHK-1046", source="batch", status="not_eligible",
-                patient_first_name="Emily", patient_last_name="Rodriguez",
-                patient_name="Emily Rodriguez", payer_name="Aetna",
-                run_date="2026-03-02 07:30 AM",
-                findings=[
-                    {"code": "ELIG_COVERAGE_TERMINATED", "message": "Coverage terminated on 2025-12-31", "severity": "error", "field_name": "coverage", "suggestion": "Verify patient has active coverage or check alternate payer."},
-                    {"code": "ELIG_MEMBER_ID_MISMATCH", "message": "Member ID does not match payer records", "severity": "error", "field_name": "member_id", "suggestion": "Double-check member ID on patient's insurance card."},
-                ],
-                total_errors=2, total_warnings=0, execution_time=1.456,
-            ),
-            EligibilityCheckDB(
-                check_id="CHK-1045", source="single", status="eligible",
-                patient_first_name="David", patient_last_name="Kim",
-                patient_name="David Kim", payer_name="UnitedHealthcare",
-                run_date="2026-03-01 04:15 PM",
-                annual_deductible=1200.0, annual_deductible_max=2000.0,
-                out_of_pocket=3000.0, out_of_pocket_max=6000.0,
-                copay=40.0, coinsurance=25.0, prior_auth_required=True,
-                coverage_start="2026-01-01", coverage_end="2026-12-31",
-                plan_name="Choice Plus POS", group_number="GRP-77892",
-                findings=[
-                    {"code": "ELIG_PA_REQUIRED", "message": "Prior authorization required for requested service type", "severity": "warning", "field_name": "service_type", "suggestion": "Submit prior authorization before claim to avoid denial."},
-                ],
-                total_errors=0, total_warnings=1, execution_time=2.103,
-            ),
-            EligibilityCheckDB(
-                check_id="CHK-1044", source="single", status="pending",
-                patient_first_name="Jennifer", patient_last_name="Wilson",
-                patient_name="Jennifer Wilson", payer_name="Cigna",
-                run_date="2026-03-01 02:22 PM",
-                findings=[
-                    {"code": "CLEARINGHOUSE_TIMEOUT", "message": "Payer response pending — check back later", "severity": "warning", "field_name": "", "suggestion": "Retry eligibility check in a few minutes."},
-                ],
-                total_errors=0, total_warnings=1, execution_time=30.0,
-            ),
-        ]
-
-        db.add_all(demo_rows)
-        db.commit()
-        print("[DB] Seeded 5 demo eligibility checks")
-    except Exception as exc:
-        db.rollback()
-        logger.warning("Failed to seed demo data: %s", exc)
-    finally:
-        db.close()

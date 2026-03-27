@@ -116,9 +116,106 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Close dropdown on Escape key
+// ── Global Keyboard Shortcuts ───────────────────────────────────
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeUserMenu();
+  const tag = (e.target.tagName || '').toLowerCase();
+  const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+  // Escape - close modals, dropdowns, overlays
+  if (e.key === 'Escape') {
+    closeUserMenu();
+    closeShortcuts();
+    const paModal = document.getElementById('pa-modal');
+    if (paModal && paModal.style.display !== 'none') { closePAModal(); return; }
+    return;
+  }
+
+  // ? key (not in input) - toggle shortcuts overlay
+  if (e.key === '?' && !isInput) {
+    e.preventDefault();
+    toggleShortcuts();
+    return;
+  }
+
+  // Alt + number for page navigation
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    const pageMap = {
+      '1': 'morning-brief',
+      '2': 'dashboard',
+      '3': 'appointments',
+      '4': 'pa-requests',
+      '5': 'reports',
+      '6': 'ehr-sync',
+      '7': 'settings'
+    };
+    if (pageMap[e.key]) {
+      e.preventDefault();
+      navigateTo(pageMap[e.key]);
+      return;
+    }
+
+    // Alt+N - focus first name field
+    if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      navigateTo('new-check');
+      setTimeout(() => {
+        const el = document.getElementById('patient_first_name');
+        if (el) el.focus();
+      }, 100);
+      return;
+    }
+
+    // Alt+P - focus payer search
+    if (e.key === 'p' || e.key === 'P') {
+      e.preventDefault();
+      navigateTo('new-check');
+      setTimeout(() => {
+        const el = document.getElementById('payer_search');
+        if (el) el.focus();
+      }, 100);
+      return;
+    }
+
+    // Alt+Enter - submit eligibility check
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const submitBtn = document.getElementById('submit-btn');
+      if (submitBtn) submitBtn.click();
+      return;
+    }
+
+    // Alt+C - clear form
+    if (e.key === 'c' || e.key === 'C') {
+      e.preventDefault();
+      if (typeof clearForm === 'function') clearForm();
+      return;
+    }
+  }
+
+  // Enter on sidebar nav items
+  if (e.key === 'Enter' && e.target.classList.contains('nav-item')) {
+    e.preventDefault();
+    e.target.click();
+  }
+});
+
+// Shortcuts overlay toggle
+function toggleShortcuts() {
+  const overlay = document.getElementById('shortcuts-overlay');
+  if (overlay) overlay.classList.toggle('open');
+}
+
+function closeShortcuts() {
+  const overlay = document.getElementById('shortcuts-overlay');
+  if (overlay) overlay.classList.remove('open');
+}
+
+// Close shortcuts overlay when clicking outside the panel
+document.addEventListener('click', function(e) {
+  const overlay = document.getElementById('shortcuts-overlay');
+  if (overlay && overlay.classList.contains('open') && e.target === overlay) {
+    closeShortcuts();
+  }
 });
 
 // ── Profile Page Functions ──────────────────────────────────────
@@ -215,14 +312,33 @@ function navigateTo(pageName) {
     item.classList.toggle('active', item.dataset.page === pageName);
   });
 
+  // Persist current page so refresh stays on same page
+  try { localStorage.setItem('thinkAI_currentPage', pageName); } catch(e) {}
+
   // Refresh dashboard data when navigating to it
   if (pageName === 'dashboard') {
     loadRecentChecks();
     renderPAPipeline();
   }
 
+  // Load PA requests when navigating to PA page
+  if (pageName === 'pa-requests') {
+    loadPARequests();
+  }
+
   window.scrollTo(0, 0);
 }
+
+// Restore last page on load (or default to morning-brief)
+(function restoreLastPage() {
+  var saved = null;
+  try { saved = localStorage.getItem('thinkAI_currentPage'); } catch(e) {}
+  if (saved && document.getElementById('page-' + saved)) {
+    navigateTo(saved);
+  } else {
+    navigateTo('morning-brief');
+  }
+})();
 
 // Legacy showPage for results page navigation
 function showPage(name) {
@@ -423,12 +539,8 @@ function renderRecentChecks(checks) {
   _allChecks = checks;
   _checksPage = 1;
 
-  // Update dashboard stats
-  const totalEl = document.getElementById('stat-total-checks');
-  const eligibleEl = document.getElementById('stat-eligible');
+  // Update sidebar stats only (dashboard stats come from /api/v1/stats)
   const sidebarChecks = document.getElementById('sidebar-checks-count');
-  if (totalEl) totalEl.textContent = checks.length.toLocaleString();
-  if (eligibleEl) eligibleEl.textContent = checks.filter(c => c.status === 'eligible').length.toLocaleString();
   if (sidebarChecks) sidebarChecks.textContent = checks.length;
 
   _renderChecksPage();
@@ -458,16 +570,18 @@ function _renderChecksPage() {
       ? '<span class="badge badge-yes">Yes</span>'
       : '<span class="badge badge-no">No</span>';
     const time = c.run_date || '--';
-    const source = c.source || 'single';
-    const sourceBadge = source === 'batch'
-      ? '<span class="badge badge-batch">Batch</span>'
-      : '<span class="badge badge-single">Single</span>';
+    const ch = c.clearinghouse_provider || '--';
+    const chLabel = {'stedi': 'Stedi', 'waystar': 'Waystar', 'claimmd': 'Claim.MD'}[ch] || ch;
+    const carrier = c.carrier_name || '--';
+    const plan = c.plan_name || '';
+    const responseInfo = carrier !== '--' ? carrier + (plan ? ' / ' + plan : '') : (c.coverage_status || '--');
     return `
     <tr style="cursor:pointer;" onclick="viewResult('${c.check_id}')">
       <td><strong>${c.patient_name}</strong></td>
       <td>${c.payer_name}</td>
-      <td>${sourceBadge}</td>
+      <td><span class="badge badge-single">${chLabel}</span></td>
       <td>${statusBadge(c.status)}</td>
+      <td><small>${responseInfo}</small></td>
       <td>${paBadge}</td>
       <td>${time}</td>
     </tr>
@@ -760,7 +874,9 @@ document.getElementById('eligibility-form').addEventListener('submit', async (e)
     payer_name: payerName || payerId,
     provider_npi: document.getElementById('provider_npi').value.trim(),
     provider_name: document.getElementById('provider_name').value.trim(),
+    provider_tax_id: document.getElementById('provider_tax_id').value.trim(),
     service_type_code: serviceTypeCode,
+    clearinghouse: document.getElementById('clearinghouse_select').value || document.getElementById('global_provider_select').value || '',
   };
 
   try {
@@ -847,7 +963,8 @@ function renderResults(r) {
   document.getElementById('r-coinsurance').textContent =
     r.coinsurance !== null && r.coinsurance !== undefined ? r.coinsurance + '%' : '--';
 
-  // Prior Auth
+  // Prior Auth — always show button when patient is eligible so staff can
+  // initiate a PA inquiry regardless of whether the payer flagged it as required.
   const paEl = document.getElementById('r-prior-auth');
   const btnPA = document.getElementById('btn-proceed-pa');
   if (r.prior_auth_required === true) {
@@ -855,10 +972,12 @@ function renderResults(r) {
     btnPA.style.display = 'inline-flex';
   } else if (r.prior_auth_required === false) {
     paEl.innerHTML = '<span class="badge badge-not-required">Not Required</span>';
-    btnPA.style.display = 'none';
+    // Still allow staff to manually initiate PA if needed
+    btnPA.style.display = (r.status === 'eligible') ? 'inline-flex' : 'none';
   } else {
     paEl.textContent = '--';
-    btnPA.style.display = 'none';
+    // Show PA button for eligible patients even when prior_auth field is unknown
+    btnPA.style.display = (r.status === 'eligible') ? 'inline-flex' : 'none';
   }
 
   document.getElementById('r-plan-name').textContent = r.plan_name || '--';
@@ -922,6 +1041,23 @@ function renderResults(r) {
     }).join('');
   } else {
     findingsCard.style.display = 'none';
+  }
+
+  // Raw Eligibility Response
+  var rawCard = document.getElementById('raw-response-card');
+  if (r.raw_response) {
+    rawCard.style.display = 'block';
+    var chLabels = {'stedi': 'Stedi', 'waystar': 'Waystar / Zirmed', 'claimmd': 'Claim.MD'};
+    document.getElementById('r-clearinghouse').textContent = chLabels[r.clearinghouse_provider] || r.clearinghouse_provider || '--';
+    document.getElementById('r-exec-time').textContent = r.execution_time ? r.execution_time + 's' : '--';
+    document.getElementById('r-check-id-display').textContent = r.check_id || '--';
+    try {
+      document.getElementById('r-raw-json').textContent = JSON.stringify(r.raw_response, null, 2);
+    } catch(e) {
+      document.getElementById('r-raw-json').textContent = String(r.raw_response);
+    }
+  } else {
+    rawCard.style.display = 'none';
   }
 
   // AI Coverage Prediction
@@ -1196,6 +1332,104 @@ function clearForm() {
   document.getElementById('service_type_search').value = '30 - Health Benefit Plan Coverage';
 }
 
+// ── Provider-specific demo data loaders ─────────────────────────
+
+function _fillDemoForm(data) {
+  clearForm();
+  document.getElementById('patient_first_name').value = data.first;
+  document.getElementById('patient_last_name').value = data.last;
+  document.getElementById('patient_dob').value = data.dob;
+  document.getElementById('member_id').value = data.member_id;
+  document.getElementById('provider_npi').value = data.npi;
+  document.getElementById('provider_name').value = data.provider_name;
+  document.getElementById('provider_tax_id').value = data.provider_tax_id || '';
+  document.getElementById('payer_id').value = data.payer_id;
+  document.getElementById('payer_name_hidden').value = data.payer_name;
+  document.getElementById('payer_search').value = data.payer_id + ' - ' + data.payer_name;
+  if (data.service_type_code) {
+    document.getElementById('service_type_code').value = data.service_type_code;
+    document.getElementById('service_type_search').value = data.service_type_code + ' - ' + (data.service_type_name || 'Health Benefit Plan Coverage');
+  }
+  // Set clearinghouse dropdowns (form + global topbar)
+  const chSelect = document.getElementById('clearinghouse_select');
+  if (chSelect && data.clearinghouse) {
+    chSelect.value = data.clearinghouse;
+  }
+  const globalSelect = document.getElementById('global_provider_select');
+  if (globalSelect && data.clearinghouse) {
+    globalSelect.value = data.clearinghouse;
+    const provider = _allProviders.find(p => p.id === data.clearinghouse);
+    if (provider) _updateProviderStatusDot(provider);
+  }
+  if (window.validateNPIField) window.validateNPIField();
+  console.log('Demo data loaded for ' + data.clearinghouse + ':', data);
+}
+
+// Per-provider test data — loaded by the single "Load Test Data" button
+const _providerTestData = {
+  stedi: {
+    first: 'Jane',
+    last: 'Doe',
+    dob: '2004-04-04',
+    member_id: 'AETNA12345',
+    npi: '1111111112',
+    provider_name: 'ACME Health Services',
+    provider_tax_id: '999999999',
+    payer_id: '60054',
+    payer_name: 'Aetna',
+    service_type_code: '30',
+    service_type_name: 'Health Benefit Plan Coverage',
+    clearinghouse: 'stedi',
+  },
+  waystar: {
+    first: 'Alice',
+    last: 'Williams',
+    dob: '1980-07-22',
+    member_id: 'SUB987654321',
+    npi: '1245319599',
+    provider_name: 'ACME Health Services',
+    provider_tax_id: '999999999',
+    payer_id: '66666',
+    payer_name: 'ZIRMED',
+    service_type_code: '30',
+    service_type_name: 'Health Benefit Plan Coverage',
+    clearinghouse: 'waystar',
+  },
+  claimmd: {
+    first: 'Jane',
+    last: 'Doe',
+    dob: '2004-04-04',
+    member_id: 'AETNA12345',
+    npi: '1111111112',
+    provider_name: 'ACME Health Services',
+    provider_tax_id: '999999999',
+    payer_id: '60054',
+    payer_name: 'Aetna',
+    service_type_code: '30',
+    service_type_name: 'Health Benefit Plan Coverage',
+    clearinghouse: 'claimmd',
+  },
+};
+
+function loadTestDataForProvider() {
+  // Determine which provider is selected (form override > global selector)
+  const formSelect = document.getElementById('clearinghouse_select');
+  const globalSelect = document.getElementById('global_provider_select');
+  const provider = (formSelect && formSelect.value) || (globalSelect && globalSelect.value) || '';
+
+  const data = _providerTestData[provider];
+  if (data) {
+    _fillDemoForm(data);
+  } else {
+    // Fallback: load server test config or default to stedi
+    if (_testConfig) {
+      loadTestData();
+    } else {
+      _fillDemoForm(_providerTestData.stedi);
+    }
+  }
+}
+
 // ── Prior Auth ────────────────────────────────────────────────
 
 // Store last eligibility result for PA flow
@@ -1221,7 +1455,10 @@ async function runPriorAuth() {
   const r = _lastEligResult;
   const overlay = document.getElementById('loading-overlay');
   overlay.querySelector('p').textContent = 'Submitting Prior Auth inquiry...';
-  overlay.querySelector('.loading-sub').textContent = 'Contacting Waystar PA API (this may take 10-15 seconds)';
+  // Use the clearinghouse from the eligibility result (not the form dropdown)
+  const selectedProvider = r.clearinghouse_provider || document.getElementById('clearinghouse_select').value || document.getElementById('global_provider_select').value || '';
+  const providerLabel = {'claimmd': 'Claim.MD', 'waystar': 'Waystar', 'stedi': 'Stedi'}[selectedProvider] || selectedProvider;
+  overlay.querySelector('.loading-sub').textContent = 'Contacting ' + providerLabel + ' PA API (this may take 10-15 seconds)';
   overlay.style.display = 'flex';
 
   try {
@@ -1234,8 +1471,10 @@ async function runPriorAuth() {
       payer_name: r.payer_name,
       provider_npi: document.getElementById('provider_npi').value || '',
       provider_name: document.getElementById('provider_name').value || '',
+      provider_tax_id: document.getElementById('provider_tax_id').value || '',
       service_type_code: document.getElementById('service_type_code').value || '30',
       eligibility_check_id: r.check_id || '',
+      clearinghouse: selectedProvider,
     };
 
     console.log('PA payload:', payload);
@@ -1295,10 +1534,97 @@ function showPAModal(r) {
   }
 
   document.getElementById('pa-modal').style.display = 'flex';
+
+  // Refresh PA table in background so it's up to date when user visits PA page
+  loadPARequests();
 }
 
 function closePAModal() {
   document.getElementById('pa-modal').style.display = 'none';
+}
+
+// ── PA Requests Page ─────────────────────────────────────────
+
+async function loadPARequests() {
+  try {
+    const res = await authFetch(API + '/api/v1/prior-auth/checks');
+    if (!res.ok) return;
+    const checks = await res.json();
+    renderPATable(checks);
+  } catch (err) {
+    console.error('Failed to load PA requests:', err);
+  }
+}
+
+function renderPATable(checks) {
+  const tbody = document.getElementById('pa-table-body');
+  if (!checks || checks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No PA requests yet. Run an eligibility check and click "Proceed to Prior Auth".</td></tr>';
+    return;
+  }
+
+  const statusBadge = (s) => {
+    const cls = s === 'approved' ? 'eligible' : s === 'denied' ? 'error' : s === 'pending' ? 'pending' : s === 'submitted' ? 'pending' : 'error';
+    const label = s.charAt(0).toUpperCase() + s.slice(1);
+    return `<span class="badge badge-${cls}">${label}</span>`;
+  };
+
+  tbody.innerHTML = checks.map(c => `
+    <tr onclick="showPADetailPanel('${c.pa_id}')" style="cursor:pointer;" title="Click to view details">
+      <td><strong>${c.pa_id}</strong></td>
+      <td>${c.run_date || '--'}</td>
+      <td>${c.patient_name || '--'}</td>
+      <td>${c.payer_name || c.payer_id || '--'}</td>
+      <td>${c.provider_name || c.provider_npi || '--'}</td>
+      <td>${statusBadge(c.status)}</td>
+      <td>${c.auth_number || '--'}</td>
+      <td><button class="btn btn-sm" onclick="event.stopPropagation(); showPADetailPanel('${c.pa_id}')">View</button></td>
+    </tr>
+  `).join('');
+}
+
+async function showPADetailPanel(paId) {
+  try {
+    const res = await authFetch(API + '/api/v1/prior-auth/checks/' + paId);
+    if (!res.ok) { alert('PA not found'); return; }
+    const d = await res.json();
+
+    document.getElementById('pa-detail-panel').style.display = 'block';
+    document.getElementById('pa-detail-id').textContent = d.pa_id;
+
+    // Request fields
+    document.getElementById('pa-d-patient').textContent = d.patient_name || '--';
+    document.getElementById('pa-d-dob').textContent = d.patient_dob || '--';
+    document.getElementById('pa-d-member').textContent = d.member_id || '--';
+    document.getElementById('pa-d-payer').textContent = (d.payer_id || '') + (d.payer_name ? ' - ' + d.payer_name : '');
+    document.getElementById('pa-d-npi').textContent = d.provider_npi || '--';
+    document.getElementById('pa-d-provname').textContent = d.provider_name || '--';
+    document.getElementById('pa-d-svc').textContent = d.service_type_code || '--';
+    document.getElementById('pa-d-diag').textContent = d.diagnosis_code || '--';
+    document.getElementById('pa-d-proc').textContent = d.procedure_code || '--';
+    document.getElementById('pa-d-elig').textContent = d.eligibility_check_id || '--';
+
+    // Response fields
+    const statusEl = document.getElementById('pa-d-status');
+    statusEl.textContent = d.status;
+    statusEl.className = 'coverage-value badge badge-' + (d.status === 'approved' ? 'eligible' : d.status === 'denied' ? 'error' : d.status === 'pending' ? 'pending' : 'error');
+
+    document.getElementById('pa-d-auth').textContent = d.auth_number || '--';
+    document.getElementById('pa-d-ref').textContent = d.reference_id || '--';
+    document.getElementById('pa-d-msg').textContent = d.status_message || '--';
+    document.getElementById('pa-d-error').textContent = d.error_message || '--';
+    document.getElementById('pa-d-time').textContent = (d.execution_time || 0) + 's';
+    document.getElementById('pa-d-date').textContent = d.run_date || '--';
+
+    // Raw response
+    const rawEl = document.getElementById('pa-d-raw');
+    rawEl.textContent = d.raw_response ? JSON.stringify(d.raw_response, null, 2) : 'No raw response';
+
+    // Scroll to detail
+    document.getElementById('pa-detail-panel').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error('Failed to load PA detail:', err);
+  }
 }
 
 // ── Test Environment Config ───────────────────────────────────
@@ -1831,52 +2157,687 @@ async function runBatchChecks() {
   });
 })();
 
-// ── Dashboard PA Pipeline (mock data for now) ─────────────────
+// ── Dashboard PA Pipeline (from real PA data) ─────────────────
 function renderPAPipeline() {
-  const pendingData = [
-    { name: 'Amanda Wilson', payer: 'BCBS', service: 'MRI Scan' },
-    { name: 'James Lee', payer: 'Aetna', service: 'CT Scan' },
-    { name: 'Lisa Brown', payer: 'Cigna', service: 'Surgery' },
-  ];
-  const submittedData = [
-    { name: 'Mark Davis', payer: 'UHC', service: 'Physical Therapy' },
-    { name: 'Sophia Garcia', payer: 'Humana', service: 'Specialist Visit' },
-  ];
-  const approvedData = [
-    { name: 'Alex Thompson', payer: 'Medicare', service: 'Lab Tests' },
-    { name: 'Maria Sanchez', payer: 'BCBS', service: 'Imaging' },
-    { name: 'John Anderson', payer: 'Aetna', service: 'Surgery' },
-  ];
+  // Fetch real PA data from the stats cache or API
+  var paChecks = (_statsData && _statsData.pa_checks) || [];
+  var pendingData = paChecks.filter(function(p) { return p.status === 'pending' || p.status === 'submitted'; });
+  var approvedData = paChecks.filter(function(p) { return p.status === 'approved'; });
+  var deniedData = paChecks.filter(function(p) { return p.status === 'denied' || p.status === 'error'; });
 
   document.getElementById('pipe-pending-count').textContent = pendingData.length;
-  document.getElementById('pipe-submitted-count').textContent = submittedData.length;
+  document.getElementById('pipe-submitted-count').textContent = deniedData.length;
   document.getElementById('pipe-approved-count').textContent = approvedData.length;
 
-  const renderCards = (data) => data.map(d => `
-    <div class="pipeline-card">
-      <div class="pipeline-card-name">${d.name}</div>
-      <div class="pipeline-card-payer">${d.payer}</div>
-      <div class="pipeline-card-service">${d.service}</div>
-    </div>
-  `).join('');
+  var renderCards = function(data) {
+    if (data.length === 0) return '<div style="color:var(--text-secondary);font-size:12px;padding:12px;">None</div>';
+    return data.map(function(d) {
+      return '<div class="pipeline-card"><div class="pipeline-card-name">' + (d.patient_name || '--') + '</div>' +
+        '<div class="pipeline-card-payer">' + (d.payer_name || d.payer_id || '--') + '</div>' +
+        '<div class="pipeline-card-service">' + (d.procedure_code || d.service_type_code || '--') + '</div></div>';
+    }).join('');
+  };
 
   document.getElementById('pipe-pending').innerHTML = renderCards(pendingData);
-  document.getElementById('pipe-submitted').innerHTML = renderCards(submittedData);
+  document.getElementById('pipe-submitted').innerHTML = renderCards(deniedData);
   document.getElementById('pipe-approved').innerHTML = renderCards(approvedData);
+}
 
-  // Update dashboard stat
-  const paEl = document.getElementById('stat-pa-submitted');
-  if (paEl) paEl.textContent = (pendingData.length + submittedData.length + approvedData.length);
+// ── Load clearinghouse providers into dropdowns ──────────────────
+let _allProviders = [];
 
-  const avgEl = document.getElementById('stat-avg-time');
-  if (avgEl) avgEl.textContent = '2.3s';
-  const sidebarAvg = document.getElementById('sidebar-avg-time');
-  if (sidebarAvg) sidebarAvg.textContent = '1.8s';
-  const sidebarRate = document.getElementById('sidebar-elig-rate');
-  if (sidebarRate) sidebarRate.textContent = '92.4%';
+async function loadProviders() {
+  try {
+    const res = await authFetch(API + '/api/v1/providers');
+    if (!res.ok) return;
+    _allProviders = await res.json();
+
+    // Populate form dropdown
+    const formSelect = document.getElementById('clearinghouse_select');
+    if (formSelect) {
+      // Keep the first "Default" option, clear the rest
+      while (formSelect.options.length > 1) formSelect.remove(1);
+      _allProviders.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.label + (p.is_default ? ' (default)' : '') + (!p.configured ? ' — not configured' : '');
+        if (!p.configured) opt.disabled = true;
+        if (p.is_default) opt.selected = true;
+        formSelect.appendChild(opt);
+      });
+    }
+
+    // Populate global topbar dropdown
+    const globalSelect = document.getElementById('global_provider_select');
+    if (globalSelect) {
+      globalSelect.innerHTML = '';
+      _allProviders.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name + (p.is_default ? ' (default)' : '');
+        if (p.is_default) opt.selected = true;
+        globalSelect.appendChild(opt);
+      });
+      // Set initial status dot
+      const defaultProvider = _allProviders.find(p => p.is_default) || _allProviders[0];
+      if (defaultProvider) _updateProviderStatusDot(defaultProvider);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function _updateProviderStatusDot(provider) {
+  const dot = document.getElementById('global-provider-status');
+  if (!dot) return;
+  if (provider.configured) {
+    dot.className = 'provider-status-dot connected';
+    dot.title = provider.name + ' — Configured';
+  } else {
+    dot.className = 'provider-status-dot not-configured';
+    dot.title = provider.name + ' — Not configured (go to Settings)';
+  }
+}
+
+function onGlobalProviderChange(providerId) {
+  // Sync to form dropdown
+  const formSelect = document.getElementById('clearinghouse_select');
+  if (formSelect) formSelect.value = providerId;
+
+  // Update status dot
+  const provider = _allProviders.find(p => p.id === providerId);
+  if (provider) _updateProviderStatusDot(provider);
+}
+
+// Sync form dropdown back to global dropdown when changed
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'clearinghouse_select') {
+    const globalSelect = document.getElementById('global_provider_select');
+    if (globalSelect && e.target.value) {
+      globalSelect.value = e.target.value;
+      const provider = _allProviders.find(p => p.id === e.target.value);
+      if (provider) _updateProviderStatusDot(provider);
+    }
+  }
+});
+
+// ── Settings: Provider Config UI ─────────────────────────────
+let _settingsProviders = [];
+
+async function loadSettingsProviders() {
+  try {
+    const res = await authFetch(API + '/api/v1/providers');
+    if (!res.ok) return;
+    _settingsProviders = await res.json();
+    renderProviderTabs();
+    if (_settingsProviders.length) selectProviderTab(_settingsProviders[0].id);
+  } catch (e) { /* ignore */ }
+}
+
+function renderProviderTabs() {
+  const tabsEl = document.getElementById('provider-tabs');
+  if (!tabsEl) return;
+  tabsEl.innerHTML = _settingsProviders.map(p => {
+    const dotClass = p.is_default ? 'is-default' : (p.configured ? 'configured' : '');
+    return `<div class="provider-tab" data-provider="${p.id}" onclick="selectProviderTab('${p.id}')">
+      <span class="tab-dot ${dotClass}"></span>
+      ${p.name}
+      ${p.is_default ? '<span class="tab-badge">DEFAULT</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+async function selectProviderTab(providerId) {
+  document.querySelectorAll('.provider-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.provider === providerId);
+  });
+  try {
+    const res = await authFetch(API + '/api/v1/providers/' + providerId);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderProviderPanel(data);
+  } catch (e) { /* ignore */ }
+}
+
+function renderProviderPanel(provider) {
+  const panelsEl = document.getElementById('provider-panels');
+  if (!panelsEl) return;
+
+  const fieldsHtml = provider.fields.map(f => {
+    const val = (provider.config && provider.config[f.key]) || '';
+    const inputType = f.secret ? 'password' : 'text';
+    const reqMark = f.required ? ' <span class="req">*</span>' : '';
+    const ph = f.placeholder || '';
+    return `<div class="provider-config-field">
+      <label>${f.label}${reqMark}</label>
+      <input type="${inputType}" id="prov-cfg-${provider.id}-${f.key}" value="${val}" placeholder="${ph}" autocomplete="off" />
+    </div>`;
+  }).join('');
+
+  const defaultBtnClass = provider.is_default ? 'btn-set-default is-default' : 'btn-set-default';
+  const defaultBtnText = provider.is_default ? '&#10003; Default Provider' : 'Set as Default';
+
+  panelsEl.innerHTML = `
+    <div class="provider-panel active">
+      <div class="provider-panel-header">
+        <div>
+          <div class="provider-panel-title">${provider.label}</div>
+          <div style="margin-top:4px;">
+            <span class="provider-card-status ${provider.configured ? 'active' : 'inactive'}" style="font-size:12px;">
+              ${provider.configured ? 'Configured' : 'Not configured'}
+            </span>
+          </div>
+        </div>
+        <div class="provider-panel-supports">
+          ${provider.supports.map(s => '<span class="provider-tag">' + s.replace('_', ' ') + '</span>').join('')}
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:0;">
+        <h2 class="card-title" style="font-size:14px;">Credentials</h2>
+        <div class="provider-config-form">
+          ${fieldsHtml}
+        </div>
+        <div class="provider-actions-bar">
+          <button class="${defaultBtnClass}" id="btn-default-${provider.id}" onclick="setProviderDefault('${provider.id}')" ${provider.is_default ? 'disabled' : ''}>
+            ${defaultBtnText}
+          </button>
+          <div class="spacer"></div>
+          <button class="btn-test-connection" id="btn-test-${provider.id}" onclick="testProviderConnection('${provider.id}')">
+            &#9889; Test Connection
+          </button>
+          <button class="btn btn-primary" onclick="saveProviderConfig('${provider.id}')">
+            Save Configuration
+          </button>
+        </div>
+        <div class="provider-test-result" id="provider-result-${provider.id}"></div>
+      </div>
+    </div>
+  `;
+}
+
+function _collectProviderConfig(providerId) {
+  const provider = _settingsProviders.find(p => p.id === providerId);
+  if (!provider) return {};
+  const config = {};
+  (provider.fields || []).forEach(f => {
+    const input = document.getElementById('prov-cfg-' + providerId + '-' + f.key);
+    if (input) config[f.key] = input.value;
+  });
+  return config;
+}
+
+async function saveProviderConfig(providerId) {
+  const config = _collectProviderConfig(providerId);
+  const resultEl = document.getElementById('provider-result-' + providerId);
+  try {
+    const res = await authFetch(API + '/api/v1/providers/' + providerId + '/save', {
+      method: 'POST',
+      body: JSON.stringify({ config: config }),
+    });
+    const data = await res.json();
+    if (resultEl) {
+      resultEl.textContent = data.message || 'Saved';
+      resultEl.className = 'provider-test-result ' + (data.status === 'ok' ? 'success' : 'error');
+    }
+    await loadSettingsProviders();
+    await loadProviders();
+    await selectProviderTab(providerId);
+  } catch (e) {
+    if (resultEl) {
+      resultEl.textContent = 'Failed to save: ' + e.message;
+      resultEl.className = 'provider-test-result error';
+    }
+  }
+}
+
+async function testProviderConnection(providerId) {
+  const resultEl = document.getElementById('provider-result-' + providerId);
+  const btn = document.getElementById('btn-test-' + providerId);
+  if (resultEl) { resultEl.textContent = 'Testing connection...'; resultEl.className = 'provider-test-result testing'; }
+  if (btn) btn.disabled = true;
+
+  // Save first so test uses latest values
+  const config = _collectProviderConfig(providerId);
+  await authFetch(API + '/api/v1/providers/' + providerId + '/save', {
+    method: 'POST', body: JSON.stringify({ config: config }),
+  });
+
+  try {
+    const res = await authFetch(API + '/api/v1/providers/' + providerId + '/test', { method: 'POST' });
+    const data = await res.json();
+    if (resultEl) {
+      resultEl.textContent = data.message || (data.status === 'ok' ? 'Connection successful' : 'Connection failed');
+      resultEl.className = 'provider-test-result ' + (data.status === 'ok' ? 'success' : 'error');
+    }
+  } catch (e) {
+    if (resultEl) { resultEl.textContent = 'Test failed: ' + e.message; resultEl.className = 'provider-test-result error'; }
+  }
+  if (btn) btn.disabled = false;
+}
+
+async function setProviderDefault(providerId) {
+  try {
+    const res = await authFetch(API + '/api/v1/providers/' + providerId + '/set-default', { method: 'POST' });
+    const data = await res.json();
+    const resultEl = document.getElementById('provider-result-' + providerId);
+    if (resultEl) {
+      resultEl.textContent = data.message || 'Done';
+      resultEl.className = 'provider-test-result ' + (data.status === 'ok' ? 'success' : 'error');
+    }
+    await loadSettingsProviders();
+    await loadProviders();
+    await selectProviderTab(providerId);
+  } catch (e) { /* ignore */ }
+}
+
+// ══════════════════════════════════════════════════════════════
+// NEW PAGES — Morning Brief, Appointments, Reports, etc.
+// All pages pull REAL data from /api/v1/stats
+// ══════════════════════════════════════════════════════════════
+
+var _statsData = null; // cached stats
+
+async function loadAllPageData() {
+  try {
+    const res = await authFetch(API + '/api/v1/stats');
+    if (res.ok) _statsData = await res.json();
+  } catch (e) { console.warn('Stats fetch failed:', e); }
+  renderMorningBrief();
+  renderAppointments();
+  renderReportsPage();
+  renderPAPipeline();
+  updateDashboardStats();
+}
+
+function updateDashboardStats() {
+  if (!_statsData) return;
+  var e = _statsData.eligibility || {};
+  var p = _statsData.prior_auth || {};
+  var el = function(id, v) { var x = document.getElementById(id); if (x) x.textContent = v; };
+  el('stat-total-checks', e.total || 0);
+  el('stat-eligible', e.eligible || 0);
+  el('stat-pa-submitted', p.total || 0);
+  el('stat-avg-time', e.avg_time ? e.avg_time + 's' : '--');
+  // Also update sidebar stats
+  el('sidebar-checks-count', e.total || 0);
+  el('sidebar-avg-time', e.avg_time ? e.avg_time + 's' : '--');
+  el('sidebar-elig-rate', e.elig_rate ? e.elig_rate + '%' : '--');
+}
+
+// ── Copy raw response ─────────────────────────────────
+function copyRawResponse() {
+  var el = document.getElementById('r-raw-json');
+  if (el) {
+    navigator.clipboard.writeText(el.textContent).then(function() {
+      alert('Response JSON copied to clipboard');
+    }).catch(function() {
+      // Fallback
+      var range = document.createRange();
+      range.selectNode(el);
+      window.getSelection().removeAllRanges();
+      window.getSelection().addRange(range);
+      document.execCommand('copy');
+      window.getSelection().removeAllRanges();
+      alert('Response JSON copied to clipboard');
+    });
+  }
+}
+
+// ── New Check Dropdown ────────────────────────────────
+function toggleNewCheckDropdown(e) {
+  e && e.stopPropagation();
+  const dd = document.getElementById('new-check-dropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+function closeNewCheckDropdown() {
+  const dd = document.getElementById('new-check-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+  const w = document.querySelector('.new-check-dropdown-wrapper');
+  if (w && !w.contains(e.target)) closeNewCheckDropdown();
+});
+
+// ── Morning Brief ─────────────────────────────────────
+function renderMorningBrief() {
+  var now = new Date();
+  var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var greeting = document.getElementById('mb-greeting');
+  if (greeting) greeting.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ' \u2014 Morning Brief';
+
+  var checks = (_statsData && _statsData.recent_checks) || [];
+  var paChecks = (_statsData && _statsData.pa_checks) || [];
+  var eligStats = (_statsData && _statsData.eligibility) || {};
+
+  // Agent status line
+  var agentEl = document.getElementById('mb-agent-status');
+  if (agentEl) agentEl.textContent = 'Agent ran at 6:00 AM \u2022 ' + (checks.length || 0) + ' checks processed \u2022 Avg ' + (eligStats.avg_time || '--') + 's';
+
+  // ── PA Requirements: checks where prior_auth_required + PA checks ──
+  var paRows = [];
+  checks.forEach(function(c) {
+    if (c.prior_auth_required) {
+      paRows.push({ time: _fmtTime(c.run_date || c.created_at), patient: c.patient_name || '--', provider: c.provider_name || '--', insurance: c.payer_name || c.payer_id || '--', service: c.plan_name || 'Health Benefit Plan', status: 'required', urgency: 'high', daysLeft: 2 });
+    }
+  });
+  paChecks.forEach(function(p) {
+    if (p.status === 'pending' || p.status === 'submitted') {
+      paRows.push({ time: _fmtTime(p.run_date || p.created_at), patient: p.patient_name || '--', provider: p.provider_name || '--', insurance: p.payer_name || p.payer_id || '--', service: (p.procedure_code || '') + ' ' + (p.diagnosis_code || ''), status: 'pending', urgency: 'medium', daysLeft: 5 });
+    }
+  });
+
+  var paTbody = document.getElementById('mb-pa-tbody');
+  if (paTbody) {
+    if (paRows.length === 0) {
+      paTbody.innerHTML = '<tr><td colspan="9" class="empty-state">No prior authorization requirements found.</td></tr>';
+    } else {
+      paTbody.innerHTML = paRows.slice(0, 10).map(function(r) {
+        return '<tr><td>' + r.time + '</td>' +
+          '<td><strong>' + r.patient + '</strong></td>' +
+          '<td>' + r.provider + '</td><td>' + r.insurance + '</td>' +
+          '<td>' + r.service + '</td>' +
+          '<td><span class="status-pill ' + r.status + '">' + (r.status === 'required' ? 'Required' : 'Pending') + '</span></td>' +
+          '<td><span class="urgency-badge ' + r.urgency + '">\u2299 ' + r.urgency.charAt(0).toUpperCase() + r.urgency.slice(1) + '</span></td>' +
+          '<td class="days-left-text ' + (r.daysLeft <= 2 ? 'urgent' : 'normal') + '">' + r.daysLeft + ' days</td>' +
+          '<td><div class="action-icons"><button class="action-icon-btn" title="Email">&#9993;</button><button class="action-icon-btn" title="Print">&#128438;</button></div></td></tr>';
+      }).join('');
+    }
+    var actionCount = paRows.filter(function(r) { return r.status === 'required'; }).length;
+    var pendCount = paRows.filter(function(r) { return r.status === 'pending'; }).length;
+    var el = function(id, v) { var x = document.getElementById(id); if (x) x.querySelector('strong').textContent = v; };
+    try { document.querySelector('.mb-badge.red strong').textContent = actionCount; } catch(e) {}
+    try { document.querySelector('.mb-badge.orange strong').textContent = pendCount; } catch(e) {}
+  }
+
+  // ── Collection Summary: eligible checks with financial data ──
+  var colTbody = document.getElementById('mb-collection-tbody');
+  if (colTbody) {
+    var eligChecks = checks.filter(function(c) { return c.status === 'eligible' || c.status === 'inactive'; });
+    var totalCopay = 0, totalDed = 0, totalCollect = 0;
+
+    if (eligChecks.length === 0) {
+      colTbody.innerHTML = '<tr><td colspan="10" class="empty-state">No recent eligibility checks with financial data.</td></tr>';
+    } else {
+      colTbody.innerHTML = eligChecks.slice(0, 15).map(function(c) {
+        var copay = c.copay || 0;
+        var ded = c.annual_deductible || 0;
+        var dedMax = c.annual_deductible_max || 0;
+        var total = copay + ded;
+        var isInactive = c.status === 'inactive';
+        if (!isInactive) { totalCopay += copay; totalDed += ded; totalCollect += total; }
+        var dedDisplay = ded ? '$' + ded : '\u2013';
+        var dedDetail = dedMax ? '$' + ded + ' / $' + dedMax : '';
+        var notes = isInactive ? 'URGENT: Coverage terminated' : (ded && dedMax && ded >= dedMax * 0.8 ? 'Near deductible limit' : c.plan_name || '');
+        return '<tr><td>' + _fmtTime(c.run_date || c.created_at) + '</td>' +
+          '<td><strong>' + (c.patient_name || '--') + '</strong></td>' +
+          '<td>' + (c.provider_name || '--') + '</td><td>' + (c.payer_name || c.payer_id || '--') + '</td>' +
+          '<td><span class="status-pill ' + (isInactive ? 'inactive' : 'active') + '">' + (isInactive ? 'Inactive' : 'Active') + '</span></td>' +
+          '<td>' + (copay ? '<strong>$' + copay + '</strong>' : '\u2013') + '</td>' +
+          '<td>' + (ded ? '<strong>' + dedDisplay + '</strong>' : '\u2013') + (dedDetail ? '<br><small style="color:var(--text-secondary);">' + dedDetail + '</small>' : '') + '</td>' +
+          '<td>' + (total ? '<strong>$' + total + '</strong>' : '\u2013') + '</td>' +
+          '<td><span class="note-text' + (isInactive ? ' urgent' : '') + '">' + notes + '</span></td>' +
+          '<td>' + (!isInactive ? '<div class="action-icons"><button class="action-icon-btn">&#128196;</button><button class="action-icon-btn">&#128438;</button></div>' : '<span class="awaiting-text">No payment</span>') + '</td></tr>';
+      }).join('');
+    }
+    var setEl = function(id, v) { var x = document.getElementById(id); if (x) x.textContent = v; };
+    setEl('mb-total-copay', '$' + totalCopay);
+    setEl('mb-total-ded', '$' + Math.round(totalDed));
+    setEl('mb-total-collect', '$' + Math.round(totalCollect));
+  }
+}
+
+function _fmtTime(dateStr) {
+  if (!dateStr) return '--';
+  try {
+    var d = new Date(dateStr);
+    if (isNaN(d)) return dateStr.split(' ').slice(1).join(' ') || dateStr;
+    var h = d.getHours(), m = d.getMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return h + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+  } catch(e) { return dateStr; }
+}
+
+// ── Appointments ──────────────────────────────────────
+function renderAppointments() {
+  var colors = ['teal','blue','purple','orange','pink','indigo','green','amber','cyan','red'];
+  var apptData = (_statsData && _statsData.appointments) || {};
+  var todayAppts = apptData.today || [];
+  var tomorrowAppts = apptData.tomorrow || [];
+  var weekAppts = apptData.week || [];
+  var apptStats = apptData.stats || {};
+
+  // If no appointments, fall back to showing recent eligibility checks as appointment-like rows
+  var displayData = weekAppts.length > 0 ? weekAppts : ((_statsData && _statsData.recent_checks) || []);
+  var isFromAppts = weekAppts.length > 0;
+
+  var tbody = document.getElementById('appt-tbody');
+  if (!tbody) return;
+
+  if (displayData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No appointments found. Connect your EHR or create appointments to see data here.</td></tr>';
+  } else {
+    var eligLabels = { 'eligible': 'Eligible', 'inactive': 'INACTIVE', 'error': 'Error', 'pending': 'Pending', 'cleared': 'Cleared', 'action_needed': 'Action Needed' };
+    tbody.innerHTML = displayData.slice(0, 20).map(function(a, i) {
+      var name = isFromAppts ? (a.patient_name || '--') : (a.patient_name || '--');
+      var parts = name.split(' ');
+      var initials = ((parts[0] || '').charAt(0) + (parts[1] || '').charAt(0)).toUpperCase();
+      var shortName = parts[0] + ' ' + ((parts[1] || '').charAt(0) || '') + '.';
+
+      var eligStatus = isFromAppts ? (a.eligibility_status || a.status || 'scheduled') : (a.status || 'pending');
+      var statusClass = eligStatus === 'eligible' || eligStatus === 'cleared' ? 'eligible' : eligStatus === 'inactive' || eligStatus === 'action_needed' ? 'inactive' : eligStatus === 'error' ? 'denied' : 'checking';
+      var statusLabel = eligLabels[eligStatus] || eligStatus.charAt(0).toUpperCase() + eligStatus.slice(1);
+
+      var paStatus = isFromAppts ? (a.pa_status || 'not_required') : (a.prior_auth_required ? 'required' : 'not_required');
+      var paLabel = paStatus === 'required' || paStatus === 'pa_required' ? 'PA Required' : paStatus === 'approved' ? 'PA Approved' : paStatus === 'pending' || paStatus === 'submitted' ? 'PA Pending' : 'Not Required';
+      var paClass = paStatus !== 'not_required' && paStatus !== 'not required' ? 'required' : 'not-required';
+
+      var timeStr = isFromAppts ? (a.appointment_time || '--') : _fmtTime(a.run_date || a.created_at);
+      var apptType = isFromAppts ? (a.appointment_type || '--') : (a.source === 'batch' ? 'Batch' : 'Single');
+      var payer = a.payer_name || a.payer_id || '--';
+      var provider = a.provider_name || '--';
+
+      var action = '';
+      if (eligStatus === 'inactive' || eligStatus === 'action_needed') action = 'Call Patient';
+      else if (paStatus === 'required' || paStatus === 'pa_required') action = 'Track PA';
+      else if (a.eligibility_check_id) action = 'View';
+
+      return '<tr><td>' + timeStr + '</td>' +
+        '<td><div class="patient-cell"><div class="patient-avatar ' + colors[i % colors.length] + '">' + initials + '</div><span>' + shortName + '</span></div></td>' +
+        '<td>' + provider + '</td><td>' + payer + '</td>' +
+        '<td>' + apptType + '</td>' +
+        '<td><span class="status-pill ' + statusClass + '">\u25CF ' + statusLabel + '</span></td>' +
+        '<td class="pa-status-cell"><span class="pa-tag ' + paClass + '">' + paLabel + '</span></td>' +
+        '<td>' + (action === 'Call Patient' ? '<button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;color:var(--error);border-color:var(--error);">Call Patient</button>' : action === 'View' && a.eligibility_check_id ? '<a href="#" onclick="viewResult(\'' + a.eligibility_check_id + '\');return false;" style="color:var(--primary);font-size:12px;">View</a>' : action ? '<a href="#" style="color:var(--primary);font-size:12px;">' + action + '</a>' : '\u2014') + '</td></tr>';
+    }).join('');
+  }
+
+  // Update tab counts from real appointment data
+  document.querySelectorAll('.appt-tab').forEach(function(tab) {
+    var countEl = tab.querySelector('.tab-count');
+    if (!countEl) return;
+    var tabType = tab.dataset.tab;
+    if (tabType === 'today') countEl.textContent = '\u2022 ' + (apptData.today_count || todayAppts.length || displayData.length);
+    else if (tabType === 'tomorrow') countEl.textContent = '\u2022 ' + (apptData.tomorrow_count || tomorrowAppts.length);
+    else countEl.textContent = '\u2022 ' + (apptData.week_count || weekAppts.length || displayData.length);
+  });
+
+  // Update agent status bar stats from real data
+  var agentStatus = (_statsData && _statsData.agent_status) || {};
+  var agentEl = document.querySelector('.agent-status-bar');
+  if (agentEl && agentStatus.started_at) {
+    var agentTime = new Date(agentStatus.started_at);
+    var h = agentTime.getHours(), m = agentTime.getMinutes();
+    var ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    var timeLabel = h + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+    document.querySelectorAll('.agent-status-bar > span:first-child').forEach(function(el) {
+      el.innerHTML = '&#129302; Agent last ran: <strong>' + timeLabel + '</strong>';
+    });
+  }
+
+  var eligCount = apptStats.eligible || displayData.filter(function(c) { return (c.eligibility_status || c.status) === 'eligible' || c.status === 'cleared'; }).length;
+  var paCount = apptStats.pa_required || displayData.filter(function(c) { return c.pa_status === 'required' || c.prior_auth_required; }).length;
+  var actionCount = apptStats.action_needed || displayData.filter(function(c) { return c.status === 'inactive' || c.status === 'error' || c.status === 'action_needed'; }).length;
+  document.querySelectorAll('.appt-stat.green').forEach(function(el) { el.textContent = eligCount + ' eligible'; });
+  document.querySelectorAll('.appt-stat.orange').forEach(function(el) { el.textContent = paCount + ' PA required'; });
+  document.querySelectorAll('.appt-stat.red').forEach(function(el) { el.textContent = actionCount + ' action needed'; });
+
+  // Footer
+  var footer = document.querySelector('.table-footer');
+  if (footer) footer.textContent = 'Showing 1-' + Math.min(displayData.length, 20) + ' of ' + displayData.length;
+
+  // Wire up filter/tab buttons
+  document.querySelectorAll('.filter-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+      this.classList.add('active');
+    });
+  });
+  document.querySelectorAll('.appt-tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.appt-tab').forEach(function(t) { t.classList.remove('active'); });
+      this.classList.add('active');
+    });
+  });
+}
+function runAgentNow() { alert('Agent eligibility check started for all scheduled appointments.'); }
+
+// ── Reports ───────────────────────────────────────────
+function renderReportsPage() {
+  var es = (_statsData && _statsData.eligibility) || {};
+  var ps = (_statsData && _statsData.prior_auth) || {};
+
+  // Update report stat cards dynamically
+  var statCards = document.querySelectorAll('#page-reports .stat-card');
+  if (statCards.length >= 5) {
+    statCards[0].querySelector('.stat-value').textContent = (es.total || 0).toLocaleString();
+    statCards[1].querySelector('.stat-value').textContent = (es.elig_rate || 0) + '%';
+    var paRate = es.total ? Math.round(es.pa_required / es.total * 100 * 10) / 10 : 0;
+    statCards[2].querySelector('.stat-value').textContent = paRate + '%';
+    var autoRate = ps.total ? Math.round(ps.approved / Math.max(ps.total, 1) * 100) : 0;
+    statCards[3].querySelector('.stat-value').textContent = autoRate + '%';
+    statCards[4].querySelector('.stat-value').textContent = (es.avg_time || '--') + 's';
+  }
+
+  renderVolumeChart();
+  renderPAOutcomesChart();
+  renderDenialReasons();
+  renderAIInsights();
+}
+
+function renderVolumeChart() {
+  var el = document.getElementById('chart-volume');
+  if (!el) return;
+  // Use real check data to build a volume-over-time approximation
+  var checks = (_statsData && _statsData.recent_checks) || [];
+  var dayBuckets = {};
+  checks.forEach(function(c) {
+    var dateKey = (c.run_date || c.created_at || '').split(' ')[0] || 'unknown';
+    dayBuckets[dateKey] = (dayBuckets[dateKey] || 0) + 1;
+  });
+  var bucketKeys = Object.keys(dayBuckets).sort();
+  var data = bucketKeys.map(function(k) { return dayBuckets[k]; });
+  if (data.length === 0) { el.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:40px;">No check data yet. Run eligibility checks to populate.</p>'; return; }
+  var max = Math.max.apply(null, data) || 1;
+  el.innerHTML = '<div class="css-line-chart">' + data.map(function(v) {
+    return '<div class="line-bar primary" style="height:' + (v/max*100) + '%;"></div>';
+  }).join('') + '</div><div class="chart-legend"><div class="legend-item"><div class="legend-dot" style="background:var(--primary);"></div>Total Checks</div><div class="legend-item"><div class="legend-dot" style="background:#ff9800;"></div>PA Required</div></div>';
+}
+
+function renderPAOutcomesChart() {
+  var el = document.getElementById('chart-pa-outcomes');
+  if (!el) return;
+  // Build from real payer_stats
+  var payerStats = (_statsData && _statsData.payer_stats) || {};
+  var payers = Object.keys(payerStats).map(function(name) {
+    var s = payerStats[name];
+    return { name: name, eligible: s.eligible || 0, error: s.error || 0, inactive: s.inactive || 0 };
+  });
+  // Sort by total descending, take top 5
+  payers.sort(function(a, b) { return (b.eligible + b.error + b.inactive) - (a.eligible + a.error + a.inactive); });
+  payers = payers.slice(0, 5);
+
+  if (payers.length === 0) {
+    el.innerHTML = '<p style="color:var(--text-secondary);text-align:center;padding:40px;">No payer data yet. Run eligibility checks to populate.</p>';
+    return;
+  }
+
+  var maxT = Math.max.apply(null, payers.map(function(p) { return p.eligible + p.error + p.inactive; })) || 1;
+  el.innerHTML = '<div class="css-bar-chart">' + payers.map(function(p) {
+    return '<div class="bar-row"><div class="bar-label">' + p.name + '</div><div class="bar-track">' +
+      '<div class="bar-fill approved" style="width:' + (p.eligible/maxT*100) + '%;"></div>' +
+      '<div class="bar-fill denied" style="width:' + (p.error/maxT*100) + '%;"></div>' +
+      '<div class="bar-fill pending-bar" style="width:' + (p.inactive/maxT*100) + '%;"></div></div></div>';
+  }).join('') + '</div><div class="chart-legend"><div class="legend-item"><div class="legend-dot" style="background:#26a69a;"></div>Eligible</div><div class="legend-item"><div class="legend-dot" style="background:#ef5350;"></div>Error</div><div class="legend-item"><div class="legend-dot" style="background:#ffa726;"></div>Inactive</div></div>';
+}
+
+function renderDenialReasons() {
+  var el = document.getElementById('denial-reasons-tbody');
+  if (!el) return;
+  var denials = (_statsData && _statsData.top_denials) || [];
+  if (denials.length === 0) {
+    el.innerHTML = '<tr><td colspan="4" class="empty-state">No denial data yet.</td></tr>';
+    return;
+  }
+  var totalDenials = denials.reduce(function(sum, d) { return sum + d.count; }, 0) || 1;
+  // Friendly labels for error codes
+  var labels = {
+    'PAYER_REJECTION': 'Payer rejection (invalid data)',
+    'CLEARINGHOUSE_VALIDATION': 'Clearinghouse validation error',
+    'CLEARINGHOUSE_ERROR': 'Clearinghouse error',
+    'CLEARINGHOUSE_UNAVAILABLE': 'Clearinghouse unavailable',
+    'CLEARINGHOUSE_DATA_ERROR': 'Payer/member not recognized',
+    'ELIG_INVALID_PAYER': 'Invalid payer ID',
+    'ELIG_INVALID_NPI': 'Invalid provider NPI',
+    'ELIG_MISSING_SUBSCRIBER': 'Missing subscriber ID',
+  };
+  el.innerHTML = denials.map(function(d) {
+    var pct = Math.round(d.count / totalDenials * 1000) / 10;
+    var label = labels[d.code] || d.code;
+    return '<tr><td>' + label + '</td><td><strong>' + d.count + '</strong></td><td><strong>' + pct + '%</strong></td><td><span class="trend-icon flat">\u2014</span></td></tr>';
+  }).join('');
+}
+
+function renderAIInsights() {
+  var el = document.getElementById('ai-insights-list');
+  if (!el) return;
+  var es = (_statsData && _statsData.eligibility) || {};
+  var ps = (_statsData && _statsData.prior_auth) || {};
+  var insights = [];
+
+  // Generate dynamic insights from real data
+  if (es.inactive > 0) {
+    insights.push({ type: 'warning', icon: '&#128293;', text: es.inactive + ' patient(s) had inactive coverage. Verify insurance status before scheduling.' });
+  }
+  if (es.pa_required > 0) {
+    insights.push({ type: 'info', icon: '&#10024;', text: es.pa_required + ' check(s) flagged prior authorization required. Review PA pipeline.' });
+  }
+  if (es.avg_time && es.avg_time < 3) {
+    insights.push({ type: 'success', icon: '&#10024;', text: 'Average response time ' + es.avg_time + 's \u2014 optimal. No action needed.' });
+  } else if (es.avg_time && es.avg_time >= 3) {
+    insights.push({ type: 'warning', icon: '&#128293;', text: 'Average response time ' + es.avg_time + 's \u2014 above target. Consider checking clearinghouse connectivity.' });
+  }
+  if (es.elig_rate >= 90) {
+    insights.push({ type: 'success', icon: '&#10024;', text: 'Eligibility rate at ' + es.elig_rate + '% \u2014 excellent performance.' });
+  } else if (es.elig_rate > 0 && es.elig_rate < 80) {
+    insights.push({ type: 'warning', icon: '&#128293;', text: 'Eligibility rate at ' + es.elig_rate + '%. Review patient data quality.' });
+  }
+  if (ps.denied > 0) {
+    insights.push({ type: 'info', icon: '&#10024;', text: ps.denied + ' PA request(s) denied. Review denial reasons for resubmission opportunities.' });
+  }
+
+  if (insights.length === 0) {
+    insights.push({ type: 'success', icon: '&#10024;', text: 'Run eligibility checks to generate AI insights from your data.' });
+  }
+
+  el.innerHTML = insights.map(function(i) {
+    return '<div class="ai-insight-item ' + i.type + '"><span class="ai-insight-icon">' + i.icon + '</span><span>' + i.text + '</span></div>';
+  }).join('');
 }
 
 // ── Init ──────────────────────────────────────────────────────
 loadRecentChecks();
 loadTestConfig();
 renderPAPipeline();
+loadProviders();
+loadSettingsProviders();
+loadAllPageData();

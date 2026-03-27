@@ -48,17 +48,56 @@ CLAIM_SAMPLE: dict[str, Any] = {
     "charge_amount": 250.00,
 }
 
-ELIG_SAMPLE: dict[str, Any] = {
-    "subscriber_name": "Maria Garcia",
-    "effective_date": "2024-01-01",
-    "termination_date": "2024-12-31",
-    "member_id": "MEM-123456",
-    "group_number": "GRP-789",
+# -- Claim.MD test data (from ClaimMD test account) --
+ELIG_SAMPLE_CLAIMMD: dict[str, Any] = {
+    "subscriber_name": "Jane Doe",
+    "patient_dob": "2004-04-04",
+    "effective_date": "2026-02-18",
+    "termination_date": "2026-04-19",
+    "member_id": "AETNA12345",
+    "group_number": "202GROUP",
     # Non-PHI fields
-    "plan_name": "Gold PPO",
-    "payer_id": "BCBS-IL",
+    "plan_name": "AETNA CHOICE PLUS",
+    "payer_id": "60054",
+    "provider_npi": "1111111112",
+    "provider_tax_id": "999999999",
     "coverage_active": True,
 }
+
+# -- Stedi test data (from Stedi sandbox) --
+ELIG_SAMPLE_STEDI: dict[str, Any] = {
+    "subscriber_name": "Jane Doe",
+    "patient_dob": "2004-04-04",
+    "effective_date": "2024-01-01",
+    "termination_date": "2024-12-31",
+    "member_id": "AETNA12345",
+    "group_number": "202GROUP",
+    # Non-PHI fields
+    "plan_name": "Open Access Plus",
+    "payer_id": "60054",
+    "provider_npi": "1111111112",
+    "provider_tax_id": "999999999",
+    "coverage_active": True,
+}
+
+# -- Waystar test data (Zirmed test payer 66666, CHOICE PLUS plan) --
+ELIG_SAMPLE_WAYSTAR: dict[str, Any] = {
+    "subscriber_name": "Alice Williams",
+    "patient_dob": "1980-07-22",
+    "effective_date": "2026-03-04",
+    "termination_date": "2026-12-31",
+    "member_id": "SUB987654321",
+    "group_number": "",
+    # Non-PHI fields
+    "plan_name": "CHOICE PLUS",
+    "payer_id": "66666",
+    "provider_npi": "1245319599",
+    "provider_tax_id": "999999999",
+    "coverage_active": True,
+}
+
+# Default ELIG_SAMPLE points to ClaimMD for backward compatibility
+ELIG_SAMPLE = ELIG_SAMPLE_CLAIMMD
 
 PA_SAMPLE: dict[str, Any] = {
     "patient_name": "James Williams",
@@ -225,28 +264,25 @@ class TestClaimHipaaCompliance:
 # ---------------------------------------------------------------------------
 
 
-class TestEligibilityHipaaCompliance:
-    """Verify HIPAA compliance for the eligibility domain."""
+class TestEligibilityHipaaComplianceClaimMD:
+    """Verify HIPAA compliance for the eligibility domain — Claim.MD provider."""
 
     def setup_method(self) -> None:
         self.deid = BaseDeidentifier(ELIGIBILITY_DEID_CONFIG)
-        self.sample: dict[str, Any] = {**ELIG_SAMPLE}
+        self.sample: dict[str, Any] = {**ELIG_SAMPLE_CLAIMMD}
 
-    # Task 3.1 — subscriber_name stripped
     def test_subscriber_name_stripped(self) -> None:
         result = self.deid.deidentify(self.sample)
         assert result["subscriber_name"] is None
 
-    # Task 3.2 — date fields reduced to year-only int
     def test_effective_date_reduced_to_year(self) -> None:
         result = self.deid.deidentify(self.sample)
-        assert result["effective_date"] == 2024
+        assert result["effective_date"] == 2026
 
     def test_termination_date_reduced_to_year(self) -> None:
         result = self.deid.deidentify(self.sample)
-        assert result["termination_date"] == 2024
+        assert result["termination_date"] == 2026
 
-    # Task 3.3 — member_id and group_number stripped
     def test_member_id_stripped(self) -> None:
         result = self.deid.deidentify(self.sample)
         assert result["member_id"] is None
@@ -255,26 +291,135 @@ class TestEligibilityHipaaCompliance:
         result = self.deid.deidentify(self.sample)
         assert result["group_number"] is None
 
-    # Task 3.4 — no age processing
     def test_no_age_processing_dob_passes_through(self) -> None:
         """Eligibility has no DOB field — age processing is skipped."""
         data = {**self.sample, "patient_dob": "1990-01-01"}
         result = self.deid.deidentify(data)
         assert result["patient_dob"] == "1990-01-01"
 
-    # Task 3.5 — PHI leak scan
     def test_phi_leak_scan(self) -> None:
         result = self.deid.deidentify(self.sample)
         _assert_no_phi_leak(self.sample, result, ELIGIBILITY_DEID_CONFIG)
 
-    # Task 3.6 — non-PHI fields preserved
     def test_plan_name_preserved(self) -> None:
         result = self.deid.deidentify(self.sample)
-        assert result["plan_name"] == "Gold PPO"
+        assert result["plan_name"] == "AETNA CHOICE PLUS"
 
     def test_payer_id_preserved(self) -> None:
         result = self.deid.deidentify(self.sample)
-        assert result["payer_id"] == "BCBS-IL"
+        assert result["payer_id"] == "60054"
+
+    def test_provider_npi_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_npi"] == "1111111112"
+
+    def test_provider_tax_id_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_tax_id"] == "999999999"
+
+    def test_coverage_active_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["coverage_active"] is True
+
+
+class TestEligibilityHipaaComplianceStedi:
+    """Verify HIPAA compliance for the eligibility domain — Stedi provider."""
+
+    def setup_method(self) -> None:
+        self.deid = BaseDeidentifier(ELIGIBILITY_DEID_CONFIG)
+        self.sample: dict[str, Any] = {**ELIG_SAMPLE_STEDI}
+
+    def test_subscriber_name_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["subscriber_name"] is None
+
+    def test_effective_date_reduced_to_year(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["effective_date"] == 2024
+
+    def test_termination_date_reduced_to_year(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["termination_date"] == 2024
+
+    def test_member_id_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["member_id"] is None
+
+    def test_group_number_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["group_number"] is None
+
+    def test_phi_leak_scan(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        _assert_no_phi_leak(self.sample, result, ELIGIBILITY_DEID_CONFIG)
+
+    def test_plan_name_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["plan_name"] == "Open Access Plus"
+
+    def test_payer_id_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["payer_id"] == "60054"
+
+    def test_provider_npi_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_npi"] == "1111111112"
+
+    def test_provider_tax_id_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_tax_id"] == "999999999"
+
+    def test_coverage_active_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["coverage_active"] is True
+
+
+class TestEligibilityHipaaComplianceWaystar:
+    """Verify HIPAA compliance for the eligibility domain — Waystar provider."""
+
+    def setup_method(self) -> None:
+        self.deid = BaseDeidentifier(ELIGIBILITY_DEID_CONFIG)
+        self.sample: dict[str, Any] = {**ELIG_SAMPLE_WAYSTAR}
+
+    def test_subscriber_name_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["subscriber_name"] is None
+
+    def test_effective_date_reduced_to_year(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["effective_date"] == 2026
+
+    def test_termination_date_reduced_to_year(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["termination_date"] == 2026
+
+    def test_member_id_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["member_id"] is None
+
+    def test_group_number_stripped(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["group_number"] is None
+
+    def test_phi_leak_scan(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        _assert_no_phi_leak(self.sample, result, ELIGIBILITY_DEID_CONFIG)
+
+    def test_plan_name_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["plan_name"] == "CHOICE PLUS"
+
+    def test_payer_id_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["payer_id"] == "66666"
+
+    def test_provider_npi_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_npi"] == "1245319599"
+
+    def test_provider_tax_id_preserved(self) -> None:
+        result = self.deid.deidentify(self.sample)
+        assert result["provider_tax_id"] == "999999999"
 
     def test_coverage_active_preserved(self) -> None:
         result = self.deid.deidentify(self.sample)
@@ -451,15 +596,17 @@ class TestHipaaSafeHarborEdgeCases:
 class TestCrossDomainPhiLeakScan:
     """Cross-domain parametrized PHI leak scanning."""
 
-    # Task 6.1 — parametrized across all 3 domains
+    # Task 6.1 — parametrized across all domains and providers
     @pytest.mark.parametrize(
         ("config", "sample_data"),
         [
             (CLAIM_DEID_CONFIG, CLAIM_SAMPLE),
-            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_CLAIMMD),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_STEDI),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_WAYSTAR),
             (PA_DEID_CONFIG, PA_SAMPLE),
         ],
-        ids=["claim", "eligibility", "prior_auth"],
+        ids=["claim", "eligibility-claimmd", "eligibility-stedi", "eligibility-waystar", "prior_auth"],
     )
     def test_no_phi_leak(
         self,
@@ -540,10 +687,12 @@ class TestCrossDomainPhiLeakScan:
         ("config", "sample_data"),
         [
             (CLAIM_DEID_CONFIG, CLAIM_SAMPLE),
-            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_CLAIMMD),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_STEDI),
+            (ELIGIBILITY_DEID_CONFIG, ELIG_SAMPLE_WAYSTAR),
             (PA_DEID_CONFIG, PA_SAMPLE),
         ],
-        ids=["claim", "eligibility", "prior_auth"],
+        ids=["claim", "eligibility-claimmd", "eligibility-stedi", "eligibility-waystar", "prior_auth"],
     )
     def test_output_keys_preserved(
         self,
