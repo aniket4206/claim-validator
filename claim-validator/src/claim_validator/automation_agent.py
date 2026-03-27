@@ -52,7 +52,7 @@ def _next_appointment_id(db: Session) -> str:
     return "APPT-1001"
 
 
-def create_appointment(data: dict[str, Any], db: Session | None = None) -> dict[str, Any]:
+def create_appointment(data: dict[str, Any], db: Session | None = None, user_id: int | None = None) -> dict[str, Any]:
     """Create a new appointment and optionally auto-run eligibility.
 
     This is called when:
@@ -63,6 +63,7 @@ def create_appointment(data: dict[str, Any], db: Session | None = None) -> dict[
     Args:
         data: Appointment fields (patient info, payer, provider, date, etc.)
         db: Optional DB session.
+        user_id: Owner user ID.
 
     Returns:
         Appointment dict with auto-check results.
@@ -97,6 +98,7 @@ def create_appointment(data: dict[str, Any], db: Session | None = None) -> dict[
             ehr_source=data.get("ehr_source", "manual"),
             ehr_appointment_id=data.get("ehr_appointment_id", ""),
             status="scheduled",
+            user_id=user_id,
         )
         db.add(appt)
         db.commit()
@@ -213,6 +215,7 @@ def run_automation_agent(
     recheck_hours: int = 24,
     auto_pa: bool = True,
     db: Session | None = None,
+    user_id: int | None = None,
 ) -> dict[str, Any]:
     """Run the automation agent for all upcoming appointments.
 
@@ -351,14 +354,17 @@ def run_automation_agent(
             db.close()
 
 
-def get_agent_status(db: Session | None = None) -> dict[str, Any] | None:
-    """Get the most recent agent run."""
+def get_agent_status(db: Session | None = None, user_id: int | None = None) -> dict[str, Any] | None:
+    """Get the most recent agent run, filtered by user."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
-        run = db.query(AgentRun).order_by(AgentRun.id.desc()).first()
+        query = db.query(AgentRun)
+        if user_id is not None:
+            query = query.filter(AgentRun.user_id == user_id)
+        run = query.order_by(AgentRun.id.desc()).first()
         return run.to_dict() if run else None
     finally:
         if own_session:
@@ -368,6 +374,7 @@ def get_agent_status(db: Session | None = None) -> dict[str, Any] | None:
 def get_appointments(
     date_filter: str = "today",
     db: Session | None = None,
+    user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Get appointments with optional date filter."""
     own_session = False
@@ -380,6 +387,8 @@ def get_appointments(
         week_end = (datetime.now(UTC).date() + timedelta(days=7)).isoformat()
 
         query = db.query(Appointment)
+        if user_id is not None:
+            query = query.filter(Appointment.user_id == user_id)
 
         if date_filter == "today":
             query = query.filter(Appointment.appointment_date == today)

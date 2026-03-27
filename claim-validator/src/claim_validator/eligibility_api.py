@@ -141,20 +141,20 @@ class RecentCheckOut(BaseModel):
 # Core logic
 # ---------------------------------------------------------------------------
 
-def run_eligibility_check(req: EligibilityCheckRequest, db: Session | None = None) -> EligibilityCheckResponse:
+def run_eligibility_check(req: EligibilityCheckRequest, db: Session | None = None, user_id: int | None = None) -> EligibilityCheckResponse:
     """Run eligibility check: validate inputs → call clearinghouse → interpret."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
-        return _run_eligibility_check_impl(req, db)
+        return _run_eligibility_check_impl(req, db, user_id=user_id)
     finally:
         if own_session:
             db.close()
 
 
-def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> EligibilityCheckResponse:
+def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session, user_id: int | None = None) -> EligibilityCheckResponse:
     start = time.perf_counter()
     check_id = _next_check_id(db)
     patient_name = f"{req.patient_first_name} {req.patient_last_name}"
@@ -418,7 +418,7 @@ def _run_eligibility_check_impl(req: EligibilityCheckRequest, db: Session) -> El
     )
 
     # Store in database
-    _save_check_to_db(db, result, req, ch_provider)
+    _save_check_to_db(db, result, req, ch_provider, user_id=user_id)
     return result
 
 
@@ -427,6 +427,7 @@ def _save_check_to_db(
     result: EligibilityCheckResponse,
     req: EligibilityCheckRequest,
     clearinghouse_provider: str = "",
+    user_id: int | None = None,
 ) -> None:
     """Persist an eligibility check result to the database."""
     # Serialize findings list to dicts for JSON column
@@ -473,20 +474,24 @@ def _save_check_to_db(
         execution_time=result.execution_time,
         raw_response=result.raw_response,
         run_date=result.run_date,
+        user_id=user_id,
     )
     db.add(row)
     db.commit()
 
 
-def get_recent_checks(db: Session | None = None) -> list[RecentCheckOut]:
-    """Return recent checks, newest first."""
+def get_recent_checks(db: Session | None = None, user_id: int | None = None) -> list[RecentCheckOut]:
+    """Return recent checks, newest first, filtered by user."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
+        query = db.query(EligibilityCheckDB)
+        if user_id is not None:
+            query = query.filter(EligibilityCheckDB.user_id == user_id)
         rows = (
-            db.query(EligibilityCheckDB)
+            query
             .order_by(EligibilityCheckDB.id.desc())
             .limit(20)
             .all()
@@ -514,14 +519,17 @@ def get_recent_checks(db: Session | None = None) -> list[RecentCheckOut]:
             db.close()
 
 
-def get_check_result(check_id: str, db: Session | None = None) -> dict[str, Any] | None:
-    """Return full result for a check ID."""
+def get_check_result(check_id: str, db: Session | None = None, user_id: int | None = None) -> dict[str, Any] | None:
+    """Return full result for a check ID, filtered by user."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
-        row = db.query(EligibilityCheckDB).filter(EligibilityCheckDB.check_id == check_id).first()
+        query = db.query(EligibilityCheckDB).filter(EligibilityCheckDB.check_id == check_id)
+        if user_id is not None:
+            query = query.filter(EligibilityCheckDB.user_id == user_id)
+        row = query.first()
         if row is None:
             return None
         return row.to_dict()

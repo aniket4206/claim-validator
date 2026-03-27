@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -19,6 +20,33 @@ from sqlalchemy.orm import DeclarativeBase
 
 class Base(DeclarativeBase):
     pass
+
+
+class User(Base):
+    """Application users for portal access."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default="Staff")  # Administrator, Staff
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "email": self.email,
+            "role": self.role,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class EligibilityCheck(Base):
@@ -87,6 +115,10 @@ class EligibilityCheck(Base):
 
     # Timestamps
     run_date = Column(String(30), nullable=True)
+
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
@@ -192,6 +224,9 @@ class Appointment(Base):
     check_count = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
 
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
@@ -248,6 +283,10 @@ class AgentRun(Base):
     pa_submitted = Column(Integer, default=0)
     errors = Column(Integer, default=0)
     execution_time = Column(Float, default=0.0)
+
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     started_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     completed_at = Column(DateTime, nullable=True)
 
@@ -312,6 +351,10 @@ class PriorAuthCheck(Base):
 
     # Timestamps
     run_date = Column(String(30), nullable=True)
+
+    # User ownership
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 

@@ -1,7 +1,7 @@
 """Database package — SQLAlchemy models, engine, and session management."""
 
 from claim_validator.db.session import get_db, engine, SessionLocal
-from claim_validator.db.models import Base, EligibilityCheck, PriorAuthCheck
+from claim_validator.db.models import Base, EligibilityCheck, PriorAuthCheck, User
 
 __all__ = [
     "get_db",
@@ -10,4 +10,5 @@ __all__ = [
     "Base",
     "EligibilityCheck",
     "PriorAuthCheck",
+    "User",
 ]
