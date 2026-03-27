@@ -20,6 +20,7 @@ function authHeaders(extra = {}) {
 
 function authFetch(url, opts = {}) {
   opts.headers = { ...authHeaders(), ...(opts.headers || {}) };
+  opts.credentials = 'include';
   return fetch(url, opts).then(res => {
     if (res.status === 401) {
       localStorage.removeItem('auth_token');
@@ -53,7 +54,7 @@ function logout() {
 (function initAuthUI() {
   const user = getAuthUser();
   if (!user) return;
-  const displayName = user.display_name || user.username;
+  const displayName = user.display_name || user.email;
   const initials = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
   // Topbar
@@ -84,10 +85,10 @@ function logout() {
   if (pAvatar) pAvatar.textContent = initials;
   if (pName) pName.textContent = displayName;
   if (pRole) pRole.textContent = user.role || '';
-  if (pUsername) pUsername.textContent = user.username || '';
+  if (pUsername) pUsername.textContent = user.email || '';
   if (pRoleField) pRoleField.textContent = user.role || '';
   if (pNameInput) pNameInput.value = displayName;
-  if (pSessionUser) pSessionUser.textContent = user.username || '';
+  if (pSessionUser) pSessionUser.textContent = user.email || '';
   if (pLoginTime) pLoginTime.textContent = new Date().toLocaleString();
 })();
 

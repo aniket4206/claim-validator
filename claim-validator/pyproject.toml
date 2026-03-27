@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "claim-validator"
-dynamic = ["version"]
+version = "0.1.0"
 description = "Open-source healthcare claim validation library with rule-based and AI-powered checks"
 readme = "README.md"
 license = "MIT"
@@ -40,12 +40,6 @@ Homepage = "https://github.com/aniket/claim-validator"
 Repository = "https://github.com/aniket/claim-validator"
 Documentation = "https://github.com/aniket/claim-validator#readme"
 Issues = "https://github.com/aniket/claim-validator/issues"
-
-[tool.hatch.version]
-source = "vcs"
-
-[tool.hatch.build.hooks.vcs]
-version-file = "src/claim_validator/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claim_validator"]

@@ -16,11 +16,7 @@ Any language can call this over HTTP:
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
-import secrets
-import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +29,8 @@ from pydantic import BaseModel
 from claim_validator import __version__
 from claim_validator._api import validate
 from claim_validator.conf import ClaimValidatorSettings
+from claim_validator.auth.utils import get_token_from_request, verify_token
+from claim_validator.auth import auth_router
 from claim_validator.eligibility_api import (
     EligibilityCheckRequest,
     EligibilityCheckResponse,
@@ -41,60 +39,6 @@ from claim_validator.eligibility_api import (
     get_recent_checks,
     run_eligibility_check,
 )
-
-# ── Authentication ─────────────────────────────────────────────
-_AUTH_SECRET = secrets.token_hex(32)
-_TOKEN_EXPIRY = 86400 * 7  # 7 days
-
-# Default users (username -> {password_hash, role, display_name})
-_USERS: dict[str, dict[str, str]] = {
-    "admin": {
-        "password": hashlib.sha256("admin123".encode()).hexdigest(),
-        "role": "Administrator",
-        "display_name": "Dr. Sarah Portal",
-        "email": "jyoti.varade@thinkitive.com",
-    },
-    "staff": {
-        "password": hashlib.sha256("staff123".encode()).hexdigest(),
-        "role": "Staff",
-        "display_name": "Staff User",
-    },
-}
-
-# Active tokens: token -> {username, role, display_name, expires}
-_active_tokens: dict[str, dict[str, Any]] = {}
-
-
-def _create_token(username: str) -> str:
-    """Create a signed auth token."""
-    token = secrets.token_urlsafe(48)
-    user = _USERS[username]
-    _active_tokens[token] = {
-        "username": username,
-        "role": user["role"],
-        "display_name": user["display_name"],
-        "expires": time.time() + _TOKEN_EXPIRY,
-    }
-    return token
-
-
-def _verify_token(token: str) -> dict[str, Any] | None:
-    """Verify and return token data, or None if invalid/expired."""
-    data = _active_tokens.get(token)
-    if not data:
-        return None
-    if time.time() > data["expires"]:
-        _active_tokens.pop(token, None)
-        return None
-    return data
-
-
-def _get_token_from_request(request: Request) -> str | None:
-    """Extract token from Authorization header or cookie."""
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:]
-    return request.cookies.get("auth_token")
 
 # ── Static files path ────────────────────────────────────────
 STATIC_DIR = Path(__file__).parent / "static"
@@ -118,7 +62,7 @@ app.add_middleware(
 )
 
 # ── Auth middleware — protect all routes except login/static ──
-_PUBLIC_PATHS = {"/login", "/api/v1/auth/login", "/api/v1/health", "/docs", "/redoc", "/openapi.json"}
+_PUBLIC_PATHS = {"/login", "/api/v1/auth/login", "/api/v1/auth/create-user", "/api/v1/health", "/docs", "/redoc", "/openapi.json"}
 
 
 @app.middleware("http")
@@ -130,8 +74,8 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
 
     # Check auth token
-    token = _get_token_from_request(request)
-    if not token or not _verify_token(token):
+    token = get_token_from_request(request)
+    if not token or not verify_token(token):
         # For API calls return 401, for page requests redirect to login
         if path.startswith("/api/"):
             return JSONResponse({"detail": "Not authenticated"}, status_code=401)
@@ -143,15 +87,22 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+def _get_user_id(request: Request) -> int:
+    """Extract user_id from the auth token in the request. Raises 401 if missing."""
+    token = get_token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    data = verify_token(token)
+    if not data or "user_id" not in data:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return data["user_id"]
+
+
 # ── Serve static assets ──────────────────────────────────────
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-
-# ── Auth Endpoints ───────────────────────────────────────────
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+# ── Auth router (login, logout, create-user, me, change-password) ──
+app.include_router(auth_router)
 
 
 @app.get("/login")
@@ -161,88 +112,6 @@ def serve_login():
         str(STATIC_DIR / "login.html"),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
-
-
-@app.post("/api/v1/auth/login")
-def auth_login(req: LoginRequest):
-    """Authenticate user and return a token."""
-    user = _USERS.get(req.username)
-    pw_hash = hashlib.sha256(req.password.encode()).hexdigest()
-
-    if not user or user["password"] != pw_hash:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    token = _create_token(req.username)
-    response = JSONResponse({
-        "token": token,
-        "user": {
-            "username": req.username,
-            "role": user["role"],
-            "display_name": user["display_name"],
-        },
-    })
-    # Set cookie so middleware can authenticate browser page navigations
-    response.set_cookie(
-        key="auth_token",
-        value=token,
-        max_age=_TOKEN_EXPIRY,
-        httponly=False,
-        samesite="lax",
-        path="/",
-    )
-    return response
-
-
-@app.get("/api/v1/auth/me")
-def auth_me(request: Request):
-    """Return current user info from token."""
-    token = _get_token_from_request(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    data = _verify_token(token)
-    if not data:
-        raise HTTPException(status_code=401, detail="Token expired")
-    return {
-        "username": data["username"],
-        "role": data["role"],
-        "display_name": data["display_name"],
-    }
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-
-@app.post("/api/v1/auth/change-password")
-def auth_change_password(req: ChangePasswordRequest, request: Request):
-    """Change the current user's password."""
-    token = _get_token_from_request(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    data = _verify_token(token)
-    if not data:
-        raise HTTPException(status_code=401, detail="Token expired")
-
-    username = data["username"]
-    user = _USERS.get(username)
-    cur_hash = hashlib.sha256(req.current_password.encode()).hexdigest()
-    if not user or user["password"] != cur_hash:
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
-
-    user["password"] = hashlib.sha256(req.new_password.encode()).hexdigest()
-    return {"status": "ok"}
-
-
-@app.post("/api/v1/auth/logout")
-def auth_logout(request: Request):
-    """Invalidate the current token."""
-    token = _get_token_from_request(request)
-    if token:
-        _active_tokens.pop(token, None)
-    response = JSONResponse({"status": "ok"})
-    response.delete_cookie("auth_token", path="/")
-    return response
 
 
 # ── Request / Response models ─────────────────────────────────
@@ -668,24 +537,24 @@ def set_default_provider(provider_id: str) -> dict[str, Any]:
 # ── Eligibility Check Endpoints ──────────────────────────────
 
 @app.post("/api/v1/eligibility/check", response_model=EligibilityCheckResponse)
-def eligibility_check(request: EligibilityCheckRequest) -> EligibilityCheckResponse:
+def eligibility_check(req: EligibilityCheckRequest, request: Request) -> EligibilityCheckResponse:
     """Run an eligibility check with validation + clearinghouse call."""
     try:
-        return run_eligibility_check(request)
+        return run_eligibility_check(req, user_id=_get_user_id(request))
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/eligibility/checks", response_model=list[RecentCheckOut])
-def list_eligibility_checks() -> list[RecentCheckOut]:
-    """List recent eligibility checks."""
-    return get_recent_checks()
+def list_eligibility_checks(request: Request) -> list[RecentCheckOut]:
+    """List recent eligibility checks for the current user."""
+    return get_recent_checks(user_id=_get_user_id(request))
 
 
 @app.get("/api/v1/eligibility/checks/{check_id}")
-def get_eligibility_check(check_id: str) -> dict[str, Any]:
+def get_eligibility_check(check_id: str, request: Request) -> dict[str, Any]:
     """Get full result for a specific eligibility check."""
-    result = get_check_result(check_id)
+    result = get_check_result(check_id, user_id=_get_user_id(request))
     if result is None:
         raise HTTPException(status_code=404, detail="Check not found")
     return result
@@ -703,24 +572,24 @@ from claim_validator.prior_auth_api import (
 
 
 @app.post("/api/v1/prior-auth/check", response_model=PriorAuthResponse)
-def prior_auth_check(request: PriorAuthRequest) -> PriorAuthResponse:
+def prior_auth_check(req: PriorAuthRequest, request: Request) -> PriorAuthResponse:
     """Submit a prior authorization status inquiry."""
     try:
-        return submit_prior_auth(request)
+        return submit_prior_auth(req, user_id=_get_user_id(request))
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/prior-auth/checks")
-def list_pa_checks() -> list[dict[str, Any]]:
-    """List recent PA checks."""
-    return get_recent_pa_checks()
+def list_pa_checks(request: Request) -> list[dict[str, Any]]:
+    """List recent PA checks for the current user."""
+    return get_recent_pa_checks(user_id=_get_user_id(request))
 
 
 @app.get("/api/v1/prior-auth/checks/{pa_id}")
-def get_pa_check(pa_id: str) -> dict[str, Any]:
+def get_pa_check(pa_id: str, request: Request) -> dict[str, Any]:
     """Get full result for a PA check."""
-    result = get_pa_result(pa_id)
+    result = get_pa_result(pa_id, user_id=_get_user_id(request))
     if result is None:
         raise HTTPException(status_code=404, detail="PA check not found")
     return result
@@ -737,40 +606,27 @@ from claim_validator.automation_agent import (
 
 
 @app.post("/api/v1/appointments")
-def create_appointment_endpoint(data: dict[str, Any]) -> dict[str, Any]:
-    """Create a new appointment. Auto-runs eligibility if data is complete.
-
-    Called by:
-      - EHR webhook (FHIR Subscription)
-      - Manual creation from UI
-      - CSV import
-    """
-    return create_appointment(data)
+def create_appointment_endpoint(data: dict[str, Any], request: Request) -> dict[str, Any]:
+    """Create a new appointment. Auto-runs eligibility if data is complete."""
+    return create_appointment(data, user_id=_get_user_id(request))
 
 
 @app.get("/api/v1/appointments")
-def list_appointments(date: str = "all") -> list[dict[str, Any]]:
-    """List appointments. Filter: today, tomorrow, week, all."""
-    return get_appointments(date_filter=date)
+def list_appointments(request: Request, date: str = "all") -> list[dict[str, Any]]:
+    """List appointments for the current user."""
+    return get_appointments(date_filter=date, user_id=_get_user_id(request))
 
 
 @app.post("/api/v1/appointments/run-agent")
-def run_agent_endpoint(trigger: str = "manual") -> dict[str, Any]:
-    """Run the automation agent for all upcoming appointments.
-
-    This is the "Run Agent Now" button. It:
-      1. Finds all appointments for today + tomorrow
-      2. Runs eligibility checks for unchecked ones
-      3. Re-checks stale ones (>24hrs old)
-      4. Auto-submits PA for flagged appointments
-    """
-    return run_automation_agent(trigger=trigger)
+def run_agent_endpoint(request: Request, trigger: str = "manual") -> dict[str, Any]:
+    """Run the automation agent for all upcoming appointments."""
+    return run_automation_agent(trigger=trigger, user_id=_get_user_id(request))
 
 
 @app.get("/api/v1/appointments/agent-status")
-def agent_status_endpoint() -> dict[str, Any]:
+def agent_status_endpoint(request: Request) -> dict[str, Any]:
     """Get the last agent run status."""
-    status = get_agent_status()
+    status = get_agent_status(user_id=_get_user_id(request))
     if not status:
         return {"status": "never_run", "message": "Agent has not been run yet."}
     return status
@@ -883,17 +739,21 @@ def ehr_test_connection(config: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/v1/stats")
-def get_dashboard_stats() -> dict[str, Any]:
+def get_dashboard_stats(request: Request) -> dict[str, Any]:
     """Return aggregated stats for dashboard, morning brief, reports, and appointments."""
     from claim_validator.db.session import SessionLocal
     from claim_validator.db.models import EligibilityCheck, PriorAuthCheck, Appointment, AgentRun
     from sqlalchemy import func
     from datetime import datetime, timedelta, UTC
 
+    uid = _get_user_id(request)
     db = SessionLocal()
     try:
         # ── Eligibility checks ──
-        all_checks = db.query(EligibilityCheck).order_by(EligibilityCheck.id.desc()).limit(200).all()
+        elig_query = db.query(EligibilityCheck)
+        if uid is not None:
+            elig_query = elig_query.filter(EligibilityCheck.user_id == uid)
+        all_checks = elig_query.order_by(EligibilityCheck.id.desc()).limit(200).all()
         total_checks = len(all_checks)
         eligible_count = sum(1 for c in all_checks if c.status == "eligible")
         inactive_count = sum(1 for c in all_checks if c.status == "inactive")
@@ -932,7 +792,10 @@ def get_dashboard_stats() -> dict[str, Any]:
             })
 
         # ── PA checks ──
-        all_pa = db.query(PriorAuthCheck).order_by(PriorAuthCheck.id.desc()).limit(100).all()
+        pa_query = db.query(PriorAuthCheck)
+        if uid is not None:
+            pa_query = pa_query.filter(PriorAuthCheck.user_id == uid)
+        all_pa = pa_query.order_by(PriorAuthCheck.id.desc()).limit(100).all()
         pa_total = len(all_pa)
         pa_approved = sum(1 for p in all_pa if p.status == "approved")
         pa_denied = sum(1 for p in all_pa if p.status == "denied")
@@ -1008,14 +871,14 @@ def get_dashboard_stats() -> dict[str, Any]:
             "pa_checks": pa_checks,
             "top_denials": [{"code": code, "count": count} for code, count in top_denials],
             "payer_stats": payer_stats,
-            "appointments": _get_appointments_summary(db),
-            "agent_status": _get_agent_status_summary(db),
+            "appointments": _get_appointments_summary(db, uid),
+            "agent_status": _get_agent_status_summary(db, uid),
         }
     finally:
         db.close()
 
 
-def _get_appointments_summary(db) -> dict[str, Any]:
+def _get_appointments_summary(db, user_id: int | None = None) -> dict[str, Any]:
     """Get appointment counts and recent appointments for stats."""
     from claim_validator.db.models import Appointment
     from datetime import datetime, timedelta, UTC
@@ -1024,10 +887,13 @@ def _get_appointments_summary(db) -> dict[str, Any]:
     tomorrow = (datetime.now(UTC).date() + timedelta(days=1)).isoformat()
     week_end = (datetime.now(UTC).date() + timedelta(days=7)).isoformat()
 
-    all_appts = db.query(Appointment).filter(
+    query = db.query(Appointment).filter(
         Appointment.appointment_date >= today,
         Appointment.appointment_date <= week_end,
-    ).order_by(Appointment.appointment_date, Appointment.appointment_time).all()
+    )
+    if user_id is not None:
+        query = query.filter(Appointment.user_id == user_id)
+    all_appts = query.order_by(Appointment.appointment_date, Appointment.appointment_time).all()
 
     today_appts = [a for a in all_appts if a.appointment_date == today]
     tomorrow_appts = [a for a in all_appts if a.appointment_date == tomorrow]
@@ -1050,10 +916,13 @@ def _get_appointments_summary(db) -> dict[str, Any]:
     }
 
 
-def _get_agent_status_summary(db) -> dict[str, Any] | None:
+def _get_agent_status_summary(db, user_id: int | None = None) -> dict[str, Any] | None:
     """Get the latest agent run info."""
     from claim_validator.db.models import AgentRun
-    run = db.query(AgentRun).order_by(AgentRun.id.desc()).first()
+    query = db.query(AgentRun)
+    if user_id is not None:
+        query = query.filter(AgentRun.user_id == user_id)
+    run = query.order_by(AgentRun.id.desc()).first()
     return run.to_dict() if run else None
 
 

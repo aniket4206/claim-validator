@@ -156,7 +156,7 @@ def _get_pa_client(override_provider: str = ""):
 # DB helper
 # ---------------------------------------------------------------------------
 
-def _save_pa_to_db(db: Session, result: PriorAuthResponse, req: PriorAuthRequest) -> None:
+def _save_pa_to_db(db: Session, result: PriorAuthResponse, req: PriorAuthRequest, user_id: int | None = None) -> None:
     """Persist a PA check result to the database."""
     row = PriorAuthCheckDB(
         pa_id=result.pa_id,
@@ -181,6 +181,7 @@ def _save_pa_to_db(db: Session, result: PriorAuthResponse, req: PriorAuthRequest
         execution_time=result.execution_time,
         raw_response=result.raw_response,
         run_date=result.run_date,
+        user_id=user_id,
     )
     db.add(row)
     db.commit()
@@ -190,20 +191,20 @@ def _save_pa_to_db(db: Session, result: PriorAuthResponse, req: PriorAuthRequest
 # Core logic
 # ---------------------------------------------------------------------------
 
-def submit_prior_auth(req: PriorAuthRequest, db: Session | None = None) -> PriorAuthResponse:
+def submit_prior_auth(req: PriorAuthRequest, db: Session | None = None, user_id: int | None = None) -> PriorAuthResponse:
     """Submit a prior authorization status inquiry to Waystar."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
-        return _submit_prior_auth_impl(req, db)
+        return _submit_prior_auth_impl(req, db, user_id=user_id)
     finally:
         if own_session:
             db.close()
 
 
-def _submit_prior_auth_impl(req: PriorAuthRequest, db: Session) -> PriorAuthResponse:
+def _submit_prior_auth_impl(req: PriorAuthRequest, db: Session, user_id: int | None = None) -> PriorAuthResponse:
     start = time.perf_counter()
     pa_id = _next_pa_id(db)
     patient_name = f"{req.patient_first_name} {req.patient_last_name}"
@@ -243,7 +244,7 @@ def _submit_prior_auth_impl(req: PriorAuthRequest, db: Session) -> PriorAuthResp
                 eligibility_check_id=req.eligibility_check_id or None,
                 execution_time=round(time.perf_counter() - start, 3),
             )
-            _save_pa_to_db(db, result, req)
+            _save_pa_to_db(db, result, req, user_id=user_id)
             return result
 
         if is_test_env:
@@ -292,7 +293,7 @@ def _submit_prior_auth_impl(req: PriorAuthRequest, db: Session) -> PriorAuthResp
         raw_response=raw_response,
     )
 
-    _save_pa_to_db(db, result, req)
+    _save_pa_to_db(db, result, req, user_id=user_id)
     return result
 
 
@@ -663,14 +664,17 @@ def _handle_waystar_pa(client, req: PriorAuthRequest):
     return (status, status_message, error_message, auth_number, raw_response, reference_id)
 
 
-def get_pa_result(pa_id: str, db: Session | None = None) -> dict[str, Any] | None:
-    """Return full result for a PA check."""
+def get_pa_result(pa_id: str, db: Session | None = None, user_id: int | None = None) -> dict[str, Any] | None:
+    """Return full result for a PA check, filtered by user."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
-        row = db.query(PriorAuthCheckDB).filter(PriorAuthCheckDB.pa_id == pa_id).first()
+        query = db.query(PriorAuthCheckDB).filter(PriorAuthCheckDB.pa_id == pa_id)
+        if user_id is not None:
+            query = query.filter(PriorAuthCheckDB.user_id == user_id)
+        row = query.first()
         if row is None:
             return None
         return row.to_dict()
@@ -679,15 +683,18 @@ def get_pa_result(pa_id: str, db: Session | None = None) -> dict[str, Any] | Non
             db.close()
 
 
-def get_recent_pa_checks(db: Session | None = None) -> list[dict[str, Any]]:
-    """Return recent PA checks."""
+def get_recent_pa_checks(db: Session | None = None, user_id: int | None = None) -> list[dict[str, Any]]:
+    """Return recent PA checks, filtered by user."""
     own_session = False
     if db is None:
         db = SessionLocal()
         own_session = True
     try:
+        query = db.query(PriorAuthCheckDB)
+        if user_id is not None:
+            query = query.filter(PriorAuthCheckDB.user_id == user_id)
         rows = (
-            db.query(PriorAuthCheckDB)
+            query
             .order_by(PriorAuthCheckDB.id.desc())
             .limit(20)
             .all()
